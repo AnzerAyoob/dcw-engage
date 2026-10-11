@@ -20,6 +20,11 @@ $isMembershipForm = fn($f) => str_starts_with((string) $f['form_type'], 'members
 $membershipOpen = count(array_filter($activeForms, $isMembershipForm)) > 0;
 $activeForms = array_values(array_filter($activeForms, fn($f) => !$isMembershipForm($f)));
 
+// Link-only forms: live and reachable by their URL, but never listed here. A form is link-only
+// when its schema has "unlisted": true (the "Link only" checkbox in the form builder).
+// getActiveForms() returns this as the `unlisted` column.
+$activeForms = array_values(array_filter($activeForms, fn($f) => empty($f['unlisted'])));
+
 // Show the internet support card only while the programme is switched on
 // (internet_settings.is_active). Guarded so the public landing page can
 // never break, for example before internet_support.sql has been run.
