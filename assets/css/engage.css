@@ -537,29 +537,41 @@ a.help-item:hover { transform: translateY(-3px); box-shadow: 0 12px 26px rgba(15
 /* ----------------------------------------------------------------------
    "Selected reflections" card (home page, DCW@5).
    One reflection is visible at a time; the others fade in, one by one.
+   Compact white card with the logo's three colours as a thin top edge
+   (blue, green, crimson), a pill label, and a green rule beside the quote.
    Uses the tokens at the top of this file, so it follows any palette change.
    The Lora font is loaded by views/home.php.
-   On its own row it is a centred 820px column; beside one or two programs it
+   On its own row it is a centred 760px column; beside one or two programs it
    fills the rest of the row (see .grid--beside above).
    ---------------------------------------------------------------------- */
 .reflect {
-    position: relative; overflow: hidden; display: flex; flex-direction: column; gap: 1rem;
-    flex: 0 1 820px; width: min(100%, 820px); margin: 0 auto;   /* one centred column, like the program cards */
-    padding: 30px 34px 22px; border-radius: 22px; color: var(--ink);
+    position: relative; overflow: hidden; display: flex; flex-direction: column; gap: .8rem;
+    flex: 0 1 760px; width: min(100%, 760px); margin: 0 auto;   /* one centred column, like the program cards */
+    padding: 24px 28px 16px; border-radius: 18px; color: var(--ink);
     background:
-        radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--primary) 10%, transparent) 0, transparent 60%),
-        radial-gradient(100% 80% at 0% 100%, color-mix(in srgb, var(--leaf) 14%, transparent) 0, transparent 60%),
-        linear-gradient(160deg, var(--leaf-tint) 0%, var(--primary-tint) 100%);
-    border: 1px solid color-mix(in srgb, var(--primary) 16%, #fff);
-    box-shadow: 0 14px 40px rgba(20,38,58,.08);
+        radial-gradient(90% 120% at 100% 0%, color-mix(in srgb, var(--primary) 9%, transparent) 0, transparent 60%),
+        radial-gradient(80% 100% at 0% 100%, color-mix(in srgb, var(--leaf) 11%, transparent) 0, transparent 60%),
+        var(--card);
+    border: 1px solid var(--border);
+    box-shadow: 0 8px 24px rgba(20,38,58,.08);
+}
+.reflect::before {
+    content: ''; position: absolute; inset: 0 0 auto 0; height: 5px;
+    background: linear-gradient(90deg, var(--primary) 0%, var(--leaf) 62%, var(--accent) 100%);
 }
 .reflect .rq-mark {
-    position: absolute; top: -.35rem; left: 1.1rem; font-family: 'Lora', Georgia, serif; font-size: 8rem; line-height: 1;
-    color: var(--leaf-dark); opacity: .16; pointer-events: none; user-select: none;
+    position: absolute; top: .55rem; right: 1.3rem; font-family: 'Lora', Georgia, serif; font-size: 5.5rem; line-height: 1;
+    color: var(--accent); opacity: .12; pointer-events: none; user-select: none;
 }
 .reflect .rq-tag {
-    position: relative; align-self: flex-start; margin-left: 3.2rem;
-    font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--primary);
+    position: relative; align-self: flex-start; padding: 3px 12px; border-radius: 999px;
+    font-size: 11.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--primary-dark); background: var(--primary-tint);
+    border: 1px solid color-mix(in srgb, var(--primary) 18%, #fff);
+}
+.reflect .rq-tag::before {
+    content: ""; display: inline-block; width: 6px; height: 6px; margin: 0 7px 1px 0; border-radius: 50%;
+    background: var(--leaf); vertical-align: middle;
 }
 
 /* Every reflection sits in the same grid cell, so the card never changes height as they fade.
@@ -567,59 +579,55 @@ a.help-item:hover { transform: translateY(-3px); box-shadow: 0 12px 26px rgba(15
    to match a taller program card beside it. */
 .rq-stage { position: relative; display: grid; flex: 1; }
 .rq {
-    grid-area: 1 / 1; margin: 0; display: flex; flex-direction: column; justify-content: center; gap: 1.4rem;
+    grid-area: 1 / 1; margin: 0; display: flex; flex-direction: column; justify-content: center; gap: 1rem;
     opacity: 0; visibility: hidden; transform: translateY(8px);
     transition: opacity 1s ease, transform 1s ease, visibility 1s;
 }
 .rq.on { opacity: 1; visibility: visible; transform: none; }
 
-/* Reflection text: upright serif, calmer size, generous line spacing, softened ink.
-   (The earlier large italic serif was the tiring part.) To match the rest of the page instead,
-   use font-family: 'Inter', -apple-system, sans-serif here, with line-height 1.7. */
+/* Reflection text: upright serif at a calm size, with a green rule on its left edge.
+   To match the rest of the page instead, use font-family: 'Inter', -apple-system, sans-serif here. */
 .rq blockquote {
-    margin: 0; max-width: 62ch;
+    margin: 0; max-width: 64ch; padding-left: 16px; border-left: 3px solid var(--leaf);
     font-family: 'Lora', Georgia, 'Times New Roman', serif; font-style: normal; font-weight: 400;
-    font-size: clamp(1.02rem, .95rem + .4vw, 1.18rem); line-height: 1.75; letter-spacing: .005em;
-    color: #34425a;
+    font-size: clamp(.97rem, .93rem + .25vw, 1.07rem); line-height: 1.65;
+    color: #2c3a52;
 }
 .rq blockquote a { font-weight: 500; }
-.rq figcaption { display: flex; align-items: center; gap: 12px; }
+.rq figcaption { display: flex; align-items: center; gap: 10px; }
 .rq-av {
-    flex: none; width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center;
-    font-weight: 700; font-size: 15px; color: #fff; background: linear-gradient(135deg, var(--primary), var(--leaf-dark));
+    flex: none; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center;
+    font-weight: 700; font-size: 14px; color: #fff; background: linear-gradient(135deg, var(--primary), var(--leaf-dark));
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--leaf) 24%, #fff);
 }
-.rq-by { font-weight: 600; font-size: 15px; color: #4a5872; }
-.rq-by::before {
-    content: ""; display: inline-block; width: 18px; height: 2px; margin: 0 9px 4px 0; border-radius: 2px;
-    background: var(--leaf); vertical-align: middle; opacity: .7;
-}
+.rq-by { font-weight: 700; font-size: 14.5px; color: var(--primary-dark); }
 .reflect a {
     color: var(--primary); text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px;
     text-decoration-color: color-mix(in srgb, var(--primary) 45%, transparent);
 }
 .reflect a:hover { color: var(--accent); text-decoration-thickness: 2px; text-decoration-color: currentColor; }
-.reflect a.more { font-weight: 700; font-size: 14.5px; text-decoration: none; }
+.reflect a.more { font-weight: 700; font-size: 14px; text-decoration: none; }
 .reflect a.more:hover { text-decoration: underline; }
 
 .rq-bar {
-    display: flex; align-items: center; justify-content: space-between; margin-top: 3px; padding-top: 14px;
+    display: flex; align-items: center; justify-content: space-between; padding-top: 10px;
     border-top: 1px solid color-mix(in srgb, var(--primary) 14%, transparent);
 }
-.rq-dots { display: inline-flex; flex-wrap: wrap; gap: 8px; }
+.rq-dots { display: inline-flex; flex-wrap: wrap; gap: 6px; }
 .rq-dot {
-    width: 9px; height: 9px; padding: 0; border: 0; border-radius: 50%; cursor: pointer;
+    width: 7px; height: 7px; padding: 0; border: 0; border-radius: 50%; cursor: pointer;
     background: color-mix(in srgb, var(--primary) 25%, transparent); transition: background .4s ease, transform .4s ease;
 }
 .rq-dot:hover { background: color-mix(in srgb, var(--primary) 45%, transparent); }
-.rq-dot.on { background: var(--leaf-dark); transform: scale(1.35); }
+.rq-dot.on { background: var(--leaf-dark); transform: scale(1.4); }
 
 /* ----------------------------------------------------------------------
-   "What's on": upcoming events from dcwwiki.org (home page).
+   "Upcoming Events" from dcwwiki.org (home page).
    Each card is one link to the event's wiki page and shows only:
    weekday, date (the tile), time in IST and title.
    Markup: section.events > .grid > a.evt > .evt-date + .evt-body (see views/home.php).
    ---------------------------------------------------------------------- */
-.events { width: 100%; margin: 0 auto; }
+.events { width: 100%; margin: 0 auto 12px; }
 
 /* Cards sit centred under the heading; a single event stays card-sized instead of stretching. */
 .events .grid {
@@ -661,9 +669,6 @@ a.help-item:hover { transform: translateY(-3px); box-shadow: 0 12px 26px rgba(15
 .evt-time { font-size: 14px; font-weight: 700; color: var(--tone, var(--leaf-dark)); }
 .evt-range { font-size: 13px; color: var(--muted); }
 
-.events-more { margin: 16px 0 0; text-align: center; font-size: 14px; }
-.events-more a { color: var(--primary); font-weight: 700; text-decoration: none; }
-.events-more a:hover { text-decoration: underline; }
 
 /* ---------- Responsive ---------- */
 /* Programs + reflection on one row: step down as the screen narrows. */
@@ -696,9 +701,9 @@ a.help-item:hover { transform: translateY(-3px); box-shadow: 0 12px 26px rgba(15
     .gallery img { height: 165px; }
     .req { grid-template-columns: 42px 1fr; }
     .req .side { grid-column: 1 / -1; flex-direction: row; justify-content: space-between; align-items: center; }
-    .reflect { padding: 26px 20px 20px; }
-    .reflect .rq-mark { font-size: 6.5rem; }
-    .reflect .rq-tag { margin-left: 2.4rem; }
+    .reflect { padding: 22px 18px 14px; }
+    .reflect .rq-mark { font-size: 4.5rem; right: .9rem; }
+    .rq blockquote { padding-left: 12px; }
     .events .grid { grid-template-columns: 1fr; }
     .evt { padding: 14px 16px; gap: 14px; }
     .evt-date { width: 58px; }
