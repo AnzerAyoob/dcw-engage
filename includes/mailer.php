@@ -4,7 +4,7 @@
 // Facade. The emails now live in one class per subject under includes/mail/:
 //
 //   CoreMail.php        SMTP + the shared look (nothing else talks to PHPMailer)
-//   ApplicationMail.php      event applications: verification, magic link, received, status, organizer alert
+//   ApplicationMail.php      event applications: verification, magic link, received, status, sent back, organizer alert
 //   OrganizerAccountMail.php organizer invitations and password resets
 //   ReimbursementMail.php    reimbursement (members only): received, status (incl. Info Requested)
 //   InternetSupportMail.php  internet support (members only): received, status (incl. Info Requested)
@@ -38,6 +38,10 @@ class Mailer {
     public static function sendMagicLink(...$a)           { return ApplicationMail::magicLink(...$a); }
     public static function sendApplicationReceived(...$a) { return ApplicationMail::received(...$a); }
     public static function sendStatusUpdate(...$a)        { return ApplicationMail::statusUpdate(...$a); }
+    // ($email, $applicantName, $trackingId, $formTitle, $message, $token)
+    // "Needs information": what the organizer needs + the one-time /resume/<token> link.
+    // Returns false when the email was not really sent, so the caller can show the link instead.
+    public static function sendSentBack(...$a)            { return ApplicationMail::sentBack(...$a); }
     public static function sendOrganizerAlert(...$a)      { return ApplicationMail::organizerAlert(...$a); }
 
     // --- Organizer accounts -------------------------------------------------
