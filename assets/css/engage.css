@@ -623,52 +623,71 @@ a.help-item:hover { transform: translateY(-3px); box-shadow: 0 12px 26px rgba(15
 
 /* ----------------------------------------------------------------------
    "Upcoming Events" from dcwwiki.org (home page).
-   Each card is one link to the event's wiki page and shows only:
-   weekday, date (the tile), time in IST and title.
-   Markup: section.events > .grid > a.evt > .evt-date + .evt-body (see views/home.php).
+   Each event is one green card that links to its wiki page: date chip (day, weekday, month),
+   title, short description, and the time in IST. Green matches the leaf in the logo and sits
+   between the crimson Membership banner and the white reflection card.
+   Markup: built by $eventCard in views/home.php.
+   - On its own:  section.events > .grid > a.evt
+   - Beside the reflection card:  .duo > h2.duo-title + .evt-col > a.evt + .reflect
    ---------------------------------------------------------------------- */
 .events { width: 100%; margin: 0 auto 12px; }
 
-/* Cards sit centred under the heading; a single event stays card-sized instead of stretching. */
+/* On their own, cards sit centred under the heading; a single event stays card-sized. */
 .events .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 340px));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 360px));
     justify-content: center; gap: 16px;
 }
 
 .evt {
-    display: flex; align-items: center; gap: 16px; min-width: 0;
-    padding: 16px 18px; background: var(--card); border: 1px solid var(--border); border-radius: 16px;
-    color: var(--ink); text-decoration: none;
-    box-shadow: 0 6px 18px rgba(15,23,42,.06);
-    transition: transform .18s, box-shadow .18s, border-color .18s;
+    position: relative; overflow: hidden; display: flex; flex-direction: column; gap: 14px; min-width: 0;
+    padding: 22px 22px 20px; border-radius: 18px; color: #fff; text-decoration: none;
+    background:
+        radial-gradient(120% 90% at 100% 0%, rgba(255,255,255,.2) 0, rgba(255,255,255,0) 55%),
+        linear-gradient(135deg, #2A5F3E 0%, var(--leaf-dark) 100%);
+    box-shadow: 0 10px 26px rgba(42,95,62,.28);
+    transition: transform .18s, box-shadow .18s;
 }
-.evt:hover {
-    transform: translateY(-3px); box-shadow: 0 14px 30px rgba(15,23,42,.12);
-    border-color: color-mix(in srgb, var(--tone, var(--leaf-dark)) 45%, var(--border));
-}
+.evt:hover { transform: translateY(-3px); box-shadow: 0 16px 34px rgba(42,95,62,.36); }
 
-/* Date tile: WEEKDAY / day number / MONTH */
+/* Date chip: big day number, weekday and month stacked beside it */
 .evt-date {
-    flex: none; width: 62px; padding: 9px 0; display: flex; flex-direction: column; align-items: center;
-    border-radius: 12px; text-align: center; line-height: 1.1;
-    color: var(--tone, var(--leaf-dark));
-    background: color-mix(in srgb, var(--tone, var(--leaf-dark)) 12%, #fff);
+    align-self: flex-start; display: flex; align-items: center; gap: 12px; line-height: 1;
+    padding: 9px 16px 9px 13px; border-radius: 14px;
+    background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.28);
 }
-.evt-date .w, .evt-date .m { font-size: 11.5px; font-weight: 800; letter-spacing: .1em; }
-.evt-date .m { opacity: .8; }
-.evt-date .d { margin: 3px 0 2px; font-size: 28px; font-weight: 800; letter-spacing: -.02em; }
+.evt-date .d { font-size: 38px; font-weight: 800; letter-spacing: -.03em; }
+.evt-date .wm { display: flex; flex-direction: column; gap: 5px; }
+.evt-date .w, .evt-date .m { font-size: 12px; font-weight: 800; letter-spacing: .12em; }
+.evt-date .m { opacity: .85; }
 
-.evt-body { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.evt-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
 .evt-body h3 {
-    margin: 0; font-size: 16.5px; font-weight: 700; line-height: 1.3; overflow-wrap: anywhere;
+    margin: 0; font-size: 21px; font-weight: 800; line-height: 1.25; letter-spacing: -.01em; overflow-wrap: anywhere;
     display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
-    transition: color .15s;
 }
-.evt:hover .evt-body h3 { color: var(--primary); }
-.evt-time { font-size: 14px; font-weight: 700; color: var(--tone, var(--leaf-dark)); }
-.evt-range { font-size: 13px; color: var(--muted); }
+.evt-body p {
+    margin: 0; font-size: 14.5px; line-height: 1.55; color: rgba(255,255,255,.9); overflow-wrap: anywhere;
+    display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
+}
 
+/* Time sits at the bottom of the card as a white pill */
+.evt-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: auto; }
+.evt-time {
+    padding: 6px 14px; border-radius: 999px; background: #fff; color: var(--leaf-dark);
+    font-size: 13.5px; font-weight: 800;
+}
+.evt-range { font-size: 13px; font-weight: 600; color: rgba(255,255,255,.88); }
+
+/* Events and the reflection card side by side (home page, when both exist).
+   The heading is the first grid row, so it centres over the events only; both cards start on row 2
+   and are the same height. A single event stretches to match the reflection card. */
+.duo { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); gap: 20px; align-items: stretch; padding-bottom: 12px; }
+.duo .duo-title { grid-column: 1; grid-row: 1; margin: 30px 0 0; }
+.duo .duo-title.first { margin-top: 0; }
+.duo .evt-col { grid-column: 1; grid-row: 2; display: flex; flex-direction: column; gap: 16px; }
+.duo .evt-col .evt { flex: 1; }
+.duo .reflect { grid-column: 2; grid-row: 2; width: auto; max-width: none; flex: none; margin: 0; }
 
 /* ---------- Responsive ---------- */
 /* Programs + reflection on one row: step down as the screen narrows. */
@@ -678,6 +697,9 @@ a.help-item:hover { transform: translateY(-3px); box-shadow: 0 12px 26px rgba(15
     .grid--beside.n2 .reflect { grid-column: 1 / -1; grid-row: auto; }
 }
 @media (max-width: 800px) {
+    .duo { grid-template-columns: 1fr; }
+    .duo .duo-title, .duo .evt-col, .duo .reflect { grid-column: 1; grid-row: auto; }
+    .duo .evt-col .evt { flex: none; }
     .grid--beside.n1, .grid--beside.n2 { grid-template-columns: 1fr; }
     .grid--beside.n1 .beside-title, .grid--beside.n2 .beside-title,
     .grid--beside.n2 .reflect { grid-column: auto; }
@@ -705,8 +727,9 @@ a.help-item:hover { transform: translateY(-3px); box-shadow: 0 12px 26px rgba(15
     .reflect .rq-mark { font-size: 4.5rem; right: .9rem; }
     .rq blockquote { padding-left: 12px; }
     .events .grid { grid-template-columns: 1fr; }
-    .evt { padding: 14px 16px; gap: 14px; }
-    .evt-date { width: 58px; }
+    .evt { padding: 18px; }
+    .evt-date .d { font-size: 34px; }
+    .evt-body h3 { font-size: 19px; }
 }
 
 /* Reduced motion: no transitions. The photo strip becomes a normal swipeable row, without the repeat. */
