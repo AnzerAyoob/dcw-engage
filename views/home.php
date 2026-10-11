@@ -275,17 +275,17 @@ engage_header([
                 <h2 class="section-title<?= (empty($cards) && empty($programs) && $reflectionCard === '') ? ' first' : '' ?>">What's on</h2>
                 <div class="grid">
                     <?php foreach ($events as $ev): ?>
-                        <a class="evt" href="<?= htmlspecialchars($ev['url']) ?>" target="_blank" rel="noopener" style="--tone: var(--leaf-dark);">
+                        <a class="evt" href="<?= htmlspecialchars($ev['url']) ?>" target="_blank" rel="noopener"
+                           aria-label="<?= htmlspecialchars($ev['label']) ?>" style="--tone: var(--leaf-dark);">
                             <span class="evt-date" aria-hidden="true">
-                                <span class="m"><?= htmlspecialchars($ev['month']) ?></span>
-                                <span class="d"><?= htmlspecialchars($ev['day']) ?></span>
                                 <span class="w"><?= htmlspecialchars($ev['wday']) ?></span>
+                                <span class="d"><?= htmlspecialchars($ev['day']) ?></span>
+                                <span class="m"><?= htmlspecialchars($ev['month']) ?></span>
                             </span>
                             <span class="evt-body">
                                 <h3><?= htmlspecialchars($ev['title']) ?></h3>
-                                <span class="evt-when"><?= htmlspecialchars($ev['when']) ?></span>
-                                <?php if ($ev['desc'] !== ''): ?><p><?= htmlspecialchars($ev['desc']) ?></p><?php endif; ?>
-                                <span class="go">Details <span aria-hidden="true">→</span></span>
+                                <?php if ($ev['time'] !== ''): ?><span class="evt-time"><?= htmlspecialchars($ev['time']) ?></span><?php endif; ?>
+                                <?php if ($ev['range'] !== ''): ?><span class="evt-range"><?= htmlspecialchars($ev['range']) ?></span><?php endif; ?>
                             </span>
                         </a>
                     <?php endforeach; ?>
