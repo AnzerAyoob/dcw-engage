@@ -244,8 +244,31 @@ engage_header([
             </div>
         <?php endif; ?>
 
+        <?php if (!empty($events)): ?>
+            <section class="events" aria-label="Upcoming Events">
+                <h2 class="section-title<?= empty($cards) ? ' first' : '' ?>">Upcoming Events</h2>
+                <div class="grid">
+                    <?php foreach ($events as $ev): ?>
+                        <a class="evt" href="<?= htmlspecialchars($ev['url']) ?>" target="_blank" rel="noopener"
+                           aria-label="<?= htmlspecialchars($ev['label']) ?>" style="--tone: var(--leaf-dark);">
+                            <span class="evt-date" aria-hidden="true">
+                                <span class="w"><?= htmlspecialchars($ev['wday']) ?></span>
+                                <span class="d"><?= htmlspecialchars($ev['day']) ?></span>
+                                <span class="m"><?= htmlspecialchars($ev['month']) ?></span>
+                            </span>
+                            <span class="evt-body">
+                                <h3><?= htmlspecialchars($ev['title']) ?></h3>
+                                <?php if ($ev['time'] !== ''): ?><span class="evt-time"><?= htmlspecialchars($ev['time']) ?></span><?php endif; ?>
+                                <?php if ($ev['range'] !== ''): ?><span class="evt-range"><?= htmlspecialchars($ev['range']) ?></span><?php endif; ?>
+                            </span>
+                        </a>
+                    <?php endforeach; ?>
+                </div>
+            </section>
+        <?php endif; ?>
+
         <?php if (!empty($programs)): ?>
-            <?php $titleClass = 'section-title' . (empty($cards) ? ' first' : ''); ?>
+            <?php $titleClass = 'section-title' . (empty($cards) && empty($events) ? ' first' : ''); ?>
             <?php if (!$beside): ?>
                 <h2 class="<?= $titleClass ?>">Open programs</h2>
             <?php endif; ?>
@@ -270,29 +293,6 @@ engage_header([
             <div class="grid"><?= $reflectionCard ?></div>
         <?php endif; ?>
 
-        <?php if (!empty($events)): ?>
-            <section class="events" aria-label="Upcoming events">
-                <h2 class="section-title<?= (empty($cards) && empty($programs) && $reflectionCard === '') ? ' first' : '' ?>">What's on</h2>
-                <div class="grid">
-                    <?php foreach ($events as $ev): ?>
-                        <a class="evt" href="<?= htmlspecialchars($ev['url']) ?>" target="_blank" rel="noopener"
-                           aria-label="<?= htmlspecialchars($ev['label']) ?>" style="--tone: var(--leaf-dark);">
-                            <span class="evt-date" aria-hidden="true">
-                                <span class="w"><?= htmlspecialchars($ev['wday']) ?></span>
-                                <span class="d"><?= htmlspecialchars($ev['day']) ?></span>
-                                <span class="m"><?= htmlspecialchars($ev['month']) ?></span>
-                            </span>
-                            <span class="evt-body">
-                                <h3><?= htmlspecialchars($ev['title']) ?></h3>
-                                <?php if ($ev['time'] !== ''): ?><span class="evt-time"><?= htmlspecialchars($ev['time']) ?></span><?php endif; ?>
-                                <?php if ($ev['range'] !== ''): ?><span class="evt-range"><?= htmlspecialchars($ev['range']) ?></span><?php endif; ?>
-                            </span>
-                        </a>
-                    <?php endforeach; ?>
-                </div>
-                <p class="events-more"><a href="https://dcwwiki.org" target="_blank" rel="noopener">See everything on dcwwiki.org <span aria-hidden="true">→</span></a></p>
-            </section>
-        <?php endif; ?>
 
         <?php if (!empty($gallery)): ?>
             <section class="gallery" aria-label="Our volunteers across">
