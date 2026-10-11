@@ -206,7 +206,37 @@ if (!empty($reflections)) {
 
 // With only one or two programs the row has spare room, so the reflection card sits beside them
 // instead of dropping to the next row. With three or more programs it keeps its own full-width row.
-$beside = $reflectionCard !== '' && !empty($programs) && count($programs) <= 2;
+// With upcoming events AND a reflection, the two sit side by side in their own row below the programs
+// (events on the left, reflection on the right), the same idea as the programs row above. In that case the
+// reflection is not repeated inside the programs grid.
+$duo = $reflectionCard !== '' && !empty($events);
+$beside = !$duo && $reflectionCard !== '' && !empty($programs) && count($programs) <= 2;
+
+// One "Upcoming Events" card, used on its own and beside the reflection card.
+$eventCard = function (array $ev): string {
+    $h = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
+    ob_start();
+    ?>
+    <a class="evt" href="<?= $h($ev['url']) ?>" target="_blank" rel="noopener"
+       aria-label="<?= $h($ev['label']) ?>" style="--tone: var(--leaf-dark);">
+        <span class="evt-date" aria-hidden="true">
+            <span class="d"><?= $h($ev['day']) ?></span>
+            <span class="wm"><span class="w"><?= $h($ev['wday']) ?></span><span class="m"><?= $h($ev['month']) ?></span></span>
+        </span>
+        <span class="evt-body">
+            <h3><?= $h($ev['title']) ?></h3>
+            <?php if ($ev['desc'] !== ''): ?><p><?= $h($ev['desc']) ?></p><?php endif; ?>
+        </span>
+        <?php if ($ev['time'] !== '' || $ev['range'] !== ''): ?>
+            <span class="evt-meta">
+                <?php if ($ev['time'] !== ''): ?><span class="evt-time"><?= $h($ev['time']) ?></span><?php endif; ?>
+                <?php if ($ev['range'] !== ''): ?><span class="evt-range"><?= $h($ev['range']) ?></span><?php endif; ?>
+            </span>
+        <?php endif; ?>
+    </a>
+    <?php
+    return ob_get_clean();
+};
 
 engage_header([
     'title'       => 'Deoband Community Wikimedia',
@@ -244,31 +274,8 @@ engage_header([
             </div>
         <?php endif; ?>
 
-        <?php if (!empty($events)): ?>
-            <section class="events" aria-label="Upcoming Events">
-                <h2 class="section-title<?= empty($cards) ? ' first' : '' ?>">Upcoming Events</h2>
-                <div class="grid">
-                    <?php foreach ($events as $ev): ?>
-                        <a class="evt" href="<?= htmlspecialchars($ev['url']) ?>" target="_blank" rel="noopener"
-                           aria-label="<?= htmlspecialchars($ev['label']) ?>" style="--tone: var(--leaf-dark);">
-                            <span class="evt-date" aria-hidden="true">
-                                <span class="w"><?= htmlspecialchars($ev['wday']) ?></span>
-                                <span class="d"><?= htmlspecialchars($ev['day']) ?></span>
-                                <span class="m"><?= htmlspecialchars($ev['month']) ?></span>
-                            </span>
-                            <span class="evt-body">
-                                <h3><?= htmlspecialchars($ev['title']) ?></h3>
-                                <?php if ($ev['time'] !== ''): ?><span class="evt-time"><?= htmlspecialchars($ev['time']) ?></span><?php endif; ?>
-                                <?php if ($ev['range'] !== ''): ?><span class="evt-range"><?= htmlspecialchars($ev['range']) ?></span><?php endif; ?>
-                            </span>
-                        </a>
-                    <?php endforeach; ?>
-                </div>
-            </section>
-        <?php endif; ?>
-
         <?php if (!empty($programs)): ?>
-            <?php $titleClass = 'section-title' . (empty($cards) && empty($events) ? ' first' : ''); ?>
+            <?php $titleClass = 'section-title' . (empty($cards) ? ' first' : ''); ?>
             <?php if (!$beside): ?>
                 <h2 class="<?= $titleClass ?>">Open programs</h2>
             <?php endif; ?>
@@ -287,12 +294,32 @@ engage_header([
                         <span class="go"><?= htmlspecialchars($p['cta']) ?> <span aria-hidden="true">→</span></span>
                     </a>
                 <?php endforeach; ?>
-                <?= $reflectionCard ?>
+                <?= $duo ? '' : $reflectionCard ?>
             </div>
-        <?php elseif ($reflectionCard !== ''): ?>
+        <?php elseif ($reflectionCard !== '' && !$duo): ?>
             <div class="grid"><?= $reflectionCard ?></div>
         <?php endif; ?>
 
+
+        <?php if (!empty($events)): ?>
+            <?php $evTitleClass = 'section-title' . (empty($cards) && empty($programs) ? ' first' : ''); ?>
+            <?php if ($duo): ?>
+                <div class="duo">
+                    <h2 class="<?= $evTitleClass ?> duo-title">Upcoming Events</h2>
+                    <div class="evt-col">
+                        <?php foreach ($events as $ev) echo $eventCard($ev); ?>
+                    </div>
+                    <?= $reflectionCard ?>
+                </div>
+            <?php else: ?>
+                <section class="events" aria-label="Upcoming Events">
+                    <h2 class="<?= $evTitleClass ?>">Upcoming Events</h2>
+                    <div class="grid">
+                        <?php foreach ($events as $ev) echo $eventCard($ev); ?>
+                    </div>
+                </section>
+            <?php endif; ?>
+        <?php endif; ?>
 
         <?php if (!empty($gallery)): ?>
             <section class="gallery" aria-label="Our volunteers across">
