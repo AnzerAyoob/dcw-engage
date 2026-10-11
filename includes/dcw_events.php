@@ -1,9 +1,10 @@
 <?php
 // includes/dcw_events.php
 // Upcoming events for the "What's on" section of the Engage home page.
-// Each event shows: day, date, time (Indian Standard Time) and title, linking to its page on dcwwiki.org.
+// Each event shows: day, date, time (Indian Standard Time), title and the DCW's short description,
+// and links to its page on dcwwiki.org.
 //
-// HOW IT WORKS: Engage asks the wiki's public API (api.php?action=cargoquery) for upcoming events.
+// HOW IT WORKS: Engage asks the DCW's public API (api.php?action=cargoquery) for upcoming events.
 // No database login is involved and nothing on dcwwiki.org is changed: it is a plain read-only HTTP request,
 // the same one a browser could make.
 //
@@ -32,9 +33,18 @@ function dcw_events_setting(string $key, string $default = ''): string {
     return ($v !== '' && $v !== null) ? (string) $v : $default;
 }
 
+/** DCW short descriptions are plain text, but strip any markup that slips in, and keep it short. */
+function dcw_events_clean_text(string $s, int $max = 150): string {
+    $s = html_entity_decode($s, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    $s = preg_replace('/\[\[(?:[^\]|]*\|)?([^\]]*)\]\]/u', '$1', $s);   // [[Page|label]] -> label
+    $s = str_replace("''", '', $s);                                      // wiki bold/italic quotes
+    $s = trim(preg_replace('/\s+/u', ' ', strip_tags($s)));
+    return mb_strimwidth($s, 0, $max, '…');
+}
+
 /**
- * Read upcoming events from the wiki's Cargo API. Returns a list of
- * ['page','start','stime','end','etime'] or null on any failure.
+ * Read upcoming events from the DCW's Cargo API. Returns a list of
+ * ['page','start','stime','end','etime','desc'] or null on any failure.
  * Days are Y-m-d and times are H:i, all in Indian time. A time is '' when the wiki holds only a date.
  */
 function dcw_events_fetch(int $rows = 10): ?array {
@@ -55,7 +65,8 @@ function dcw_events_fetch(int $rows = 10): ?array {
             'tables'   => $table,
             'fields'   => '_pageID=pid,_pageName=page,'
                         . 'start_date=sdate,start_date__precision=sprec,'
-                        . 'end_date=edate,end_date__precision=eprec',
+                        . 'end_date=edate,end_date__precision=eprec,'
+                        . 'short_description=descr',
             'where'    => "_pageNamespace=0 AND _pageName NOT LIKE '%/%' AND start_date IS NOT NULL "
                         . "AND (end_date >= '$since' OR (end_date IS NULL AND start_date >= '$since'))",
             'order_by' => 'start_date',
@@ -118,6 +129,7 @@ function dcw_events_fetch(int $rows = 10): ?array {
                 'stime' => $stime,
                 'end'   => $end,
                 'etime' => $etime,
+                'desc'  => dcw_events_clean_text((string) ($r['descr'] ?? '')),
             ];
             if (count($out) >= $rows) break;
         }
@@ -145,12 +157,13 @@ function dcw_events_page_url(string $page): string {
  * Each returned event: title, url, wday ("FRI"), day ("30"), month ("OCT"),
  *   time  ("7:00 PM IST", "7:00 PM – 8:30 PM IST", "Starts 7:00 PM IST", or '' if the wiki has no time),
  *   range ("30 Oct – 1 Nov 2026" for events over several days, else ''),
+ *   desc  (the wiki's short description; '' when it is missing or just repeats the title),
  *   label (full sentence for screen readers).
  */
 function dcw_upcoming_events(int $limit = 3): array {
     try {
         $now   = time();
-        $file  = sys_get_temp_dir() . '/dcw_engage_events2_'
+        $file  = sys_get_temp_dir() . '/dcw_engage_events3_'
                . md5(dcw_events_setting('API', DCW_WIKI_BASE . '/api.php') . '|' . dcw_events_setting('TABLE', 'events'))
                . '.json';
         $cache = null;
@@ -227,8 +240,13 @@ function dcw_upcoming_events(int $limit = 3): array {
                    . ($range !== '' ? ' to ' . $f->format('l j F Y') : '')
                    . ($time !== '' ? ', ' . $time : '');
 
+            // A description that only repeats the title adds nothing.
+            $desc = trim((string) ($e['desc'] ?? ''));
+            if (strcasecmp($desc, $title) === 0) $desc = '';
+
             $out[] = [
                 'title' => $title,
+                'desc'  => $desc,
                 'url'   => dcw_events_page_url((string) $e['page']),
                 'wday'  => strtoupper($s->format('D')),
                 'day'   => $s->format('j'),
