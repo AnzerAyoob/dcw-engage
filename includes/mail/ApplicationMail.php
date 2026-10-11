@@ -1,7 +1,8 @@
 <?php
 // includes/mail/ApplicationMail.php
 // Emails for event applications (tracking IDs start "DCW-"): verify email,
-// magic link, confirmation, status updates, and the organizer alert.
+// magic link, confirmation, status updates, "sent back for more information",
+// and the organizer alert.
 require_once __DIR__ . '/CoreMail.php';
 
 class ApplicationMail {
@@ -124,6 +125,41 @@ class ApplicationMail {
             'html' => $inner, 'alt' => $alt,
             'dev_result' => true,
             'dev_log' => "Status update email for $email: $trackingId ($formTitle) is now '$status'" . ($note ? " | note: $note" : ''),
+        ]);
+    }
+
+    /**
+     * An organizer sent the application back ("Needs information"). Emails the
+     * applicant what is needed, plus the one-time /resume/<token> link they use
+     * to edit and resubmit. $message is required text typed by the organizer.
+     *
+     * dev_result is false on purpose: the caller (application review) shows the
+     * link on screen when this returns false, so an unsent email in dev mode
+     * or after an SMTP failure never leaves the organizer without the link.
+     */
+    public static function sentBack($email, $applicantName, $trackingId, $formTitle, $message, $token) {
+        $e = fn($s) => CoreMail::e($s);
+        $applicantName = self::displayName($applicantName);
+        $appUrl = CoreMail::appUrl() . '/resume/' . $token;
+        $url = $e($appUrl);
+
+        $inner = "
+            <p>Dear <strong>" . $e($applicantName) . "</strong>,</p>
+            <p>The reviewers need some more information for your application for <strong>" . $e($formTitle) . "</strong> (Tracking ID: " . $e($trackingId) . ").</p>
+            <p><strong>What we need:</strong><br>" . nl2br($e($message)) . "</p>
+            <p>Please use the secure link below to update your application and resubmit it.</p>
+            <div class='btn-wrapper'><a href='$url' class='btn'>Update My Application</a></div>
+            <p>If the button above does not work, please copy and paste the following link into your browser:<br><br><a href='$url' style='color: #106b9a; word-break: break-all;'>$url</a></p>
+            <p style='margin-bottom:0;'>For security purposes, this link will expire automatically. Kindly do not share it with anyone.</p>";
+
+        $alt = "Dear $applicantName,\n\nThe reviewers need some more information for your application for $formTitle (Tracking ID: $trackingId).\n\nWhat we need:\n$message\n\nUpdate and resubmit your application here:\n$appUrl\n\nFor security purposes, this link will expire automatically. Kindly do not share it with anyone.\n\nDeoband Community Wikimedia";
+
+        return CoreMail::send([
+            'to' => $email, 'to_name' => $applicantName,
+            'subject' => "More information needed for your $formTitle application",
+            'html' => $inner, 'alt' => $alt,
+            'dev_result' => false,
+            'dev_log' => "Send-back email for $email ($trackingId, $formTitle): $appUrl",
         ]);
     }
 
