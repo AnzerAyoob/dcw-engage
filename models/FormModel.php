@@ -269,12 +269,18 @@ class FormModel {
      * description pulled from the schema. Powers the public homepage listing
      * at engage.dcwwiki.org. Filtered in PHP so the deadline uses the same
      * clock as everything else.
+     *
+     * Each row also carries `unlisted` (1 when the schema has "unlisted": true).
+     * Unlisted forms are live and reachable by their link, but the home page
+     * leaves them out. The filtering itself is done by the caller, so any other
+     * page that uses this method keeps getting every open form.
      */
     public function getActiveForms() {
         $stmt = $this->db->query("
             SELECT form_type, is_active, deadline_at,
                    JSON_UNQUOTE(JSON_EXTRACT(schema_json, '$.title')) as title,
-                   JSON_UNQUOTE(JSON_EXTRACT(schema_json, '$.description')) as description
+                   JSON_UNQUOTE(JSON_EXTRACT(schema_json, '$.description')) as description,
+                   COALESCE(JSON_UNQUOTE(JSON_EXTRACT(schema_json, '$.unlisted')) IN ('true', '1'), 0) as unlisted
             FROM forms
             WHERE is_active = 1
             ORDER BY created_at DESC

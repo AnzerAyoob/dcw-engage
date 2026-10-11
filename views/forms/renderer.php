@@ -469,6 +469,13 @@ $hideIntro = $showConfirm || (!empty($verifySent) && $showGate);
 // Signed-in members have their name displayed in the top bar (consistent with /membership).
 $member = $loggedMember;
 
+// Link-only forms (schema flag "unlisted", set with the "Link only" checkbox in the builder) are
+// not listed on the home page, and are also kept out of search results. This must run before
+// engage_header(), which starts the page output.
+if (!empty($schema['unlisted'])) {
+    header('X-Robots-Tag: noindex, nofollow');
+}
+
 engage_header([
     'title'       => $schema['title'],
     'heading'     => $schema['title'],

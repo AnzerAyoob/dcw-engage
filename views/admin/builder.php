@@ -20,6 +20,7 @@ $existingSchema = null;
 $existingFormType = '';
 $existingNotifyEmails = '';
 $existingDeadlineInput = '';   // the saved deadline, in IST, in datetime-local format
+$existingUnlisted = false;     // "link only": live, but not listed on the home page
 if (isset($_GET['edit'])) {
     $form = $formModel->getFormById($_GET['edit']);
     // Same response for "missing" and "not yours to open", so nobody can tell
@@ -33,10 +34,13 @@ if (isset($_GET['edit'])) {
     $existingFormType = $form['form_type'];
     $existingNotifyEmails = $form['notify_emails'] ?? '';
     $existingDeadlineInput = FormModel::utcToIstInput($form['deadline_at'] ?? null);
+    $existingUnlisted = !empty($form['schema']['unlisted']);
 }
 
 // What the deadline box shows: what was just posted (so a failed save does not lose it), else the saved value.
 $deadlineValue = $existingDeadlineInput;
+// Same for the "link only" checkbox.
+$unlistedValue = $existingUnlisted;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!CSRF::validate($_POST['csrf_token'])) {
@@ -48,6 +52,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $notifyEmailsRaw = trim($_POST['notify_emails'] ?? '');
     $deadlineRaw = trim($_POST['deadline_at'] ?? '');
     $deadlineValue = $deadlineRaw;
+    $unlistedChecked = !empty($_POST['unlisted']);
+    $unlistedValue = $unlistedChecked;
 
     // Editing an existing form is identified by its stable form_id,
     // not by matching form_type — matching on form_type meant that
@@ -114,10 +120,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = htmlspecialchars($deadlineError);
     } else {
         // Validate JSON
-        json_decode($schemaJson);
-        if (json_last_error() !== JSON_ERROR_NONE) {
+        $decodedSchema = json_decode($schemaJson, true);
+        if (json_last_error() !== JSON_ERROR_NONE || !is_array($decodedSchema)) {
             $error = "Invalid JSON schema format generated.";
         } else {
+            // "Link only" is set here, on the server, from the checkbox, rather than by builder.js.
+            // That way the flag is always exactly what the checkbox says, and a builder that only
+            // rebuilds the known keys can never silently drop it.
+            if ($unlistedChecked) {
+                $decodedSchema['unlisted'] = true;
+            } else {
+                unset($decodedSchema['unlisted']);
+            }
+            $schemaJson = json_encode($decodedSchema, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
             global $db;
 
             try {
@@ -211,6 +227,12 @@ if ($coordChapters) {
                 <?php /* No min when the saved deadline has already passed: the browser would refuse to save any other edit to a closed form. The server checks a CHANGED deadline is in the future. */ ?>
                 <input type="datetime-local" name="deadline_at" id="deadline_at" value="<?= htmlspecialchars($deadlineValue, ENT_QUOTES) ?>"<?= ($deadlineValue === '' || $deadlineValue >= $deadlineMin) ? ' min="' . htmlspecialchars($deadlineMin, ENT_QUOTES) . '"' : '' ?> style="margin-bottom: 0;">
                 <span style="font-size: 13px; color: #64748b; margin-top: 5px; display:block;">The form closes automatically at this time (IST, India Standard Time). Leave blank for no deadline. You can extend it later from the form's manager page.</span>
+
+                <label style="margin-top: 20px; display:flex; align-items:center; gap:8px; cursor:pointer;">
+                    <input type="checkbox" name="unlisted" id="unlisted" value="1" <?= $unlistedValue ? 'checked' : '' ?> style="width:auto; margin:0;">
+                    <span>Link only (do not list on the home page)</span>
+                </label>
+                <span style="font-size: 13px; color: #64748b; margin-top: 5px; display:block;">The form stays live and anyone with its link can open it, but it is left out of the public "Open programs" list and asked not to be indexed by search engines. Share the link only with the people who should fill it in.</span>
             </div>
 
             <div style="background: #e0f2fe; color: #0369a1; padding: 15px; border-radius: 6px; margin-bottom: 20px; border: 1px solid #bae6fd; font-size: 14px;">
