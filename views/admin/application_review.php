@@ -6,7 +6,7 @@ require_once __DIR__ . '/../../includes/app_log.php';
 require_once __DIR__ . '/../../includes/engage_page.php';
 require_once __DIR__ . '/../../models/FormModel.php';
 require_once __DIR__ . '/../../models/ApplicationModel.php';
-require_once __DIR__ . '/../../includes/mailer.php';   // Mailer::sendStatusUpdate(), the same email form_manager sends
+require_once __DIR__ . '/../../includes/mailer.php';   // Mailer::sendStatusUpdate() and Mailer::sendSentBack()
 
 /**
  * /admin/application-review: one queue for the responses to every ordinary (non-membership) form.
@@ -19,8 +19,10 @@ require_once __DIR__ . '/../../includes/mailer.php';   // Mailer::sendStatusUpda
  *   discarded  Discarded                      -> spam, hidden from the queue; can be restored
  * Accept / Reject / Under Review email the applicant exactly as the form manager does (Mailer::sendStatusUpdate),
  * with the optional note added to that email.
- * "Needs information" sets the application back to Draft and makes a one-time link
- * (/resume/<token>) the applicant uses to edit and resubmit.
+ * "Needs information" sets the application back to Draft, makes a one-time link (/resume/<token>) and EMAILS
+ * the applicant your message plus that link (Mailer::sendSentBack). If the email cannot be sent, the link and
+ * message are shown on screen instead so you can pass them on yourself. The status change is kept either way.
+ * "Resend link" (Draft applications) does not email: it only shows a new one-time link.
  * "Discard" sets Discarded and sends NOTHING (that is what $notifyApplicant already does for any status
  * other than Under Review / Accepted / Rejected). "Restore" puts a discarded application back to New.
  */
@@ -84,6 +86,19 @@ $notifyApplicant = function (array $row, string $status, string $note) {
     }
 };
 
+// "Needs information": emails the applicant what is needed plus their one-time link.
+// Returns true only when the email really went out; on false the caller shows the link on screen instead.
+// A mail failure never undoes the status change that is already saved.
+$emailSentBack = function (array $row, string $message, string $token): bool {
+    try {
+        return (bool) Mailer::sendSentBack($row['email'], $row['applicant_name'], $row['tracking_id'],
+                                           $row['form_title'] ?: $row['form_type'], $message, $token);
+    } catch (Throwable $e) {
+        app_log("Send-back email failed for application #{$row['id']}: " . $e->getMessage());
+        return false;
+    }
+};
+
 // ---------------------------------------------------------------------------
 // Bulk action from the queue. Every application is re-loaded and re-checked,
 // so editing the request can never reach a form outside the allowed list, and
@@ -106,6 +121,7 @@ if (!$id && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') ==
         $error = 'Say what you need from the applicants.';
     } else {
         $by = currentAdminIdentifier();
+        // 'links' now holds only the applicants whose send-back email could NOT be sent.
         $result = ['act' => $bulkAct, 'done' => 0, 'skipped' => [], 'links' => [], 'message' => $bulkAct === 'info' ? $note : ''];
 
         foreach ($ids as $appId) {
@@ -132,7 +148,10 @@ if (!$id && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') ==
                 if ($bulkAct === 'info') {
                     $token = $model->generateMagicLink((int) $row['id'], true);
                     $model->updateStatus((int) $row['id'], 'Draft');
-                    $result['links'][] = ['who' => $who, 'email' => $row['email'], 'url' => $resumeUrl($token)];
+                    if (!$emailSentBack($row, $note, $token)) {
+                        // Email failed: keep the link so the organizer can pass it on by hand.
+                        $result['links'][] = ['who' => $who, 'email' => $row['email'], 'url' => $resumeUrl($token)];
+                    }
                 } else {
                     $model->updateStatus((int) $row['id'], APP_ACTIONS[$bulkAct]);
                     $notifyApplicant($row, APP_ACTIONS[$bulkAct], $note);
@@ -158,12 +177,14 @@ if ($app && $_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!CSRF::validate($_POST['csrf_token'] ?? '')) die('Invalid CSRF token.');
     $act = (string) ($_POST['action'] ?? '');
     $by = currentAdminIdentifier();
+    $doneKey = $act;   // which confirmation message to show after the redirect
     try {
         if ($act === 'resend') {
             if ($app['status'] !== 'Draft') throw new Exception('Only an application waiting on the applicant can be sent a new link.');
             $token = $model->generateMagicLink((int) $app['id'], true);
+            // Not emailed: the organizer passes this link on by hand.
             $_SESSION['application_link'] = ['who' => $app['applicant_name'] ?: $app['email'], 'email' => $app['email'],
-                                             'message' => '', 'url' => $resumeUrl($token)];
+                                             'message' => '', 'url' => $resumeUrl($token), 'emailFailed' => false];
         } elseif (isset(APP_ACTIONS[$act])) {
             // Restore only works on discarded applications; everything else only on open ones.
             $need = $act === 'restore' ? ['Discarded'] : APP_OPEN;
@@ -177,8 +198,12 @@ if ($app && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($msg === '') throw new Exception('Say what you need from the applicant.');
                 $token = $model->generateMagicLink((int) $app['id'], true);
                 $model->updateStatus((int) $app['id'], 'Draft');
-                $_SESSION['application_link'] = ['who' => $app['applicant_name'] ?: $app['email'], 'email' => $app['email'],
-                                                 'message' => $msg, 'url' => $resumeUrl($token)];
+                if (!$emailSentBack($app, $msg, $token)) {
+                    // Email failed: show the link and message so the decision is not wasted.
+                    $_SESSION['application_link'] = ['who' => $app['applicant_name'] ?: $app['email'], 'email' => $app['email'],
+                                                     'message' => $msg, 'url' => $resumeUrl($token), 'emailFailed' => true];
+                    $doneKey = 'info_manual';
+                }
             } else {
                 $model->updateStatus((int) $app['id'], APP_ACTIONS[$act]);
                 $notifyApplicant($app, APP_ACTIONS[$act], trim((string) ($_POST['note'] ?? '')));
@@ -187,18 +212,21 @@ if ($app && $_SERVER['REQUEST_METHOD'] === 'POST') {
             throw new Exception('Unknown action.');
         }
         app_log("Application $act: #{$app['id']} ({$app['tracking_id']}, {$app['form_type']}) by $by");
-        header('Location: /admin/application-review?id=' . $app['id'] . '&done=' . urlencode($act));
+        header('Location: /admin/application-review?id=' . $app['id'] . '&done=' . urlencode($doneKey));
         exit;
     } catch (Throwable $e) { $error = $e->getMessage(); }
     $app = $model->getApplicationById($id);   // fresh state after an error
 }
 
 $doneText = ['approve' => 'Accepted.', 'reject' => 'Rejected.', 'review' => 'Marked under review.',
-             'info' => 'Sent back to the applicant.', 'resend' => 'New link created.',
+             'info' => 'Sent back to the applicant. They were emailed your message and a link to update their application.',
+             'info_manual' => 'Sent back to the applicant, but the email could not be sent. See below.',
+             'resend' => 'New link created.',
              'discard' => 'Discarded. The applicant was not notified.', 'restore' => 'Restored to the queue.'];
 if (!empty($_GET['done'])) $notice = $doneText[$_GET['done']] ?? 'Saved.';
 
-// One-time link(s) to hand to the applicant (nothing is emailed from this page).
+// One-time link(s) to hand to the applicant: a new link from "Create a new link" (never emailed),
+// or the link from a send-back whose email could not be sent.
 $manual = $_SESSION['application_link'] ?? null;
 unset($_SESSION['application_link']);
 $bulk = $_SESSION['application_bulk'] ?? null;
@@ -293,7 +321,11 @@ engage_header([
 <?php if ($notice): ?><div class="alert ok"><?= $h($notice) ?></div><?php endif; ?>
 <?php if ($manual): ?>
     <div class="action-banner">
-        <span><strong>Nothing was emailed.</strong> Send <?= $h($manual['who']) ?> (<?= $h($manual['email']) ?>) this one-time link<?= $manual['message'] !== '' ? ' with your message' : '' ?>:</span>
+        <?php if (!empty($manual['emailFailed'])): ?>
+            <span><strong>The email could not be sent.</strong> Send <?= $h($manual['who']) ?> (<?= $h($manual['email']) ?>) this one-time link<?= $manual['message'] !== '' ? ' with your message' : '' ?>:</span>
+        <?php else: ?>
+            <span><strong>Nothing was emailed.</strong> Send <?= $h($manual['who']) ?> (<?= $h($manual['email']) ?>) this one-time link<?= $manual['message'] !== '' ? ' with your message' : '' ?>:</span>
+        <?php endif; ?>
         <?php if ($manual['message'] !== ''): ?><code class="flash-link"><?= nl2br($h($manual['message'])) ?></code><?php endif; ?>
         <code class="flash-link"><?= $h($manual['url']) ?></code>
     </div>
@@ -302,12 +334,15 @@ engage_header([
     <div class="alert <?= $bulk['done'] ? 'ok' : 'error' ?>">
         <?= (int) $bulk['done'] ?> application<?= $bulk['done'] === 1 ? '' : 's' ?> <?= $h($bulkVerb[$bulk['act']] ?? 'updated') ?>.
         <?= $bulk['skipped'] ? count($bulk['skipped']) . ' skipped.' : '' ?>
+        <?php if ($bulk['act'] === 'info' && $bulk['done'] > count($bulk['links'])): ?>
+            <?= (int) ($bulk['done'] - count($bulk['links'])) ?> emailed.
+        <?php endif; ?>
     </div>
     <?php if ($bulk['skipped']): ?>
         <div class="action-banner"><strong>Skipped</strong><ul><?php foreach ($bulk['skipped'] as $s): ?><li><?= $h($s) ?></li><?php endforeach; ?></ul></div>
     <?php endif; ?>
     <?php if ($bulk['links']): ?>
-        <div class="action-banner"><strong>Nothing was emailed.</strong> Send each applicant your message and their one-time link:
+        <div class="action-banner"><strong>These emails could not be sent.</strong> Send each of these applicants your message and their one-time link:
             <?php if ($bulk['message'] !== ''): ?><code class="flash-link"><?= nl2br($h($bulk['message'])) ?></code><?php endif; ?>
             <ul><?php foreach ($bulk['links'] as $l): ?><li><?= $h($l['who']) ?> (<?= $h($l['email']) ?>): <code><?= $h($l['url']) ?></code></li><?php endforeach; ?></ul>
         </div>
@@ -366,7 +401,7 @@ engage_header([
         <form method="POST" class="actform"><?= CSRF::getInputField() ?>
             <input type="hidden" name="id" value="<?= (int) $app['id'] ?>">
             <div class="field">
-                <label>Ask for more information (creates a one-time link for the applicant to edit and resubmit)</label>
+                <label>Ask for more information (emails the applicant your message and a one-time link to edit and resubmit)</label>
                 <textarea name="message" rows="3" placeholder="e.g. Please upload a clearer copy of your ID."></textarea>
             </div>
             <button name="action" value="info" class="btn-ghost">Send back for more information</button>
@@ -589,7 +624,7 @@ engage_header([
             return {
                 approve: 'Accept ' + plural + '? Each applicant is emailed, they are locked and this cannot be undone.',
                 reject: 'Reject ' + plural + '? Each applicant is emailed, they are locked and this cannot be undone.',
-                info: 'Send ' + plural + ' back for more information? You will get a link for each applicant to send them.',
+                info: 'Send ' + plural + ' back for more information? Each applicant is emailed your message and a link to update their application.',
                 discard: 'Discard ' + plural + '? The applicants are NOT notified. You can restore them later from the Discarded status filter.'
             }[act];
         }
