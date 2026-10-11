@@ -27,6 +27,11 @@ require_once __DIR__ . '/../../includes/cert_rows.php';
  * Certificates: only the latest few are shown here. The full list, with search and paging,
  * is /member/certificates.
  *
+ * Link-only forms (schema "unlisted": true) are never listed under "More from DCW".
+ * Applications the member has saved as a Draft (still to be finished, or sent back) are listed under
+ * "Requires your attention", with a button that emails them a fresh resume link. Applications in any
+ * other status reach the applicant by email, so they are not repeated here.
+ *
  * Shared look comes from /assets/css/engage.css. Certificate rows, buttons and icons come from
  * includes/cert_rows.php. The <style> block below only adds what the dashboard needs, scoped under .dash.
  */
@@ -38,6 +43,36 @@ const DASH_CERT_PREVIEW = 5;   // how many certificates the dashboard shows
 $email        = strtolower((string) ($member['email'] ?? ''));
 $fullName     = trim((string) ($member['full_name'] ?? ''));
 $firstName    = $fullName !== '' ? explode(' ', $fullName)[0] : (string) $member['member_id'];
+
+// ---- Draft applications waiting for the member -------------------------------------------------
+// Drafts on forms that are still open. Read first so the "send resume link" POST below can only
+// ever act on one of the member's own drafts.
+$drafts = [];
+try { $drafts = (new FormModel())->draftsForEmail($email); } catch (Throwable $e) { /* leave the list empty */ }
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'send_draft_link') {
+    if (!CSRF::validate($_POST['csrf_token'] ?? '')) {
+        die("Invalid CSRF token.");
+    }
+    $targetId = (int) ($_POST['application_id'] ?? 0);
+    $sent = false;
+    foreach ($drafts as $d) {
+        if ((int) $d['id'] !== $targetId) continue;
+        try {
+            require_once __DIR__ . '/../../models/ApplicationModel.php';
+            require_once __DIR__ . '/../../includes/mailer.php';
+            $token = (new ApplicationModel())->generateMagicLink($targetId, true);
+            Mailer::sendMagicLink($email, $fullName !== '' ? $fullName : 'Member', $token);
+            $sent = true;
+        } catch (Throwable $e) {
+            error_log('Engage dashboard resume link failed: ' . $e->getMessage());
+        }
+        break;
+    }
+    header('Location: /member/dashboard?draft=' . ($sent ? 'sent' : 'failed'));
+    exit;
+}
+$draftNotice = ($_GET['draft'] ?? '');
 
 // Initials for the avatar.
 $initials = '';
@@ -94,9 +129,11 @@ try {
     $reimbursementOpen = $rs && !empty($rs['is_active']);
 } catch (Throwable $e) { $reimbursementOpen = false; }
 try {
+    // Membership forms have their own tile, and link-only forms (schema "unlisted": true) are
+    // shared by link only, so neither is listed here.
     $programs = array_values(array_filter(
         (new FormModel())->getActiveForms(),
-        fn($f) => !str_starts_with((string) $f['form_type'], 'membership-')
+        fn($f) => !str_starts_with((string) $f['form_type'], 'membership-') && empty($f['unlisted'])
     ));
 } catch (Throwable $e) { $programs = []; }
 
@@ -164,6 +201,12 @@ $certBase = 'https://certificates.dcwwiki.org';
 
 // ---- One combined "requires your attention" list ---------------------------------------------------
 $alerts = [];
+// Drafts first: an application the member has started but not finished.
+foreach ($drafts as $d) {
+    $dTitle = trim((string) ($d['title'] ?? '')) !== '' ? (string) $d['title'] : ucwords(str_replace(['-', '_'], ' ', (string) $d['form_type']));
+    $alerts[] = ['who' => 'Application', 'text' => $dTitle . ': draft waiting for you to finish',
+                 'draft_id' => (int) $d['id'], 'cta' => 'Email me the link'];
+}
 foreach ($needsAction as $r) {
     $alerts[] = ['who' => $r['type'], 'text' => $r['title'] . ': ' . strtolower($r['label']),
                  'href' => member_request_url($r['tracking']), 'cta' => 'Open request'];
@@ -259,6 +302,11 @@ cert_rows_css();   // icons, buttons and certificate rows shared with /member/ce
     .d-attn-item { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; padding: 12px 18px; border-top: 1px solid #fcd34d; color: #78350f; font-size: 14.5px; }
     .d-attn-item p { margin: 0; min-width: 0; overflow-wrap: anywhere; }
     .d-attn-item strong { margin-right: 6px; }
+    .d-attn-item form { margin: 0; }
+    .d-attn-item button.d-btn { font: inherit; font-size: 13.5px; cursor: pointer; }
+
+    /* Result of "Email me the link" */
+    .d-note { margin: 0 0 20px; }
 
     /* Certificates header: title with the total, and a link to the full list */
     .c-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; }
@@ -308,6 +356,13 @@ cert_rows_css();   // icons, buttons and certificate rows shared with /member/ce
         </nav>
     </section>
 
+    <!-- Result of "Email me the link" -->
+    <?php if ($draftNotice === 'sent'): ?>
+        <div class="alert ok d-note">We have emailed a secure link to <strong><?= htmlspecialchars($email) ?></strong>. Open it to finish your application.</div>
+    <?php elseif ($draftNotice === 'failed'): ?>
+        <div class="alert error d-note">We could not send the link just now. Please try again in a moment.</div>
+    <?php endif; ?>
+
     <!-- Requires your attention -->
     <?php if (!empty($alerts)): ?>
         <section class="d-attn" role="status" aria-label="Requires your attention">
@@ -319,7 +374,16 @@ cert_rows_css();   // icons, buttons and certificate rows shared with /member/ce
             <?php foreach ($alerts as $a): ?>
                 <div class="d-attn-item">
                     <p><strong><?= htmlspecialchars((string) $a['who']) ?>:</strong><?= htmlspecialchars((string) $a['text']) ?></p>
-                    <a class="d-btn amber" href="<?= htmlspecialchars((string) $a['href']) ?>"><?= htmlspecialchars((string) $a['cta']) ?></a>
+                    <?php if (isset($a['draft_id'])): ?>
+                        <form method="POST" action="/member/dashboard">
+                            <?= CSRF::getInputField() ?>
+                            <input type="hidden" name="action" value="send_draft_link">
+                            <input type="hidden" name="application_id" value="<?= (int) $a['draft_id'] ?>">
+                            <button type="submit" class="d-btn amber"><?= htmlspecialchars((string) $a['cta']) ?></button>
+                        </form>
+                    <?php else: ?>
+                        <a class="d-btn amber" href="<?= htmlspecialchars((string) $a['href']) ?>"><?= htmlspecialchars((string) $a['cta']) ?></a>
+                    <?php endif; ?>
                 </div>
             <?php endforeach; ?>
         </section>

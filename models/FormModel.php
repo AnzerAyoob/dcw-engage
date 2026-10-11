@@ -289,6 +289,27 @@ class FormModel {
     }
 
     /**
+     * Applications this email address has saved as a Draft (not yet submitted, or sent back to the
+     * applicant) on forms that are still open. These are the only applications that need the applicant
+     * to do something, so the member dashboard lists them under "Requires your attention". Every
+     * other status (New, Under Review, Accepted, Rejected) reaches the applicant by email.
+     * A draft on a form that has since closed is left out: there is nothing the applicant can do.
+     */
+    public function draftsForEmail(string $email): array {
+        $stmt = $this->db->prepare("
+            SELECT a.id, a.tracking_id, a.created_at,
+                   f.form_type, f.is_active, f.deadline_at,
+                   JSON_UNQUOTE(JSON_EXTRACT(f.schema_json, '$.title')) AS title
+            FROM applications a
+            JOIN forms f ON f.id = a.form_id
+            WHERE LOWER(a.email) = :email AND a.status = 'Draft'
+            ORDER BY a.created_at DESC
+        ");
+        $stmt->execute(['email' => strtolower(trim($email))]);
+        return array_values(array_filter($stmt->fetchAll(), [self::class, 'isOpen']));
+    }
+
+    /**
      * Fetch a form by ID
      */
     public function getFormById($id) {
