@@ -138,7 +138,9 @@ $icons = [
 $cards = [];
 $programs = [];
 
-if ($membershipOpen) {
+// The Membership card is for people who are not signed in yet. Signed-in members already have
+// a membership, so the card is hidden from them.
+if ($membershipOpen && !$signedInMember) {
     $cards[] = [
         'tone' => 'var(--accent)', 'tag' => 'Membership', 'icon' => 'people',
         'title' => 'Become a DCW member',
