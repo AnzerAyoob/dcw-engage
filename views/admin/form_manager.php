@@ -317,6 +317,9 @@ if ($baseUrl === '') {
 }
 $publicUrl = $baseUrl . '/' . $form['form_type'];
 
+// "Link only" forms are live but not listed on the home page (schema flag "unlisted").
+$isUnlisted = !empty($form['schema']['unlisted']);
+
 engage_header([
     'title'   => $form['title'] . ' - Form Manager',
     'heading' => $form['title'],
@@ -346,6 +349,7 @@ engage_header([
         font: inherit; font-size: 12.5px; font-weight: 700; color: var(--primary); background: transparent; border: 1px solid var(--primary);
     }
     .copy-btn svg { width: 13px; height: 13px; }
+    .link-only-tag { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 700; color: #6d28d9; background: #f5f3ff; border: 1px solid #c4b5fd; }
 
     /* Deadline */
     .deadline-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px 24px; }
@@ -406,6 +410,9 @@ engage_header([
             <span>Copy link</span>
         </button>
         <span>&bull; Total responses: <strong><?= count($applications) ?></strong></span>
+        <?php if ($isUnlisted): ?>
+            <span class="link-only-tag" title="Live, but not listed on the home page. Only people with the link can find it.">Link only</span>
+        <?php endif; ?>
     </p>
     <div class="controls">
         <?php if (!$isMembershipForm): ?>
