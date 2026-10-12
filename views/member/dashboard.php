@@ -32,6 +32,9 @@ require_once __DIR__ . '/../../includes/cert_rows.php';
  * "Requires your attention", with a button that emails them a fresh resume link. Applications in any
  * other status reach the applicant by email, so they are not repeated here.
  *
+ * Header: the same slim top bar as the home page, with the shared member menu (engage_member_menu()).
+ * The intro line under the greeting is a short status built from the membership and the attention list.
+ *
  * Shared look comes from /assets/css/engage.css. Certificate rows, buttons and icons come from
  * includes/cert_rows.php. The <style> block below only adds what the dashboard needs, scoped under .dash.
  */
@@ -254,14 +257,26 @@ function dash_tile(array $icons, string $tone, string $icon, string $title, stri
 // Why a support tile is locked, if applicable.
 $lock = fn(bool $open) => !$memberActive ? 'Renew membership' : (!$open ? 'Currently closed' : '');
 
-// Same page frame as the rest of Engage.
+// ---- Intro line under the greeting: membership status, and how many things need attention -------
+$leadBits = [];
+if (count($strips) === 1) {
+    $leadBits[] = 'Membership ' . strtolower($strips[0]['label']) . ' · ' . $strips[0]['line'];
+} else {
+    $activeCount = count(array_filter($strips, fn($s) => $s['active']));
+    $leadBits[] = $activeCount . ' of ' . count($strips) . ' memberships active';
+}
+if (!empty($alerts)) {
+    $leadBits[] = count($alerts) . ' ' . (count($alerts) === 1 ? 'item needs' : 'items need') . ' your attention';
+}
+
+// Same page frame as the rest of Engage: the slim top bar with the shared member menu.
 engage_header([
     'title'   => 'My dashboard',
     'heading' => 'Hello, ' . $firstName,
-    'kicker'  => 'Member ID ' . $member['member_id'],
-    'lead'    => 'Your membership, certificates, and support, all in one place.',
+    'lead'    => implode('  ·  ', $leadBits),
+    'slim'    => true,
     'member'  => $member,
-    'tools'   => '<a class="chip-btn" href="/member/logout">Sign out</a>',
+    'tools'   => engage_member_menu($member, ['current' => '/member/dashboard']),
     'wide'    => true,
     'crumbs'  => [['Home', '/'], ['My dashboard']],
 ]);
