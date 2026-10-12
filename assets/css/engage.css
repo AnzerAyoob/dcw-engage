@@ -21,6 +21,10 @@
     --ink: #14263A;
     --muted: #5B6B7C;
     --border: #D9E3EC;
+
+    /* Top-bar logo: how far the picture is enlarged inside its circle to crop away the white margin
+       the logo file has around the seal. 1 = no crop. Raise it (1.2, 1.3) if you still see a white ring. */
+    --logo-zoom: 1.12;
 }
 * { box-sizing: border-box; }
 html { color-scheme: light; scroll-behavior: smooth; }
@@ -60,7 +64,7 @@ a:focus-visible, summary:focus-visible, button:focus-visible { outline: 3px soli
    pill. The hero lets its menus overflow, and the top bar sits above the cards that overlap the hero. */
 .hero.slim { padding: 20px 22px 92px; text-align: left; overflow: visible; }
 .hero.slim .topbar { position: relative; z-index: 30; max-width: 1016px; margin-bottom: 30px; }
-.hero.slim .topbar .brand { font-size: 17px; letter-spacing: -.01em; }
+.hero.slim .topbar .brand { font-size: 18px; letter-spacing: -.01em; }
 .hero.slim .hero-copy { max-width: 1016px; margin: 0 auto; }
 .hero.slim h1 { margin: 0 0 8px; font-size: clamp(28px, 4.4vw, 40px); letter-spacing: -.8px; }
 .hero.slim .lead { max-width: 640px; margin: 0; font-size: clamp(15px, 1.9vw, 17px); }
@@ -78,7 +82,7 @@ a:focus-visible, summary:focus-visible, button:focus-visible { outline: 3px soli
         linear-gradient(135deg, var(--primary-dark) 0%, var(--primary) 60%, var(--primary-light) 100%);
 }
 
-/* Lead link under the headline (guests): "Already applied? Track your application" */
+/* Lead link under the headline: kept for any page that wants one ("Already applied? Track your application") */
 .hero .lead-link { margin: 12px 0 0; font-size: 14.5px; }
 .hero .lead-link a {
     color: #fff; font-weight: 600; text-decoration: underline; text-underline-offset: 3px;
@@ -97,7 +101,7 @@ a:focus-visible, summary:focus-visible, button:focus-visible { outline: 3px soli
 .hero-back { display: inline-block; margin: 0 0 10px; font-size: 13.5px; font-weight: 600; color: rgba(255,255,255,.85); text-decoration: none; }
 .hero-back:hover { color: #fff; text-decoration: underline; }
 
-/* Compact band (member pages, home for signed-in members) and bare band (dashboard: top bar only) */
+/* Compact band (member pages) and bare band (dashboard: top bar only, a card overlaps its edge) */
 .hero.compact, .hero.bare { padding: 14px 22px 56px; }
 .hero.compact .topbar { margin-bottom: 18px; }
 .hero.bare .topbar { margin-bottom: 0; }
@@ -105,13 +109,29 @@ a:focus-visible, summary:focus-visible, button:focus-visible { outline: 3px soli
 .hero.compact .lead { font-size: 14.5px; }
 .hero.compact + .cards-wrap, .hero.bare + .cards-wrap { margin-top: -40px; }
 
+/* Flat band (the signed-in member's home page): the top bar only, and the page starts below it with no
+   overlap, so the greeting and every heading are ordinary dark/grey text on the light page. */
+.hero.flat { padding: 14px 22px 18px; }
+.hero.flat .topbar { margin-bottom: 0; }
+.hero.flat + .cards-wrap { margin-top: 0; padding-top: 26px; }
+
+/* Greeting at the top of the member's home page */
+.greet { margin: 0 0 6px; }
+.greet h1 { margin: 0; font-size: clamp(22px, 3.4vw, 28px); font-weight: 800; letter-spacing: -.02em; line-height: 1.25; color: var(--ink); overflow-wrap: anywhere; }
+.greet p { margin: 2px 0 0; font-size: 14.5px; color: var(--muted); }
+
 /* Top bar inside the hero */
 .topbar {
     max-width: 1060px; margin: 0 auto 26px; display: flex; flex-wrap: wrap;
     align-items: center; justify-content: space-between; gap: 12px; text-align: left;
 }
-.topbar .brand { display: inline-flex; align-items: center; gap: 10px; font-weight: 700; color: #fff; text-decoration: none; }
-.topbar .brand img { width: 34px; height: 34px; padding: 4px; background: #fff; border-radius: 50%; object-fit: contain; }
+.topbar .brand { display: inline-flex; align-items: center; gap: 12px; font-weight: 800; color: #fff; text-decoration: none; }
+/* The logo fills its circle edge to edge: no white ring around the seal */
+.topbar .brand-logo {
+    flex: none; width: 40px; height: 40px; border-radius: 50%; overflow: hidden; background: #fff;
+    box-shadow: 0 0 0 2px rgba(255,255,255,.4);
+}
+.topbar .brand-logo img { display: block; width: 100%; height: 100%; object-fit: cover; transform: scale(var(--logo-zoom, 1.12)); }
 .topbar .tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; margin-left: auto; font-size: 14px; }
 .topbar form { margin: 0; }
 .who { color: rgba(255,255,255,.85); margin-right: 4px; }
@@ -126,7 +146,7 @@ a:focus-visible, summary:focus-visible, button:focus-visible { outline: 3px soli
 .chip-btn.solid { background: #fff; color: var(--primary-dark); border-color: #fff; }
 .chip-btn.solid:hover { background: rgba(255,255,255,.86); }
 
-/* ---------- Top bar menus: "About DCW" and the member menu ---------- */
+/* ---------- Top bar menus: the old "About DCW" dropdown (kept for older pages) and the menus ---------- */
 .topbar .about { position: relative; margin: 0 auto 0 14px; }
 .topbar .about summary { list-style: none; cursor: pointer; }
 .topbar .about summary::-webkit-details-marker { display: none; }
@@ -143,13 +163,12 @@ a:focus-visible, summary:focus-visible, button:focus-visible { outline: 3px soli
 .topbar .about .about-menu a:hover { background: var(--primary-tint); color: var(--primary-dark); }
 .topbar .about .about-menu a.ext span { color: var(--muted); }
 .topbar .about .about-sep { height: 1px; margin: 5px 6px; background: var(--border); }
-/* On the home page, "About DCW" is a quiet text button beside the brand rather than a pill */
 .hero.slim .topbar .about { margin-left: 6px; }
 .hero.slim .topbar .about summary { background: transparent; border-color: transparent; padding: 7px 12px; }
 .hero.slim .topbar .about summary:hover,
 .hero.slim .topbar .about[open] summary { background: rgba(255,255,255,.16); color: #fff; }
 
-/* Member menu (home page, signed in): avatar + three lines, which turn into a cross while open */
+/* Menus: the member menu is avatar + three lines; the guest menu is three lines. The lines turn into a cross while open. */
 .mnav { display: flex; justify-content: flex-end; }
 .mmenu { position: relative; }
 .mmenu > summary { list-style: none; cursor: pointer; }
@@ -177,6 +196,7 @@ a:focus-visible, summary:focus-visible, button:focus-visible { outline: 3px soli
 .mpop {
     position: absolute; right: 0; top: calc(100% + 10px); z-index: 40;
     width: 270px; max-width: calc(100vw - 36px); padding: 8px;
+    max-height: calc(100vh - 110px); overflow-y: auto;      /* a long menu scrolls on short phones */
     background: var(--card); color: var(--ink); border: 1px solid var(--border); border-radius: 16px;
     box-shadow: 0 18px 40px rgba(15,23,42,.22);
 }
@@ -193,7 +213,7 @@ a:focus-visible, summary:focus-visible, button:focus-visible { outline: 3px soli
 .mpop .msep { height: 1px; margin: 6px 4px; background: var(--border); }
 .mpop a.cur { background: var(--primary-tint); color: var(--primary-dark); }
 .mpop .mlabel { padding: 6px 12px 2px; font-size: 11.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
-.mpop a.xs-only { display: none; }                 /* "Join DCW", shown only on very small phones (see the 420px block) */
+.mpop a.xs-only { display: none; }                 /* "Join DCW", shown only on small phones (see the 480px block) */
 
 /* Content overlaps the hero's lower edge */
 .cards-wrap { margin-top: -62px; position: relative; }
@@ -290,7 +310,7 @@ a:focus-visible, summary:focus-visible, button:focus-visible { outline: 3px soli
     margin: 30px 0 16px; text-align: center; font-size: 13px; letter-spacing: .12em;
     text-transform: uppercase; color: var(--muted); font-weight: 700;
 }
-/* With nothing above it, the heading sits on the blue hero edge */
+/* With nothing above it, the heading sits on the blue hero edge (guests only: members get a flat band) */
 .section-title.first { margin-top: 0; color: #fff; }
 
 /* ---------- Sign-in card ---------- */
@@ -560,11 +580,14 @@ fieldset.group legend { padding: 0 8px; font-weight: 700; font-size: 14px; color
 .crumbs .here { font-weight: 700; color: #fff; }
 
 /* ======================================================================
-   Home page sections (stats, help strip, photo strip, empty state).
+   Home page sections (stats line, photo strip, empty state).
    They live here so the home page needs no styles of its own.
    ====================================================================== */
 
-.stats-line { margin: 36px 0 4px; text-align: center; font-size: 14.5px; color: var(--muted); }.stats-line strong { color: var(--leaf-dark); font-weight: 800; font-size: 16px; font-variant-numeric: tabular-nums; }.stats-line span { margin: 0 .6em; opacity: .5; }
+/* Member numbers: one quiet line under the cards */
+.stats-line { margin: 36px 0 4px; text-align: center; font-size: 14.5px; color: var(--muted); }
+.stats-line strong { color: var(--leaf-dark); font-weight: 800; font-size: 16px; font-variant-numeric: tabular-nums; }
+.stats-line span { margin: 0 .6em; opacity: .5; }
 
 /* Help strip: kept for any page that still uses it (the home page no longer shows a Track card) */
 .helpbar { display: flex; flex-wrap: wrap; justify-content: center; gap: 16px; margin-top: 26px; }
@@ -618,18 +641,19 @@ a.help-item:hover { transform: translateY(-3px); box-shadow: 0 12px 26px rgba(15
 
 /* ----------------------------------------------------------------------
    "Selected reflections" card (home page, DCW@5).
-   One reflection is visible at a time; the others fade in, one by one.
+   One reflection is visible at a time; the old one fades out, then the next fades in.
    Compact white card with the logo's three colours as a thin top edge
    (blue, green, crimson), a pill label, and a green rule beside the quote.
+   Underneath: previous / next buttons and a "2 / 14" counter.
    Uses the tokens at the top of this file, so it follows any palette change.
    The Lora font is loaded by views/home.php.
    On its own row it is a centred 760px column; beside one or two programs it
    fills the rest of the row (see .grid--beside above).
    ---------------------------------------------------------------------- */
 .reflect {
-    position: relative; overflow: hidden; display: flex; flex-direction: column; gap: .8rem;
+    position: relative; overflow: hidden; display: flex; flex-direction: column; gap: .6rem;
     flex: 0 1 760px; width: min(100%, 760px); margin: 0 auto;   /* one centred column, like the program cards */
-    padding: 24px 28px 16px; border-radius: 18px; color: var(--ink);
+    padding: 20px 24px 14px; border-radius: 18px; color: var(--ink);
     background:
         radial-gradient(90% 120% at 100% 0%, color-mix(in srgb, var(--primary) 9%, transparent) 0, transparent 60%),
         radial-gradient(80% 100% at 0% 100%, color-mix(in srgb, var(--leaf) 11%, transparent) 0, transparent 60%),
@@ -656,16 +680,22 @@ a.help-item:hover { transform: translateY(-3px); box-shadow: 0 12px 26px rgba(15
     background: var(--leaf); vertical-align: middle;
 }
 
-/* Every reflection sits in the same grid cell, so the card never changes height as they fade.
-   The stage grows to fill the card, which keeps the dots at the bottom when the card is stretched
-   to match a taller program card beside it. */
-.rq-stage { position: relative; display: grid; flex: 1; }
+/* Every reflection sits in the same grid cell, so the card never changes height as they change.
+   The stage grows to fill the card, which keeps the buttons at the bottom when the card is stretched
+   to match the event card beside it. The quote starts at the top of the stage. */
+.rq-stage { position: relative; display: grid; flex: 1; align-content: start; }
 .rq {
-    grid-area: 1 / 1; margin: 0; display: flex; flex-direction: column; justify-content: center; gap: 1rem;
-    opacity: 0; visibility: hidden; transform: translateY(8px);
-    transition: opacity 1s ease, transform 1s ease, visibility 1s;
+    grid-area: 1 / 1; margin: 0; display: flex; flex-direction: column; justify-content: flex-start; gap: .8rem;
+    padding-top: 10px;
+    opacity: 0; visibility: hidden; transform: translateY(6px);
+    /* Leaving: fade out at once, then hide. Arriving (.on below): wait for the old one to finish first,
+       so two quotes are never readable on top of each other. */
+    transition: opacity .45s ease, transform .45s ease, visibility 0s linear .45s;
 }
-.rq.on { opacity: 1; visibility: visible; transform: none; }
+.rq.on {
+    opacity: 1; visibility: visible; transform: none;
+    transition: opacity .45s ease .45s, transform .45s ease .45s, visibility 0s linear 0s;
+}
 
 /* Reflection text: upright serif at a calm size, with a green rule on its left edge.
    To match the rest of the page instead, use font-family: 'Inter', -apple-system, sans-serif here. */
@@ -695,13 +725,15 @@ a.help-item:hover { transform: translateY(-3px); box-shadow: 0 12px 26px rgba(15
     display: flex; align-items: center; justify-content: space-between; padding-top: 10px;
     border-top: 1px solid color-mix(in srgb, var(--primary) 14%, transparent);
 }
-.rq-dots { display: inline-flex; flex-wrap: wrap; gap: 6px; }
-.rq-dot {
-    width: 7px; height: 7px; padding: 0; border: 0; border-radius: 50%; cursor: pointer;
-    background: color-mix(in srgb, var(--primary) 25%, transparent); transition: background .4s ease, transform .4s ease;
+.rq-nav { display: inline-flex; align-items: center; gap: 10px; }
+.rq-btn {
+    width: 34px; height: 34px; padding: 0; display: grid; place-items: center;
+    border: 1px solid var(--border); border-radius: 50%; background: #fff;
+    color: var(--primary-dark); font-size: 21px; line-height: 1; cursor: pointer;
+    transition: background .15s, border-color .15s;
 }
-.rq-dot:hover { background: color-mix(in srgb, var(--primary) 45%, transparent); }
-.rq-dot.on { background: var(--leaf-dark); transform: scale(1.4); }
+.rq-btn:hover { background: var(--primary-tint); border-color: var(--primary); }
+.rq-count { min-width: 3.6em; text-align: center; font-size: 13px; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
 
 /* ----------------------------------------------------------------------
    "Upcoming Events" from dcwwiki.org (home page).
@@ -710,7 +742,7 @@ a.help-item:hover { transform: translateY(-3px); box-shadow: 0 12px 26px rgba(15
    between the crimson Membership banner and the white reflection card.
    Markup: built by $eventCard in views/home.php.
    - On its own:  section.events > .grid > a.evt
-   - Beside the reflection card:  .duo > h2.duo-title + .evt-col > a.evt + .reflect
+   - Beside the reflection card:  .duo > h2.t-events + .evt-col > a.evt + h2.t-refl + .reflect
    ---------------------------------------------------------------------- */
 .events { width: 100%; margin: 0 auto 12px; }
 
@@ -762,11 +794,17 @@ a.help-item:hover { transform: translateY(-3px); box-shadow: 0 12px 26px rgba(15
 .evt-range { font-size: 13px; font-weight: 600; color: rgba(255,255,255,.88); }
 
 /* Events and the reflection card side by side (home page, when both exist).
-   The heading is the first grid row and spans the whole row, so it is centred over both cards like
-   every other section heading; both cards start on row 2 and are the same height. A single event
-   stretches to match the reflection card. */
-.duo { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); gap: 20px; align-items: stretch; padding-bottom: 12px; }
-.duo .duo-title { grid-row: 1; margin: 30px 0 0; }.duo .duo-title.first { margin-top: 0; }.duo .t-events { grid-column: 1; }.duo .t-refl   { grid-column: 2; }
+   Each column has its own heading in row 1, left-aligned over its card; both cards sit in row 2 and are
+   the same height (the event column stretches, and a single event card grows to fill it, with its time
+   pill at the bottom). */
+.duo { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); gap: 0 20px; align-items: stretch; padding-bottom: 12px; }
+.duo .duo-title { grid-row: 1; margin: 30px 0 14px; text-align: left; }
+.duo .duo-title.first { margin-top: 0; }
+.duo .t-events { grid-column: 1; }
+.duo .t-refl   { grid-column: 2; }
+.duo .evt-col { grid-column: 1; grid-row: 2; display: flex; flex-direction: column; gap: 16px; }
+.duo .evt-col .evt { flex: 1; }
+.duo .reflect { grid-column: 2; grid-row: 2; width: auto; max-width: none; flex: none; margin: 0; }
 
 /* ---------- Responsive ---------- */
 /* Programs + reflection on one row: step down as the screen narrows. */
@@ -788,11 +826,10 @@ a.help-item:hover { transform: translateY(-3px); box-shadow: 0 12px 26px rgba(15
     .hero, .hero.slim { padding: 28px 18px 96px; }
     .topbar { justify-content: center; text-align: center; }
     .topbar .tools { justify-content: center; margin-left: 0; }
-    /* Home page: keep the bar on one line (logo on the left, sign-in or menu on the right) */
+    /* Home page: keep the bar on one line (logo and name on the left, sign-in or menu on the right) */
     .hero.slim { padding: 16px 18px 88px; }
     .hero.slim .topbar { justify-content: space-between; text-align: left; flex-wrap: nowrap; gap: 8px; margin-bottom: 24px; }
     .hero.slim .topbar .tools { justify-content: flex-end; margin-left: auto; flex-wrap: nowrap; }
-    .hero.slim .topbar .bname { display: none; }
     .prog, .prog.featured { max-width: none; flex-basis: 100%; }
 
     /* Membership banner on phones: shorter. Icon and label share a row, and the button spans the card. */
@@ -817,25 +854,32 @@ a.help-item:hover { transform: translateY(-3px); box-shadow: 0 12px 26px rgba(15
     .gallery img { height: 165px; }
     .req { grid-template-columns: 42px 1fr; }
     .req .side { grid-column: 1 / -1; flex-direction: row; justify-content: space-between; align-items: center; }
-    .reflect { padding: 22px 18px 14px; }
+    .reflect { padding: 20px 18px 12px; }
     .reflect .rq-mark { font-size: 4.5rem; right: .9rem; }
     .rq blockquote { padding-left: 12px; }
+    .rq-btn { width: 40px; height: 40px; }
     .events .grid { grid-template-columns: 1fr; }
     .evt { padding: 18px; }
     .evt-date .d { font-size: 34px; }
     .evt-body h3 { font-size: 19px; }
 
-    /* Shorter band, smaller title (these come last so they win over the rules above) */
+    /* Bands: shorter and smaller (these come last in this block so they win over the rules above) */
     .hero.slim { padding-bottom: 76px; }
     .hero.slim h1 { font-size: 26px; }
     .hero.slim .lead { font-size: 14.5px; }
     .hero.compact, .hero.bare { padding: 12px 18px 52px; }
     .hero.compact h1 { font-size: 22px; }
+    .hero.flat { padding: 12px 18px 14px; }
+    .hero.flat .topbar, .hero.bare .topbar { margin-bottom: 0; }
 }
-@media (max-width: 420px) {
-    /* Very small phones: the "Join" shortcut leaves the bar and appears at the top of the menu instead */
+@media (max-width: 480px) {
+    /* Small phones: the "Join" shortcut leaves the bar and appears at the top of the menu instead */
     .hero.slim .chip-btn.solid { display: none; }
     .mpop a.xs-only { display: block; }
+}
+@media (max-width: 400px) {
+    /* Very small phones: the name next to the logo makes way for the buttons */
+    .topbar .bname { display: none; }
 }
 
 /* Reduced motion: no transitions. The photo strip becomes a normal swipeable row, without the repeat. */
