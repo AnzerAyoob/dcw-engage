@@ -27,42 +27,63 @@ function engage_asset(string $path): string {
  * Options:
  *   title    <title> text (" - DCW Engage" is added)
  *   heading  big heading in the hero (defaults to title)
- *   kicker   small pill above the heading (not shown on the home page)
- *   lead     optional sentence under the heading
+ *   kicker   small pill above the heading (not shown on slim pages)
+ *   lead     optional sentence under the heading (plain text)
+ *   lead_html optional trusted, already-escaped HTML shown under the lead (for example a link)
  *   member   MemberSession::current() row, or null
  *   tools    raw, already-escaped HTML for the top-bar buttons (overrides the member links)
  *   wide     true for wide layouts (finance queue and tables)
- *   home     true for the public home page: a slim hero with a left-aligned heading and lead, the
- *            brand and "About DCW" at the left of the top bar, 'tools' at the right, no big logo,
- *            no kicker pill, and no breadcrumbs unless 'crumbs' is given
- *   slim     true for any other page that should use the same slim top bar as the home page (brand and
- *            "About DCW" at the left, 'tools' at the right) with a left-aligned heading and lead, no
- *            kicker pill, and the breadcrumb trail kept. 'home' implies it.
+ *   home     true for the public home page: a slim hero with a left-aligned heading and lead, no big
+ *            logo, no kicker pill, and no breadcrumbs unless 'crumbs' is given
+ *   slim     true for any other page that should use the same slim top bar as the home page
+ *            with a left-aligned heading and lead, no kicker pill, and the breadcrumb trail kept.
+ *            'home' implies it.
+ *   compact  true for a shorter band (member pages, and the home page for signed-in members). Implies
+ *            'slim', and the breadcrumb trail is off unless 'crumbs' is given.
+ *   bare     true for a band with only the top bar: no heading, no lead, no trail (the dashboard).
+ *            Implies 'compact'.
+ *   back     [label, href] a single quiet "← label" link above the heading (replaces the breadcrumb
+ *            pills on member pages), e.g. ['Dashboard', '/member/dashboard'].
  *   crumbs   breadcrumb trail, e.g. [['Home','/'],['Support','/support'],['Reimbursement']].
  *            The last item is the current page (no link). A "Back" button pointing to the
  *            nearest linked crumb is added automatically. Defaults to Home > heading
- *            (or no trail at all when 'home' is true). Pass [] to hide the trail.
+ *            (or no trail at all when 'home', 'compact' or 'bare' is true). Pass [] to hide the trail.
  *   description  social preview text (optional; a default is used)
  *   image        social preview image: a Commons file name or link, any URL, or a path (optional;
  *                the default Commons photo in includes/social_meta.php is used)
  *   image_alt    alt text for the preview image (defaults to the heading)
+ *
+ * Top bar: the brand sits alone on the left. On the right, a signed-in member gets the avatar menu
+ * (engage_member_menu(), which also holds the About DCW links). Everyone else gets whatever 'tools'
+ * holds plus a small menu button (engage_guest_menu()) with Track application and About DCW.
  */
 function engage_header(array $o) {
-    $title   = $o['title'];
-    $heading = $o['heading'] ?? $title;
-    $kicker  = $o['kicker'] ?? 'Deoband Community Wikimedia';
-    $lead    = $o['lead'] ?? '';
-    $member  = $o['member'] ?? null;
-    $tools   = $o['tools'] ?? null;
-    $wide    = !empty($o['wide']);
-    $home    = !empty($o['home']);
-    $slim    = $home || !empty($o['slim']);
-    $crumbs  = $o['crumbs'] ?? ($home ? [] : [['Home', '/'], [$heading]]);
+    $title    = $o['title'];
+    $heading  = $o['heading'] ?? $title;
+    $kicker   = $o['kicker'] ?? 'Deoband Community Wikimedia';
+    $lead     = $o['lead'] ?? '';
+    $leadHtml = (string) ($o['lead_html'] ?? '');
+    $member   = $o['member'] ?? null;
+    $tools    = $o['tools'] ?? null;
+    $wide     = !empty($o['wide']);
+    $home     = !empty($o['home']);
+    $bare     = !empty($o['bare']);
+    $compact  = $bare || !empty($o['compact']);
+    $slim     = $home || $compact || !empty($o['slim']);
+    $back     = (isset($o['back']) && is_array($o['back']) && !empty($o['back'][0]) && !empty($o['back'][1])) ? $o['back'] : null;
+    $crumbs   = $bare ? [] : ($o['crumbs'] ?? (($home || $compact) ? [] : [['Home', '/'], [$heading]]));
     $backHref = null; $backLabel = null;
     foreach ($crumbs as $c) { if (!empty($c[1])) { $backHref = $c[1]; $backLabel = $c[0]; } }
     $e = fn($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
-    // Public pages get an "About DCW" menu; staff pages (/admin, /finance) do not need it.
+
+    // Public pages get the About DCW links (inside the menu); staff pages (/admin, /finance) do not need them.
     $about = engage_is_staff_path() ? [] : engage_about_links(true);
+    // A page that already passes the member menu has the About links inside it. Everyone else gets the small menu.
+    $hasMemberMenu = $tools !== null && strpos((string) $tools, 'mmenu') !== false;
+    $showGuestMenu = !$hasMemberMenu && !empty($about);
+    $joinInMenu    = $tools !== null && strpos((string) $tools, '/membership') !== false;
+
+    $heroClass = 'hero' . ($slim ? ' slim' : '') . ($home ? ' home' : '') . ($compact ? ' compact' : '') . ($bare ? ' bare' : '');
     ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -83,10 +104,9 @@ function engage_header(array $o) {
     <link rel="stylesheet" href="<?= $e(engage_asset('/assets/css/engage.css')) ?>">
 </head>
 <body>
-<header class="hero<?= $slim ? ' slim' : '' ?><?= $home ? ' home' : '' ?>">
+<header class="<?= $e($heroClass) ?>">
     <div class="topbar">
         <a class="brand" href="/"><img src="https://dcwwiki.org/dcwwiki/images/5/56/DCW_logo.png" alt=""><span class="bname">DCW Engage</span></a>
-        <?php engage_about_menu($about); ?>
         <div class="tools">
             <?php if ($tools !== null): ?>
                 <?= $tools ?>
@@ -97,6 +117,7 @@ function engage_header(array $o) {
             <?php else: ?>
                 <a class="chip-btn" href="/">All programs</a>
             <?php endif; ?>
+            <?php if ($showGuestMenu) echo engage_guest_menu($about, $joinInMenu); ?>
         </div>
     </div>
     <?php if ($crumbs): ?>
@@ -112,11 +133,15 @@ function engage_header(array $o) {
         <?php endforeach; ?>
     </nav>
     <?php endif; ?>
-    <?php if ($slim): ?><div class="hero-copy"><?php endif; ?>
-    <?php if (!$slim): ?><p class="kicker"><?= $e($kicker) ?></p><?php endif; ?>
-    <h1><?= $e($heading) ?></h1>
-    <?php if ($lead): ?><p class="lead"><?= $e($lead) ?></p><?php endif; ?>
-    <?php if ($slim): ?></div><?php endif; ?>
+    <?php if (!$bare): ?>
+        <?php if ($slim): ?><div class="hero-copy"><?php endif; ?>
+        <?php if ($back): ?><a class="hero-back" href="<?= $e($back[1]) ?>">&larr; <?= $e($back[0]) ?></a><?php endif; ?>
+        <?php if (!$slim): ?><p class="kicker"><?= $e($kicker) ?></p><?php endif; ?>
+        <h1><?= $e($heading) ?></h1>
+        <?php if ($lead): ?><p class="lead"><?= $e($lead) ?></p><?php endif; ?>
+        <?php if ($leadHtml !== ''): ?><?= $leadHtml ?><?php endif; ?>
+        <?php if ($slim): ?></div><?php endif; ?>
+    <?php endif; ?>
 </header>
 <main class="wrap cards-wrap<?= $wide ? ' wide' : '' ?>">
 <?php
@@ -191,10 +216,36 @@ function engage_about_links(bool $withContact = false): array {
 }
 
 /**
- * Renders the "About DCW" dropdown inside the hero top bar.
- * Used by engage_header(). Prints nothing when $about is empty.
- * Its styles live in assets/css/engage.css (section: Top bar menus).
- * The link to the main website is set apart by a thin rule and marked with an arrow.
+ * The small menu for visitors who are not signed in: three lines on the right of the top bar, opening a
+ * panel with Track application and the About DCW links. Sign in and Join stay visible beside it.
+ * On very small phones the "Join" button is hidden from the bar (see engage.css), so when the page
+ * shows one ($withJoin) the same link appears at the top of this menu on those screens only.
+ * Returns HTML (already escaped). The open/close behaviour comes from the script in engage_footer().
+ */
+function engage_guest_menu(array $about, bool $withJoin = false): string {
+    $e = fn($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
+    ob_start(); ?>
+    <nav class="mnav" aria-label="Site menu">
+        <details class="mmenu burger plain">
+            <summary aria-label="Open menu"><span class="bars" aria-hidden="true"><i></i><i></i><i></i></span></summary>
+            <div class="mpop">
+                <?php if ($withJoin): ?><a class="xs-only" href="/membership">Join DCW</a><?php endif; ?>
+                <a href="/track">Track application</a>
+                <div class="msep"></div>
+                <div class="mlabel">About DCW</div>
+                <?php foreach ($about as [$name, $href]): ?>
+                    <a href="<?= $e($href) ?>" rel="noopener"><?= $e($name) ?></a>
+                <?php endforeach; ?>
+            </div>
+        </details>
+    </nav>
+    <?php
+    return ob_get_clean();
+}
+
+/**
+ * Kept for older pages that may still call it. The header no longer uses it: the About DCW links now
+ * live inside the top-bar menus (engage_guest_menu() and engage_member_menu()).
  */
 function engage_about_menu(array $about): void {
     if (!$about) return;
@@ -217,7 +268,8 @@ function engage_about_menu(array $about): void {
 /**
  * The signed-in member's menu for the top bar: avatar plus three lines, opening a panel.
  * Pass the result as the 'tools' option of engage_header() on any member page, so every member page
- * has the same navigation. Returns HTML (already escaped).
+ * has the same navigation. Returns HTML (already escaped). It also holds the About DCW links, so
+ * members do not need a separate About button in the bar.
  *
  *   $member   MemberSession::current() row
  *   $o['home']      true on the home page: "Programs" and "Events" jump links replace the "Home" link
@@ -274,6 +326,15 @@ function engage_member_menu(array $member, array $o = []): string {
                 <?= $link('Support', '/member/support') ?>
                 <?= $link('Talk to DCW Support', '/member/talk') ?>
                 <?= $link('Report a problem', '/member/report-problem') ?>
+
+                <?php $aboutLinks = engage_about_links(true); ?>
+                <?php if ($aboutLinks): ?>
+                    <div class="msep"></div>
+                    <div class="mlabel">About DCW</div>
+                    <?php foreach ($aboutLinks as [$name, $href]): ?>
+                        <a href="<?= $e($href) ?>" rel="noopener"><?= $e($name) ?></a>
+                    <?php endforeach; ?>
+                <?php endif; ?>
 
                 <div class="msep"></div>
                 <?= $link('Sign out', '/member/logout', 'out') ?>
@@ -444,7 +505,7 @@ function engage_footer() {
 </footer>
 <?php endif; ?>
 <script>
-    // Top-bar menus (About DCW, and the member menu): close on a click outside, on Esc, or after
+    // Top-bar menus (the site menu and the member menu): close on a click outside, on Esc, or after
     // choosing a link; opening one closes the other.
     (function () {
         var menus = document.querySelectorAll('.topbar details');
