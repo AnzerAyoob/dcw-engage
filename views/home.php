@@ -2,8 +2,6 @@
 require_once __DIR__ . '/../includes/wikitext.php';
 require_once __DIR__ . '/../includes/engage_page.php';
 require_once __DIR__ . '/../models/FormModel.php';
-require_once __DIR__ . '/../models/InternetSupportModel.php';
-require_once __DIR__ . '/../models/ReimbursementSettingsModel.php';
 require_once __DIR__ . '/../includes/member_session.php';
 require_once __DIR__ . '/../includes/member_stats.php';
 require_once __DIR__ . '/../includes/dcw_events.php';
@@ -25,31 +23,16 @@ $activeForms = array_values(array_filter($activeForms, fn($f) => !$isMembershipF
 // getActiveForms() returns this as the `unlisted` column.
 $activeForms = array_values(array_filter($activeForms, fn($f) => empty($f['unlisted'])));
 
-// Show the internet support card only while the programme is switched on
-// (internet_settings.is_active). Guarded so the public landing page can
-// never break, for example before internet_support.sql has been run.
-try {
-    $internetOpen = (new InternetSupportModel())->isOpen();
-} catch (Throwable $e) {
-    $internetOpen = false;
-}
-
-// Same for reimbursements: listed only while the global form is switched on
-// (reimbursement_settings.is_active), the same switch /reimbursement checks.
-try {
-    $reimbursementSettings = (new ReimbursementSettingsModel())->get();
-    $reimbursementOpen = $reimbursementSettings && !empty($reimbursementSettings['is_active']);
-} catch (Throwable $e) {
-    $reimbursementOpen = false;
-}
-
-// Support is for signed-in members. Is one signed in? Guarded so the public landing page can
-// never break, for example before sql/member_login.sql has been run.
+// Is a member signed in? Guarded so the public landing page can never break, for example
+// before sql/member_login.sql has been run.
 try {
     $signedInMember = MemberSession::current();
 } catch (Throwable $e) {
     $signedInMember = null;
 }
+
+// Support is a members-only service. It is listed in the member menu for every signed-in member (the
+// support page itself explains any lock) and is not shown to guests anywhere on this page.
 
 // Member numbers for the "Member Statistics" panel. PEOPLE ARE COUNTED BY MEMBER ID: one ID is one
 // person, even when it covers several clubs (see includes/member_stats.php). Never throws; if the
@@ -245,14 +228,52 @@ $eventCard = function (array $ev): string {
     return ob_get_clean();
 };
 
+// ---- Header content, built from the data above --------------------------------------------
+// Everyone gets the same slim top bar. Only the right-hand side and the intro line differ:
+//   guests:  "Member sign in" and (while membership is open) a small "Join" shortcut
+//   members: an avatar + three-line menu holding every member link, and a personal greeting
+$h = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
+
+if ($signedInMember) {
+    $display  = trim((string) ($signedInMember['full_name'] ?? '')) ?: (string) ($signedInMember['member_id'] ?? '');
+    $first    = explode(' ', $display)[0];
+
+    // Greeting plus one live status line, built from data this page already has.
+    $heroHeading = 'Welcome back, ' . $first;
+    $bits = [];
+    if (count($programs) > 0) {
+        $bits[] = count($programs) . ' open ' . (count($programs) === 1 ? 'program' : 'programs');
+    }
+    if (!empty($events)) {
+        $e0 = $events[0];
+        $bits[] = 'Next event: ' . $e0['wday'] . ' ' . $e0['day'] . ' ' . $e0['month']
+                . ', ' . mb_strimwidth((string) $e0['title'], 0, 60, '…');
+    }
+    $heroLead = $bits ? implode('  ·  ', $bits) : 'Nothing is open right now. Please check back soon.';
+
+    // The shared member menu (includes/engage_page.php), the same one every member page uses.
+    $headerTools = engage_member_menu($signedInMember, [
+        'home'     => true,
+        'programs' => !empty($programs),
+        'events'   => !empty($events),
+    ]);
+} else {
+    $heroHeading = 'DCW Engage';
+    $heroLead    = 'Scholarships, fellowships, volunteering and membership. Apply, join or renew, and track your requests in one place.';
+
+    $headerTools = '<a class="chip-btn" href="/member/login?next=%2Fmember%2Fdashboard">Member sign in</a>';
+    if ($membershipOpen) {
+        $headerTools .= '<a class="chip-btn solid" href="/membership">Join</a>';
+    }
+}
+
 engage_header([
     'title'       => 'Deoband Community Wikimedia',
-    'heading'     => 'DCW Engage',
-    'lead'        => 'One home for our applications and forms — scholarships, fellowships, volunteering, membership and more. Pick one below to get started.',
+    'heading'     => $heroHeading,
+    'lead'        => $heroLead,
     'home'        => true,
-    'member'      => $signedInMember,
-    // Signed in: the header's own "name / My dashboard / Sign out" links. Signed out: one sign-in button.
-    'tools'       => $signedInMember ? null : '<a class="chip-btn" href="/member/login?next=%2Fmember%2Fdashboard">Member sign in</a>',
+    'member'      => null,           // the header's own name / dashboard / sign-out row is replaced by 'tools'
+    'tools'       => $headerTools,
     'description' => 'Scholarships, fellowships, volunteering, membership and more from Deoband Community Wikimedia.',
     'image'       => 'Group photo from DCW 5th Anniversary.jpg',   // Commons file name; change to any other photo
     'image_alt'   => 'Group photo from the DCW 5th Anniversary',
@@ -284,12 +305,12 @@ engage_header([
         <?php if (!empty($programs)): ?>
             <?php $titleClass = 'section-title' . (empty($cards) ? ' first' : ''); ?>
             <?php if (!$beside): ?>
-                <h2 class="<?= $titleClass ?>">Open programs</h2>
+                <h2 id="programs" class="<?= $titleClass ?>">Open programs</h2>
             <?php endif; ?>
             <div class="grid<?= $beside ? ' grid--beside n' . count($programs) : '' ?>">
                 <?php if ($beside): ?>
                     <?php /* Inside the grid, so it centres over the program cards only, not over the reflection. */ ?>
-                    <h2 class="<?= $titleClass ?> beside-title">Open programs</h2>
+                    <h2 id="programs" class="<?= $titleClass ?> beside-title">Open programs</h2>
                 <?php endif; ?>
                 <?php foreach ($programs as $p): ?>
                     <a class="prog" href="<?= htmlspecialchars($p['href']) ?>" style="--tone: <?= htmlspecialchars($p['tone']) ?>;">
@@ -311,7 +332,7 @@ engage_header([
         <?php if (!empty($events)): ?>
             <?php $evTitleClass = 'section-title' . (empty($cards) && empty($programs) ? ' first' : ''); ?>
             <?php if ($duo): ?>
-                <div class="duo">
+                <div class="duo" id="events">
                     <h2 class="<?= $evTitleClass ?> duo-title">Upcoming Events</h2>
                     <div class="evt-col">
                         <?php foreach ($events as $ev) echo $eventCard($ev); ?>
@@ -319,7 +340,7 @@ engage_header([
                     <?= $reflectionCard ?>
                 </div>
             <?php else: ?>
-                <section class="events" aria-label="Upcoming Events">
+                <section class="events" id="events" aria-label="Upcoming Events">
                     <h2 class="<?= $evTitleClass ?>">Upcoming Events</h2>
                     <div class="grid">
                         <?php foreach ($events as $ev) echo $eventCard($ev); ?>
@@ -395,7 +416,9 @@ engage_header([
             </script>
         <?php endif; ?>
 
-        <section class="helpbar" aria-label="Tracking and support">
+        <?php if (!$signedInMember): ?>
+        <?php /* Guests only. Members have "Track application" and "Support" in their menu, and support is a members-only service. */ ?>
+        <section class="helpbar" aria-label="Track an application">
             <a class="help-item" href="/track" style="--tone: var(--primary);">
                 <span class="help-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><?= $icons['search'] ?></svg></span>
                 <span class="help-text">
@@ -403,26 +426,8 @@ engage_header([
                     <span class="help-link">Track your application <span aria-hidden="true">→</span></span>
                 </span>
             </a>
-            <?php if ($reimbursementOpen || $internetOpen): ?>
-                <div class="help-item" style="--tone: var(--leaf-dark);">
-                    <span class="help-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><?= $icons['help'] ?></svg></span>
-                    <span class="help-text">
-                        <strong>Looking for support?</strong>
-                        <span class="help-chips">
-                            <?php if ($reimbursementOpen): ?><a href="/support?type=reimbursement">Reimbursement</a><?php endif; ?>
-                            <?php if ($internetOpen): ?><a href="/support?type=internet">Internet support</a><?php endif; ?>
-                        </span>
-                        <?php if ($signedInMember): ?>
-                            <span class="help-sub">Signed in as <strong><?= htmlspecialchars($signedInMember['full_name'] ?: $signedInMember['member_id']) ?></strong>
-                                &middot; <a href="/member/dashboard">My dashboard</a>
-                                &middot; <a href="/member/logout">Sign out</a></span>
-                        <?php else: ?>
-                            <span class="help-sub">For DCW members. <a href="/member/login?next=%2Fmember%2Fdashboard">Sign in with your Member ID</a></span>
-                        <?php endif; ?>
-                    </span>
-                </div>
-            <?php endif; ?>
         </section>
+        <?php endif; ?>
 
 <?php if ($reflectionCard !== ''): ?>
         <link rel="preconnect" href="https://fonts.googleapis.com">
