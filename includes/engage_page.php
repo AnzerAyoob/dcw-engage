@@ -68,10 +68,11 @@ function engage_header(array $o) {
     $wide     = !empty($o['wide']);
     $home     = !empty($o['home']);
     $bare     = !empty($o['bare']);
+    $flat     = !empty($o['flat']);   // top bar only: no heading, no lead, no trail; the page starts below the band
     $compact  = $bare || !empty($o['compact']);
-    $slim     = $home || $compact || !empty($o['slim']);
+    $slim     = $home || $compact || $flat || !empty($o['slim']);
     $back     = (isset($o['back']) && is_array($o['back']) && !empty($o['back'][0]) && !empty($o['back'][1])) ? $o['back'] : null;
-    $crumbs   = $bare ? [] : ($o['crumbs'] ?? (($home || $compact) ? [] : [['Home', '/'], [$heading]]));
+    $crumbs   = ($bare || $flat) ? [] : ($o['crumbs'] ?? (($home || $compact) ? [] : [['Home', '/'], [$heading]]));
     $backHref = null; $backLabel = null;
     foreach ($crumbs as $c) { if (!empty($c[1])) { $backHref = $c[1]; $backLabel = $c[0]; } }
     $e = fn($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
@@ -83,7 +84,7 @@ function engage_header(array $o) {
     $showGuestMenu = !$hasMemberMenu && !empty($about);
     $joinInMenu    = $tools !== null && strpos((string) $tools, '/membership') !== false;
 
-    $heroClass = 'hero' . ($slim ? ' slim' : '') . ($home ? ' home' : '') . ($compact ? ' compact' : '') . ($bare ? ' bare' : '');
+    $heroClass = 'hero' . ($slim ? ' slim' : '') . ($home ? ' home' : '') . ($compact ? ' compact' : '') . ($bare ? ' bare' : '') . ($flat ? ' flat' : '');
     ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -134,7 +135,7 @@ function engage_header(array $o) {
         <?php endforeach; ?>
     </nav>
     <?php endif; ?>
-    <?php if (!$bare): ?>
+    <?php if (!$bare && !$flat): ?>
         <?php if ($slim): ?><div class="hero-copy"><?php endif; ?>
         <?php if ($back): ?><a class="hero-back" href="<?= $e($back[1]) ?>">&larr; <?= $e($back[0]) ?></a><?php endif; ?>
         <?php if (!$slim): ?><p class="kicker"><?= $e($kicker) ?></p><?php endif; ?>
