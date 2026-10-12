@@ -67,6 +67,17 @@ a:focus-visible, summary:focus-visible, button:focus-visible { outline: 3px soli
 /* Breadcrumbs on a slim hero (member pages) sit left, in line with the heading */
 .hero.slim .crumbs { max-width: 1016px; margin: -4px auto 18px; justify-content: flex-start; }
 
+/* Home page hero: no crimson bottom edge, and the crimson glow sits in the top-right corner.
+   The red edge and the glow at the bottom-right used to run straight into the red Membership card,
+   so the card looked like it was leaking out of the header. */
+.hero.home {
+    border-bottom: 0;
+    background:
+        radial-gradient(circle at 12% 18%, rgba(255,255,255,.14) 0, rgba(255,255,255,0) 38%),
+        radial-gradient(circle at 92% 6%, rgba(141,26,16,.45) 0, rgba(141,26,16,0) 42%),
+        linear-gradient(135deg, var(--primary-dark) 0%, var(--primary) 60%, var(--primary-light) 100%);
+}
+
 /* Lead link under the headline (guests): "Already applied? Track your application" */
 .hero .lead-link { margin: 12px 0 0; font-size: 14.5px; }
 .hero .lead-link a {
@@ -797,12 +808,23 @@ a.help-item:hover { transform: translateY(-3px); box-shadow: 0 12px 26px rgba(15
     .hero.slim .topbar .tools { justify-content: flex-end; margin-left: auto; flex-wrap: nowrap; }
     .hero.slim .topbar .bname { display: none; }
     .prog, .prog.featured { max-width: none; flex-basis: 100%; }
+
+    /* Membership banner on phones: shorter. Icon and label share a row, and the button spans the card. */
     .prog.featured {
-        grid-template-columns: 1fr; row-gap: 4px; padding: 24px;
-        grid-template-areas: "tick" "tag" "title" "desc" "go";
+        grid-template-columns: auto 1fr; column-gap: 12px; row-gap: 6px; padding: 20px;
+        grid-template-areas:
+            "tick tag"
+            "title title"
+            "desc desc"
+            "go go";
     }
-    .prog.featured .tick { margin-bottom: 12px; }
-    .prog.featured .go { justify-self: start; margin-top: 14px; }
+    .prog.featured .tick { width: 44px; height: 44px; margin: 0; }
+    .prog.featured .tick svg { width: 22px; height: 22px; }
+    .prog.featured .tag { align-self: center; margin: 0; }
+    .prog.featured h3 { margin: 8px 0 0; font-size: 21px; }
+    .prog.featured p { font-size: 15px; }
+    .prog.featured .go { justify-self: stretch; justify-content: center; margin-top: 12px; }
+
     .auth-card { padding: 26px 22px 22px; }
     .tiles { grid-template-columns: 1fr; }
     .gallery figure { width: 240px; }
