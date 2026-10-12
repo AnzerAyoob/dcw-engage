@@ -55,7 +55,7 @@ a:focus-visible, summary:focus-visible, button:focus-visible { outline: 3px soli
 .hero h1 { margin: 0 0 10px; font-size: clamp(30px, 5vw, 46px); font-weight: 800; letter-spacing: -1px; line-height: 1.1; }
 .hero .lead { max-width: 600px; margin: 0 auto; color: rgba(255,255,255,.88); font-size: clamp(15px, 2vw, 18px); }
 
-/* Slim hero (the home page, and member pages that pass 'slim'): the same slim top bar for everyone (brand + About DCW on the left,
+/* Slim hero (the home page, and member pages that pass 'slim'): the same slim top bar for everyone (brand on the left,
    sign-in or the member menu on the right), then a short left-aligned intro. No big logo, no kicker
    pill. The hero lets its menus overflow, and the top bar sits above the cards that overlap the hero. */
 .hero.slim { padding: 20px 22px 92px; text-align: left; overflow: visible; }
@@ -66,6 +66,33 @@ a:focus-visible, summary:focus-visible, button:focus-visible { outline: 3px soli
 .hero.slim .lead { max-width: 640px; margin: 0; font-size: clamp(15px, 1.9vw, 17px); }
 /* Breadcrumbs on a slim hero (member pages) sit left, in line with the heading */
 .hero.slim .crumbs { max-width: 1016px; margin: -4px auto 18px; justify-content: flex-start; }
+
+/* Lead link under the headline (guests): "Already applied? Track your application" */
+.hero .lead-link { margin: 12px 0 0; font-size: 14.5px; }
+.hero .lead-link a {
+    color: #fff; font-weight: 600; text-decoration: underline; text-underline-offset: 3px;
+    text-decoration-color: rgba(255,255,255,.5);
+}
+.hero .lead-link a:hover { text-decoration-color: #fff; }
+/* One-time notice under the headline (for example "You have been signed out.") */
+.hero .lead-notice {
+    display: inline-block; margin: 12px 0 0; padding: 4px 14px; border-radius: 999px;
+    font-size: 13.5px; font-weight: 600; color: #fff;
+    background: rgba(85,154,108,.32); border: 1px solid rgba(255,255,255,.35);
+}
+.hero .lead-notice + .lead-link { margin-top: 10px; }
+
+/* One quiet "back" link above the heading (member pages) */
+.hero-back { display: inline-block; margin: 0 0 10px; font-size: 13.5px; font-weight: 600; color: rgba(255,255,255,.85); text-decoration: none; }
+.hero-back:hover { color: #fff; text-decoration: underline; }
+
+/* Compact band (member pages, home for signed-in members) and bare band (dashboard: top bar only) */
+.hero.compact, .hero.bare { padding: 14px 22px 56px; }
+.hero.compact .topbar { margin-bottom: 18px; }
+.hero.bare .topbar { margin-bottom: 0; }
+.hero.compact h1 { margin-bottom: 4px; font-size: clamp(22px, 3.4vw, 30px); letter-spacing: -.5px; }
+.hero.compact .lead { font-size: 14.5px; }
+.hero.compact + .cards-wrap, .hero.bare + .cards-wrap { margin-top: -40px; }
 
 /* Top bar inside the hero */
 .topbar {
@@ -122,6 +149,7 @@ a:focus-visible, summary:focus-visible, button:focus-visible { outline: 3px soli
     transition: background .15s;
 }
 .burger > summary:hover, .burger[open] > summary { background: rgba(255,255,255,.26); }
+.burger.plain > summary { padding: 9px 12px; }     /* guest menu: three lines, no avatar */
 .mav {
     flex: none; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center;
     font-size: 13px; font-weight: 800; color: var(--primary-dark); background: #fff;
@@ -153,6 +181,8 @@ a:focus-visible, summary:focus-visible, button:focus-visible { outline: 3px soli
 .mpop .mwho em { display: block; font-style: normal; font-size: 12.5px; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .04em; }
 .mpop .msep { height: 1px; margin: 6px 4px; background: var(--border); }
 .mpop a.cur { background: var(--primary-tint); color: var(--primary-dark); }
+.mpop .mlabel { padding: 6px 12px 2px; font-size: 11.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.mpop a.xs-only { display: none; }                 /* "Join DCW", shown only on very small phones (see the 420px block) */
 
 /* Content overlaps the hero's lower edge */
 .cards-wrap { margin-top: -62px; position: relative; }
@@ -523,41 +553,19 @@ fieldset.group legend { padding: 0 8px; font-weight: 700; font-size: 14px; color
    They live here so the home page needs no styles of its own.
    ====================================================================== */
 
-/* Member statistics: calm panel in the three logo colors. One Member ID = one person. */
+/* Member statistics: one slim strip of two small numbers, shown to everyone.
+   One Member ID = one person. On phones it becomes two small tiles side by side (see the 640px block). */
 .stats {
-    position: relative; overflow: hidden; margin: 44px 0 8px; padding: 36px 24px 28px; text-align: center;
-    border-radius: 24px; border: 1px solid var(--border);
-    background: linear-gradient(135deg, var(--primary-tint) 0%, var(--leaf-tint) 55%, var(--accent-tint) 100%);
+    display: flex; align-items: stretch; max-width: 560px; margin: 32px auto 4px; overflow: hidden;
+    background: var(--card); border: 1px solid var(--border); border-radius: 999px;
+    box-shadow: 0 4px 12px rgba(15,23,42,.05);
 }
-.stats::before, .stats::after { content: ''; position: absolute; border-radius: 50%; pointer-events: none; filter: blur(2px); }
-.stats::before { width: 260px; height: 260px; top: -110px; left: -70px; background: radial-gradient(circle, rgba(46,101,153,.18) 0, rgba(46,101,153,0) 70%); }
-.stats::after  { width: 300px; height: 300px; bottom: -150px; right: -80px; background: radial-gradient(circle, rgba(85,154,108,.18) 0, rgba(85,154,108,0) 70%); }
-.stats > * { position: relative; z-index: 1; }
-.stats .section-title { margin: 0 0 22px; }
-.stat-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; }
-.stat {
-    --tone: var(--primary);
-    flex: 1 1 240px; max-width: 320px; padding: 26px 20px 22px;
-    background: #fff; border: 1px solid color-mix(in srgb, var(--tone) 16%, #fff); border-radius: 18px;
-    box-shadow: 0 8px 22px rgba(15,23,42,.07);
-    transition: transform .18s, box-shadow .18s;
-}
-.stat:hover { transform: translateY(-3px); box-shadow: 0 14px 30px rgba(15,23,42,.12); }
-.stat-ico {
-    width: 46px; height: 46px; margin: 0 auto 12px; border-radius: 50%; display: grid; place-items: center;
-    background: color-mix(in srgb, var(--tone) 13%, #fff);
-}
-.stat-ico svg { width: 22px; height: 22px; stroke: var(--tone); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.stat strong {
-    display: block; font-size: clamp(34px, 5vw, 46px); font-weight: 800; line-height: 1.1; letter-spacing: -1px;
-    color: var(--tone);
-    background: linear-gradient(135deg, var(--tone), color-mix(in srgb, var(--tone) 60%, var(--primary-light)));
-    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
-}
-.stat span.lbl { display: block; margin-top: 6px; font-size: 14.5px; font-weight: 600; color: var(--muted); }
-.stat-note { margin: 18px 0 0; font-size: 12.5px; color: var(--muted); }
+.stat { --tone: var(--primary); flex: 1 1 0; min-width: 0; display: flex; align-items: baseline; justify-content: center; gap: 10px; padding: 12px 18px; }
+.stat + .stat { border-left: 1px solid var(--border); }
+.stat strong { font-size: 22px; font-weight: 800; line-height: 1.1; letter-spacing: -.5px; color: var(--tone); font-variant-numeric: tabular-nums; }
+.stat span.lbl { font-size: 13.5px; font-weight: 600; color: var(--muted); }
 
-/* Help strip: tracking, under the cards (signed-out visitors only) */
+/* Help strip: kept for any page that still uses it (the home page no longer shows a Track card) */
 .helpbar { display: flex; flex-wrap: wrap; justify-content: center; gap: 16px; margin-top: 26px; }
 .help-item {
     flex: 1 1 320px; max-width: 520px; display: flex; align-items: center; gap: 16px;
@@ -783,7 +791,7 @@ a.help-item:hover { transform: translateY(-3px); box-shadow: 0 12px 26px rgba(15
     .hero, .hero.slim { padding: 28px 18px 96px; }
     .topbar { justify-content: center; text-align: center; }
     .topbar .tools { justify-content: center; margin-left: 0; }
-    /* Home page: keep the bar on one line (logo + About on the left, sign-in or menu on the right) */
+    /* Home page: keep the bar on one line (logo on the left, sign-in or menu on the right) */
     .hero.slim { padding: 16px 18px 88px; }
     .hero.slim .topbar { justify-content: space-between; text-align: left; flex-wrap: nowrap; gap: 8px; margin-bottom: 24px; }
     .hero.slim .topbar .tools { justify-content: flex-end; margin-left: auto; flex-wrap: nowrap; }
@@ -797,7 +805,6 @@ a.help-item:hover { transform: translateY(-3px); box-shadow: 0 12px 26px rgba(15
     .prog.featured .go { justify-self: start; margin-top: 14px; }
     .auth-card { padding: 26px 22px 22px; }
     .tiles { grid-template-columns: 1fr; }
-    .stat { max-width: none; flex-basis: 100%; }
     .gallery figure { width: 240px; }
     .gallery img { height: 165px; }
     .req { grid-template-columns: 42px 1fr; }
@@ -809,10 +816,25 @@ a.help-item:hover { transform: translateY(-3px); box-shadow: 0 12px 26px rgba(15
     .evt { padding: 18px; }
     .evt-date .d { font-size: 34px; }
     .evt-body h3 { font-size: 19px; }
+
+    /* Shorter band, smaller title (these come last so they win over the rules above) */
+    .hero.slim { padding-bottom: 76px; }
+    .hero.slim h1 { font-size: 26px; }
+    .hero.slim .lead { font-size: 14.5px; }
+    .hero.compact, .hero.bare { padding: 12px 18px 52px; }
+    .hero.compact h1 { font-size: 22px; }
+
+    /* Stats: two small tiles side by side */
+    .stats { gap: 10px; max-width: none; overflow: visible; background: none; border: 0; border-radius: 0; box-shadow: none; }
+    .stat { flex-direction: column; align-items: center; gap: 2px; padding: 14px 10px; background: var(--card); border: 1px solid var(--border); border-radius: 14px; }
+    .stat + .stat { border-left: 1px solid var(--border); }
+    .stat strong { font-size: 26px; }
+    .stat span.lbl { font-size: 12.5px; text-align: center; }
 }
 @media (max-width: 420px) {
-    /* Very small phones: the "Join" shortcut yields to "Member sign in"; the Membership banner still offers it */
+    /* Very small phones: the "Join" shortcut leaves the bar and appears at the top of the menu instead */
     .hero.slim .chip-btn.solid { display: none; }
+    .mpop a.xs-only { display: block; }
 }
 
 /* Reduced motion: no transitions. The photo strip becomes a normal swipeable row, without the repeat. */
