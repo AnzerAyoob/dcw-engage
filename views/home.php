@@ -34,9 +34,9 @@ try {
 // Support is a members-only service. It is listed in the member menu for every signed-in member (the
 // support page itself explains any lock) and is not shown to guests anywhere on this page.
 
-// Member numbers for the "Member Statistics" panel. PEOPLE ARE COUNTED BY MEMBER ID: one ID is one
+// Member numbers for the "Member Statistics" strip. PEOPLE ARE COUNTED BY MEMBER ID: one ID is one
 // person, even when it covers several clubs (see includes/member_stats.php). Never throws; if the
-// numbers can't be read, the panel is simply left out.
+// numbers can't be read, the strip is simply left out. Shown to everyone, public visitors included.
 $stats = member_stats();
 
 // Upcoming events from dcwwiki.org, read from the wiki's public Cargo API (api.php?action=cargoquery;
@@ -229,16 +229,19 @@ $eventCard = function (array $ev): string {
 };
 
 // ---- Header content, built from the data above --------------------------------------------
-// Everyone gets the same slim top bar. Only the right-hand side and the intro line differ:
-//   guests:  "Member sign in" and (while membership is open) a small "Join" shortcut
-//   members: an avatar + three-line menu holding every member link, and a personal greeting
+// Everyone gets the same slim top bar. Only the right-hand side and the intro differ:
+//   guests:  a headline about what they can do, a "Track your application" link right under it,
+//            and "Sign in" + "Join" on the right (About DCW and Track application are in the menu)
+//   members: an avatar + three-line menu holding every member link, a compact band, and one greeting
 $h = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
+
+$heroLeadHtml = '';
 
 if ($signedInMember) {
     $display  = trim((string) ($signedInMember['full_name'] ?? '')) ?: (string) ($signedInMember['member_id'] ?? '');
     $first    = explode(' ', $display)[0];
 
-    // Greeting plus one live status line, built from data this page already has.
+    // Greeting plus one live status line, built from data this page already has. No pitch.
     $heroHeading = 'Welcome back, ' . $first;
     $bits = [];
     if (count($programs) > 0) {
@@ -258,10 +261,17 @@ if ($signedInMember) {
         'events'   => !empty($events),
     ]);
 } else {
-    $heroHeading = 'DCW Engage';
-    $heroLead    = 'Scholarships, fellowships, volunteering and membership. Apply, join or renew, and track your requests in one place.';
+    $heroHeading  = 'Apply, join or renew with DCW';
+    $heroLead     = 'Scholarships, fellowships, volunteering and membership, all in one place.';
+    $heroLeadHtml = '<p class="lead-link"><a href="/track">Already applied? Track your application <span aria-hidden="true">&rarr;</span></a></p>';
 
-    $headerTools = '<a class="chip-btn" href="/member/login?next=%2Fmember%2Fdashboard">Member sign in</a>';
+    // After signing out, member/logout lands here and leaves a one-time notice in the session.
+    if (session_status() === PHP_SESSION_ACTIVE && !empty($_SESSION['member_notice'])) {
+        $heroLeadHtml = '<p class="lead-notice" role="status">' . $h($_SESSION['member_notice']) . '</p>' . $heroLeadHtml;
+        unset($_SESSION['member_notice']);
+    }
+
+    $headerTools = '<a class="chip-btn" href="/member/login?next=%2Fmember%2Fdashboard">Sign in</a>';
     if ($membershipOpen) {
         $headerTools .= '<a class="chip-btn solid" href="/membership">Join</a>';
     }
@@ -271,7 +281,9 @@ engage_header([
     'title'       => 'Deoband Community Wikimedia',
     'heading'     => $heroHeading,
     'lead'        => $heroLead,
+    'lead_html'   => $heroLeadHtml,
     'home'        => true,
+    'compact'     => (bool) $signedInMember,   // shorter band for signed-in members
     'member'      => null,           // the header's own name / dashboard / sign-out row is replaced by 'tools'
     'tools'       => $headerTools,
     'description' => 'Scholarships, fellowships, volunteering, membership and more from Deoband Community Wikimedia.',
@@ -375,20 +387,17 @@ engage_header([
             </section>
         <?php endif; ?>
 
+        <?php /* Member Statistics: one slim strip of two small numbers. Shown to everyone, public visitors included.
+                 On phones the two numbers become two small tiles side by side (engage.css). */ ?>
         <?php if ($stats['ok'] && $stats['active'] > 0): ?>
             <section class="stats" aria-label="Member Statistics">
-                <h2 class="section-title">Member Statistics</h2>
-                <div class="stat-row">
-                    <div class="stat" style="--tone: var(--leaf-dark);">
-                        <span class="stat-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><?= $icons['pulse'] ?></svg></span>
-                        <strong data-count="<?= (int) $stats['active'] ?>"><?= number_format($stats['active']) ?></strong>
-                        <span class="lbl">Active members</span>
-                    </div>
-                    <div class="stat" style="--tone: var(--primary);">
-                        <span class="stat-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><?= $icons['layers'] ?></svg></span>
-                        <strong data-count="<?= (int) $stats['memberships'] ?>"><?= number_format($stats['memberships']) ?></strong>
-                        <span class="lbl">Memberships across DCW and our clubs</span>
-                    </div>
+                <div class="stat" style="--tone: var(--leaf-dark);">
+                    <strong data-count="<?= (int) $stats['active'] ?>"><?= number_format($stats['active']) ?></strong>
+                    <span class="lbl">Active members</span>
+                </div>
+                <div class="stat" style="--tone: var(--primary);">
+                    <strong data-count="<?= (int) $stats['memberships'] ?>"><?= number_format($stats['memberships']) ?></strong>
+                    <span class="lbl" title="Memberships across DCW and our clubs">Memberships</span>
                 </div>
             </section>
             <script>
@@ -414,19 +423,6 @@ engage_header([
                     els.forEach(function (el) { io.observe(el); });
                 })();
             </script>
-        <?php endif; ?>
-
-        <?php if (!$signedInMember): ?>
-        <?php /* Guests only. Members have "Track application" and "Support" in their menu, and support is a members-only service. */ ?>
-        <section class="helpbar" aria-label="Track an application">
-            <a class="help-item" href="/track" style="--tone: var(--primary);">
-                <span class="help-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><?= $icons['search'] ?></svg></span>
-                <span class="help-text">
-                    <strong>Already applied?</strong>
-                    <span class="help-link">Track your application <span aria-hidden="true">→</span></span>
-                </span>
-            </a>
-        </section>
         <?php endif; ?>
 
 <?php if ($reflectionCard !== ''): ?>
