@@ -23,13 +23,15 @@
     --border: #D9E3EC;
 }
 * { box-sizing: border-box; }
-html { color-scheme: light; }
+html { color-scheme: light; scroll-behavior: smooth; }
 body {
     margin: 0; background: var(--page); color: var(--ink);
     font-family: 'Inter', -apple-system, sans-serif; line-height: 1.6;
 }
 a:focus-visible, summary:focus-visible, button:focus-visible { outline: 3px solid #f59e0b; outline-offset: 3px; }
 .wrap { max-width: 1060px; margin: 0 auto; padding: 0 22px; }
+/* Home page jump links (member menu: Programs, Events) */
+#programs, #events { scroll-margin-top: 24px; }
 
 /* ---------- Hero (compact: pages after the home page) ---------- */
 .hero {
@@ -53,15 +55,17 @@ a:focus-visible, summary:focus-visible, button:focus-visible { outline: 3px soli
 .hero h1 { margin: 0 0 10px; font-size: clamp(30px, 5vw, 46px); font-weight: 800; letter-spacing: -1px; line-height: 1.1; }
 .hero .lead { max-width: 600px; margin: 0 auto; color: rgba(255,255,255,.88); font-size: clamp(15px, 2vw, 18px); }
 
-/* Home page variant of the hero: bigger logo and heading, no brand link in the top bar */
-.hero.home { padding: 34px 22px 100px; }
-.hero.home img.logo { width: 84px; height: 84px; padding: 10px; margin-bottom: 18px; }
-.hero.home .kicker { margin-bottom: 14px; }
-.hero.home h1 { font-size: clamp(34px, 6vw, 56px); margin-bottom: 14px; }
-.hero.home .lead { max-width: 640px; font-size: clamp(16px, 2.2vw, 19px); }
-.hero.home .topbar { margin-bottom: 30px; }
-.hero.home .topbar .brand { display: none; }
-.hero.home .topbar .about { margin-left: 0; }
+/* Slim hero (the home page, and member pages that pass 'slim'): the same slim top bar for everyone (brand + About DCW on the left,
+   sign-in or the member menu on the right), then a short left-aligned intro. No big logo, no kicker
+   pill. The hero lets its menus overflow, and the top bar sits above the cards that overlap the hero. */
+.hero.slim { padding: 20px 22px 92px; text-align: left; overflow: visible; }
+.hero.slim .topbar { position: relative; z-index: 30; max-width: 1016px; margin-bottom: 30px; }
+.hero.slim .topbar .brand { font-size: 17px; letter-spacing: -.01em; }
+.hero.slim .hero-copy { max-width: 1016px; margin: 0 auto; }
+.hero.slim h1 { margin: 0 0 8px; font-size: clamp(28px, 4.4vw, 40px); letter-spacing: -.8px; }
+.hero.slim .lead { max-width: 640px; margin: 0; font-size: clamp(15px, 1.9vw, 17px); }
+/* Breadcrumbs on a slim hero (member pages) sit left, in line with the heading */
+.hero.slim .crumbs { max-width: 1016px; margin: -4px auto 18px; justify-content: flex-start; }
 
 /* Top bar inside the hero */
 .topbar {
@@ -80,6 +84,75 @@ a:focus-visible, summary:focus-visible, button:focus-visible { outline: 3px soli
     transition: background .15s, color .15s;
 }
 .chip-btn:hover { background: #fff; color: var(--primary-dark); }
+/* The one strong button in the top bar (home page, signed out: "Join") */
+.chip-btn.solid { background: #fff; color: var(--primary-dark); border-color: #fff; }
+.chip-btn.solid:hover { background: rgba(255,255,255,.86); }
+
+/* ---------- Top bar menus: "About DCW" and the member menu ---------- */
+.topbar .about { position: relative; margin: 0 auto 0 14px; }
+.topbar .about summary { list-style: none; cursor: pointer; }
+.topbar .about summary::-webkit-details-marker { display: none; }
+.topbar .about .caret { font-size: 11px; opacity: .85; }
+.topbar .about .about-menu {
+    position: absolute; z-index: 30; top: calc(100% + 8px); left: 0;
+    width: max-content; min-width: 200px; max-width: calc(100vw - 36px); padding: 6px;
+    background: #fff; border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 16px 34px rgba(15,23,42,.18);
+}
+.topbar .about .about-menu a {
+    display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 8px 12px; border-radius: 8px;
+    color: var(--ink); font-size: 14px; font-weight: 500; text-decoration: none; white-space: nowrap;
+}
+.topbar .about .about-menu a:hover { background: var(--primary-tint); color: var(--primary-dark); }
+.topbar .about .about-menu a.ext span { color: var(--muted); }
+.topbar .about .about-sep { height: 1px; margin: 5px 6px; background: var(--border); }
+/* On the home page, "About DCW" is a quiet text button beside the brand rather than a pill */
+.hero.slim .topbar .about { margin-left: 6px; }
+.hero.slim .topbar .about summary { background: transparent; border-color: transparent; padding: 7px 12px; }
+.hero.slim .topbar .about summary:hover,
+.hero.slim .topbar .about[open] summary { background: rgba(255,255,255,.16); color: #fff; }
+
+/* Member menu (home page, signed in): avatar + three lines, which turn into a cross while open */
+.mnav { display: flex; justify-content: flex-end; }
+.mmenu { position: relative; }
+.mmenu > summary { list-style: none; cursor: pointer; }
+.mmenu > summary::-webkit-details-marker { display: none; }
+.burger > summary {
+    display: inline-flex; align-items: center; gap: 10px; padding: 4px 14px 4px 5px; border-radius: 999px;
+    background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.35);
+    transition: background .15s;
+}
+.burger > summary:hover, .burger[open] > summary { background: rgba(255,255,255,.26); }
+.mav {
+    flex: none; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center;
+    font-size: 13px; font-weight: 800; color: var(--primary-dark); background: #fff;
+}
+.mav.lg { width: 40px; height: 40px; font-size: 16px; color: #fff; background: linear-gradient(135deg, var(--primary), var(--leaf-dark)); }
+.bars { position: relative; display: block; width: 18px; height: 14px; }
+.bars i { position: absolute; left: 0; width: 100%; height: 2px; border-radius: 2px; background: #fff; transition: transform .2s, opacity .2s; }
+.bars i:nth-child(1) { top: 0; }
+.bars i:nth-child(2) { top: 6px; }
+.bars i:nth-child(3) { top: 12px; }
+.burger[open] .bars i:nth-child(1) { transform: translateY(6px) rotate(45deg); }
+.burger[open] .bars i:nth-child(2) { opacity: 0; }
+.burger[open] .bars i:nth-child(3) { transform: translateY(-6px) rotate(-45deg); }
+.mpop {
+    position: absolute; right: 0; top: calc(100% + 10px); z-index: 40;
+    width: 270px; max-width: calc(100vw - 36px); padding: 8px;
+    background: var(--card); color: var(--ink); border: 1px solid var(--border); border-radius: 16px;
+    box-shadow: 0 18px 40px rgba(15,23,42,.22);
+}
+.mpop a {
+    display: block; padding: 10px 12px; border-radius: 10px;
+    font-size: 14.5px; font-weight: 600; color: var(--ink); text-decoration: none;
+}
+.mpop a:hover { background: var(--primary-tint); color: var(--primary-dark); }
+.mpop a.out { color: var(--accent); }
+.mpop a.out:hover { background: var(--accent-tint); color: var(--accent-dark); }
+.mpop .mwho { display: flex; align-items: center; gap: 12px; padding: 10px 12px 14px; margin-bottom: 6px; border-bottom: 1px solid var(--border); }
+.mpop .mwho strong { display: block; font-size: 15px; line-height: 1.3; }
+.mpop .mwho em { display: block; font-style: normal; font-size: 12.5px; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .04em; }
+.mpop .msep { height: 1px; margin: 6px 4px; background: var(--border); }
+.mpop a.cur { background: var(--primary-tint); color: var(--primary-dark); }
 
 /* Content overlaps the hero's lower edge */
 .cards-wrap { margin-top: -62px; position: relative; }
@@ -484,7 +557,7 @@ fieldset.group legend { padding: 0 8px; font-weight: 700; font-size: 14px; color
 .stat span.lbl { display: block; margin-top: 6px; font-size: 14.5px; font-weight: 600; color: var(--muted); }
 .stat-note { margin: 18px 0 0; font-size: 12.5px; color: var(--muted); }
 
-/* Help strip: tracking + support, under the cards */
+/* Help strip: tracking, under the cards (signed-out visitors only) */
 .helpbar { display: flex; flex-wrap: wrap; justify-content: center; gap: 16px; margin-top: 26px; }
 .help-item {
     flex: 1 1 320px; max-width: 520px; display: flex; align-items: center; gap: 16px;
@@ -680,10 +753,11 @@ a.help-item:hover { transform: translateY(-3px); box-shadow: 0 12px 26px rgba(15
 .evt-range { font-size: 13px; font-weight: 600; color: rgba(255,255,255,.88); }
 
 /* Events and the reflection card side by side (home page, when both exist).
-   The heading is the first grid row, so it centres over the events only; both cards start on row 2
-   and are the same height. A single event stretches to match the reflection card. */
+   The heading is the first grid row and spans the whole row, so it is centred over both cards like
+   every other section heading; both cards start on row 2 and are the same height. A single event
+   stretches to match the reflection card. */
 .duo { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); gap: 20px; align-items: stretch; padding-bottom: 12px; }
-.duo .duo-title { grid-column: 1; grid-row: 1; margin: 30px 0 0; }
+.duo .duo-title { grid-column: 1 / -1; grid-row: 1; margin: 30px 0 0; }
 .duo .duo-title.first { margin-top: 0; }
 .duo .evt-col { grid-column: 1; grid-row: 2; display: flex; flex-direction: column; gap: 16px; }
 .duo .evt-col .evt { flex: 1; }
@@ -706,9 +780,14 @@ a.help-item:hover { transform: translateY(-3px); box-shadow: 0 12px 26px rgba(15
     .grid--beside .beside-title, .grid--beside .prog, .grid--beside .reflect { grid-row: auto; }
 }
 @media (max-width: 640px) {
-    .hero, .hero.home { padding: 28px 18px 96px; }
+    .hero, .hero.slim { padding: 28px 18px 96px; }
     .topbar { justify-content: center; text-align: center; }
     .topbar .tools { justify-content: center; margin-left: 0; }
+    /* Home page: keep the bar on one line (logo + About on the left, sign-in or menu on the right) */
+    .hero.slim { padding: 16px 18px 88px; }
+    .hero.slim .topbar { justify-content: space-between; text-align: left; flex-wrap: nowrap; gap: 8px; margin-bottom: 24px; }
+    .hero.slim .topbar .tools { justify-content: flex-end; margin-left: auto; flex-wrap: nowrap; }
+    .hero.slim .topbar .bname { display: none; }
     .prog, .prog.featured { max-width: none; flex-basis: 100%; }
     .prog.featured {
         grid-template-columns: 1fr; row-gap: 4px; padding: 24px;
@@ -731,9 +810,14 @@ a.help-item:hover { transform: translateY(-3px); box-shadow: 0 12px 26px rgba(15
     .evt-date .d { font-size: 34px; }
     .evt-body h3 { font-size: 19px; }
 }
+@media (max-width: 420px) {
+    /* Very small phones: the "Join" shortcut yields to "Member sign in"; the Membership banner still offers it */
+    .hero.slim .chip-btn.solid { display: none; }
+}
 
 /* Reduced motion: no transitions. The photo strip becomes a normal swipeable row, without the repeat. */
 @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
     * { transition: none !important; }
     .marquee { overflow-x: auto; -webkit-mask-image: none; mask-image: none; scroll-snap-type: x proximity; }
     .marquee .track { animation: none; }
