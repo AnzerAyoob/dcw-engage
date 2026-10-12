@@ -564,17 +564,7 @@ fieldset.group legend { padding: 0 8px; font-weight: 700; font-size: 14px; color
    They live here so the home page needs no styles of its own.
    ====================================================================== */
 
-/* Member statistics: one slim strip of two small numbers, shown to everyone.
-   One Member ID = one person. On phones it becomes two small tiles side by side (see the 640px block). */
-.stats {
-    display: flex; align-items: stretch; max-width: 560px; margin: 32px auto 4px; overflow: hidden;
-    background: var(--card); border: 1px solid var(--border); border-radius: 999px;
-    box-shadow: 0 4px 12px rgba(15,23,42,.05);
-}
-.stat { --tone: var(--primary); flex: 1 1 0; min-width: 0; display: flex; align-items: baseline; justify-content: center; gap: 10px; padding: 12px 18px; }
-.stat + .stat { border-left: 1px solid var(--border); }
-.stat strong { font-size: 22px; font-weight: 800; line-height: 1.1; letter-spacing: -.5px; color: var(--tone); font-variant-numeric: tabular-nums; }
-.stat span.lbl { font-size: 13.5px; font-weight: 600; color: var(--muted); }
+.stats-line { margin: 36px 0 4px; text-align: center; font-size: 14.5px; color: var(--muted); }.stats-line strong { color: var(--leaf-dark); font-weight: 800; font-size: 16px; font-variant-numeric: tabular-nums; }.stats-line span { margin: 0 .6em; opacity: .5; }
 
 /* Help strip: kept for any page that still uses it (the home page no longer shows a Track card) */
 .helpbar { display: flex; flex-wrap: wrap; justify-content: center; gap: 16px; margin-top: 26px; }
@@ -776,11 +766,7 @@ a.help-item:hover { transform: translateY(-3px); box-shadow: 0 12px 26px rgba(15
    every other section heading; both cards start on row 2 and are the same height. A single event
    stretches to match the reflection card. */
 .duo { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); gap: 20px; align-items: stretch; padding-bottom: 12px; }
-.duo .duo-title { grid-column: 1 / -1; grid-row: 1; margin: 30px 0 0; }
-.duo .duo-title.first { margin-top: 0; }
-.duo .evt-col { grid-column: 1; grid-row: 2; display: flex; flex-direction: column; gap: 16px; }
-.duo .evt-col .evt { flex: 1; }
-.duo .reflect { grid-column: 2; grid-row: 2; width: auto; max-width: none; flex: none; margin: 0; }
+.duo .duo-title { grid-row: 1; margin: 30px 0 0; }.duo .duo-title.first { margin-top: 0; }.duo .t-events { grid-column: 1; }.duo .t-refl   { grid-column: 2; }
 
 /* ---------- Responsive ---------- */
 /* Programs + reflection on one row: step down as the screen narrows. */
@@ -845,13 +831,6 @@ a.help-item:hover { transform: translateY(-3px); box-shadow: 0 12px 26px rgba(15
     .hero.slim .lead { font-size: 14.5px; }
     .hero.compact, .hero.bare { padding: 12px 18px 52px; }
     .hero.compact h1 { font-size: 22px; }
-
-    /* Stats: two small tiles side by side */
-    .stats { gap: 10px; max-width: none; overflow: visible; background: none; border: 0; border-radius: 0; box-shadow: none; }
-    .stat { flex-direction: column; align-items: center; gap: 2px; padding: 14px 10px; background: var(--card); border: 1px solid var(--border); border-radius: 14px; }
-    .stat + .stat { border-left: 1px solid var(--border); }
-    .stat strong { font-size: 26px; }
-    .stat span.lbl { font-size: 12.5px; text-align: center; }
 }
 @media (max-width: 420px) {
     /* Very small phones: the "Join" shortcut leaves the bar and appears at the top of the menu instead */
