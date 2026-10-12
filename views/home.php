@@ -34,9 +34,9 @@ try {
 // Support is a members-only service. It is listed in the member menu for every signed-in member (the
 // support page itself explains any lock) and is not shown to guests anywhere on this page.
 
-// Member numbers for the "Member Statistics" strip. PEOPLE ARE COUNTED BY MEMBER ID: one ID is one
+// Member numbers for the member statistics line. PEOPLE ARE COUNTED BY MEMBER ID: one ID is one
 // person, even when it covers several clubs (see includes/member_stats.php). Never throws; if the
-// numbers can't be read, the strip is simply left out. Shown to everyone, public visitors included.
+// numbers can't be read, the line is simply left out. Shown to everyone, public visitors included.
 $stats = member_stats();
 
 // Upcoming events from dcwwiki.org, read from the wiki's public Cargo API (api.php?action=cargoquery;
@@ -197,8 +197,8 @@ if (!empty($reflections)) {
 // With only one or two programs the row has spare room, so the reflection card sits beside them
 // instead of dropping to the next row. With three or more programs it keeps its own full-width row.
 // With upcoming events AND a reflection, the two sit side by side in their own row below the programs
-// (events on the left, reflection on the right), the same idea as the programs row above. In that case the
-// reflection is not repeated inside the programs grid.
+// (events on the left, reflection on the right), each under its own heading ("Upcoming Events" and
+// "From our community"). In that case the reflection is not repeated inside the programs grid.
 $duo = $reflectionCard !== '' && !empty($events);
 $beside = !$duo && $reflectionCard !== '' && !empty($programs) && count($programs) <= 2;
 
@@ -230,8 +230,8 @@ $eventCard = function (array $ev): string {
 
 // ---- Header content, built from the data above --------------------------------------------
 // Everyone gets the same slim top bar. Only the right-hand side and the intro differ:
-//   guests:  a headline about what they can do, a "Track your application" link right under it,
-//            and "Sign in" + "Join" on the right (About DCW and Track application are in the menu)
+//   guests:  a headline about what they can do, and "Sign in" + "Join" on the right
+//            (About DCW and Track application are in the menu)
 //   members: an avatar + three-line menu holding every member link, a compact band, and one greeting
 $h = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
 
@@ -261,13 +261,14 @@ if ($signedInMember) {
         'events'   => !empty($events),
     ]);
 } else {
-    $heroHeading  = 'Apply, join or renew with DCW';
-    $heroLead     = 'Scholarships, fellowships, volunteering and membership, all in one place.';
-    $heroLeadHtml = '<p class="lead-link"><a href="/track">Already applied? Track your application <span aria-hidden="true">&rarr;</span></a></p>';
+    $heroHeading = 'Apply, join or renew with DCW';
+    $heroLead    = 'Scholarships, fellowships, volunteering and membership, all in one place.';
+    // "Track your application" lives in the menu, so there is no link under the headline.
+    $heroLeadHtml = '';
 
     // After signing out, member/logout lands here and leaves a one-time notice in the session.
     if (session_status() === PHP_SESSION_ACTIVE && !empty($_SESSION['member_notice'])) {
-        $heroLeadHtml = '<p class="lead-notice" role="status">' . $h($_SESSION['member_notice']) . '</p>' . $heroLeadHtml;
+        $heroLeadHtml = '<p class="lead-notice" role="status">' . $h($_SESSION['member_notice']) . '</p>';
         unset($_SESSION['member_notice']);
     }
 
@@ -344,11 +345,13 @@ engage_header([
         <?php if (!empty($events)): ?>
             <?php $evTitleClass = 'section-title' . (empty($cards) && empty($programs) ? ' first' : ''); ?>
             <?php if ($duo): ?>
+                <?php /* Title, events, title, reflection: each card has its own heading, and on phones it stacks in that order. */ ?>
                 <div class="duo" id="events">
-                    <h2 class="<?= $evTitleClass ?> duo-title">Upcoming Events</h2>
+                    <h2 class="<?= $evTitleClass ?> duo-title t-events">Upcoming Events</h2>
                     <div class="evt-col">
                         <?php foreach ($events as $ev) echo $eventCard($ev); ?>
                     </div>
+                    <h2 class="<?= $evTitleClass ?> duo-title t-refl">From our community</h2>
                     <?= $reflectionCard ?>
                 </div>
             <?php else: ?>
@@ -361,9 +364,41 @@ engage_header([
             <?php endif; ?>
         <?php endif; ?>
 
+        <?php /* Member numbers: one quiet line, shown to everyone, so the page ends on the photos. */ ?>
+        <?php if ($stats['ok'] && $stats['active'] > 0): ?>
+            <p class="stats-line" aria-label="Member Statistics">
+                <strong data-count="<?= (int) $stats['active'] ?>"><?= number_format($stats['active']) ?></strong> active members
+                <span aria-hidden="true">·</span>
+                <strong data-count="<?= (int) $stats['memberships'] ?>"><?= number_format($stats['memberships']) ?></strong> memberships across DCW and our clubs
+            </p>
+            <script>
+                // Gentle count-up when the numbers scroll into view (skipped for reduced motion).
+                (function () {
+                    var els = document.querySelectorAll('.stats-line strong[data-count]');
+                    if (!els.length || !('IntersectionObserver' in window)
+                        || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+                    var io = new IntersectionObserver(function (entries) {
+                        entries.forEach(function (e) {
+                            if (!e.isIntersecting) return;
+                            io.unobserve(e.target);
+                            var el = e.target, end = +el.dataset.count, t0 = null;
+                            function step(t) {
+                                if (t0 === null) t0 = t;
+                                var p = Math.min((t - t0) / 1100, 1);
+                                el.textContent = Math.round(end * (1 - Math.pow(1 - p, 3))).toLocaleString();
+                                if (p < 1) requestAnimationFrame(step);
+                            }
+                            requestAnimationFrame(step);
+                        });
+                    }, { threshold: .4 });
+                    els.forEach(function (el) { io.observe(el); });
+                })();
+            </script>
+        <?php endif; ?>
+
         <?php if (!empty($gallery)): ?>
-            <section class="gallery" aria-label="Our volunteers across">
-                <h2>Our volunteers across</h2>
+            <section class="gallery" aria-label="Our community in photos">
+                <h2>Our community in photos</h2>
                 <div class="marquee" id="galMarquee" style="--gal-dur: <?= (int) $galleryDuration ?>s;">
                     <div class="track">
                         <?php foreach ([false, true] as $isDup): ?>
@@ -385,44 +420,6 @@ engage_header([
                     </div>
                 </div>
             </section>
-        <?php endif; ?>
-
-        <?php /* Member Statistics: one slim strip of two small numbers. Shown to everyone, public visitors included.
-                 On phones the two numbers become two small tiles side by side (engage.css). */ ?>
-        <?php if ($stats['ok'] && $stats['active'] > 0): ?>
-            <section class="stats" aria-label="Member Statistics">
-                <div class="stat" style="--tone: var(--leaf-dark);">
-                    <strong data-count="<?= (int) $stats['active'] ?>"><?= number_format($stats['active']) ?></strong>
-                    <span class="lbl">Active members</span>
-                </div>
-                <div class="stat" style="--tone: var(--primary);">
-                    <strong data-count="<?= (int) $stats['memberships'] ?>"><?= number_format($stats['memberships']) ?></strong>
-                    <span class="lbl" title="Memberships across DCW and our clubs">Memberships</span>
-                </div>
-            </section>
-            <script>
-                // Gentle count-up when the stats scroll into view (skipped for reduced motion).
-                (function () {
-                    var els = document.querySelectorAll('.stat strong[data-count]');
-                    if (!els.length || !('IntersectionObserver' in window)
-                        || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-                    var io = new IntersectionObserver(function (entries) {
-                        entries.forEach(function (e) {
-                            if (!e.isIntersecting) return;
-                            io.unobserve(e.target);
-                            var el = e.target, end = +el.dataset.count, t0 = null;
-                            function step(t) {
-                                if (t0 === null) t0 = t;
-                                var p = Math.min((t - t0) / 1100, 1);
-                                el.textContent = Math.round(end * (1 - Math.pow(1 - p, 3))).toLocaleString();
-                                if (p < 1) requestAnimationFrame(step);
-                            }
-                            requestAnimationFrame(step);
-                        });
-                    }, { threshold: .4 });
-                    els.forEach(function (el) { io.observe(el); });
-                })();
-            </script>
         <?php endif; ?>
 
 <?php if ($reflectionCard !== ''): ?>
