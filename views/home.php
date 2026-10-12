@@ -146,6 +146,7 @@ foreach ($activeForms as $form) {
 
 // Markup for the "Selected reflections" card. Built here so it can sit inside the programs grid.
 // Only ONE reflection is visible at a time; the rest wait quietly and fade in one by one.
+// Underneath: previous / next buttons and a "2 / 14" counter (easier to tap than a row of dots).
 $reflectionCard = '';
 if (!empty($reflections)) {
     if (!$reflectionsRotate) $reflections = array_slice($reflections, 0, 1);
@@ -178,10 +179,10 @@ if (!empty($reflections)) {
         <?php if (count($reflections) > 1 || $reflectionsMoreUrl !== ''): ?>
             <div class="rq-bar">
                 <?php if (count($reflections) > 1): ?>
-                    <span class="rq-dots" role="group" aria-label="Choose a reflection">
-                        <?php foreach ($reflections as $k => $r): ?>
-                            <button type="button" class="rq-dot<?= $k === 0 ? ' on' : '' ?>" aria-label="Reflection <?= $k + 1 ?> of <?= count($reflections) ?>"></button>
-                        <?php endforeach; ?>
+                    <span class="rq-nav" role="group" aria-label="Browse reflections">
+                        <button type="button" class="rq-btn" data-dir="-1" aria-label="Previous reflection">&lsaquo;</button>
+                        <span class="rq-count"><span class="rq-cur">1</span> / <?= count($reflections) ?></span>
+                        <button type="button" class="rq-btn" data-dir="1" aria-label="Next reflection">&rsaquo;</button>
                     </span>
                 <?php else: ?><span></span><?php endif; ?>
                 <?php if ($reflectionsMoreUrl !== ''): ?>
@@ -229,30 +230,29 @@ $eventCard = function (array $ev): string {
 };
 
 // ---- Header content, built from the data above --------------------------------------------
-// Everyone gets the same slim top bar. Only the right-hand side and the intro differ:
-//   guests:  a headline about what they can do, and "Sign in" + "Join" on the right
+// Everyone gets the same slim top bar, with the logo alone on the left. The rest differs:
+//   guests:  a blue band with a headline about what they can do, and "Sign in" + "Join" on the right
 //            (About DCW and Track application are in the menu)
-//   members: an avatar + three-line menu holding every member link, a compact band, and one greeting
+//   members: the band holds only the top bar (avatar + three-line menu with every member link). The
+//            greeting is plain text at the top of the page, below the band, so nothing is pitched to
+//            people who already know DCW and no heading ever sits on the blue.
 $h = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
 
+$heroHeading  = 'Deoband Community Wikimedia';   // only the <title> for members; the band shows no heading
+$heroLead     = '';
 $heroLeadHtml = '';
+$greeting     = '';
+$greetLine    = '';
 
 if ($signedInMember) {
     $display  = trim((string) ($signedInMember['full_name'] ?? '')) ?: (string) ($signedInMember['member_id'] ?? '');
     $first    = explode(' ', $display)[0];
 
-    // Greeting plus one live status line, built from data this page already has. No pitch.
-    $heroHeading = 'Welcome back, ' . $first;
-    $bits = [];
-    if (count($programs) > 0) {
-        $bits[] = count($programs) . ' open ' . (count($programs) === 1 ? 'program' : 'programs');
-    }
-    if (!empty($events)) {
-        $e0 = $events[0];
-        $bits[] = 'Next event: ' . $e0['wday'] . ' ' . $e0['day'] . ' ' . $e0['month']
-                . ', ' . mb_strimwidth((string) $e0['title'], 0, 60, '…');
-    }
-    $heroLead = $bits ? implode('  ·  ', $bits) : 'Nothing is open right now. Please check back soon.';
+    // One greeting and one live line. The next event is not repeated here: its card is on this page.
+    $greeting  = 'Welcome back, ' . $first;
+    $greetLine = count($programs) > 0
+        ? count($programs) . ' open ' . (count($programs) === 1 ? 'program' : 'programs')
+        : '';
 
     // The shared member menu (includes/engage_page.php), the same one every member page uses.
     $headerTools = engage_member_menu($signedInMember, [
@@ -262,9 +262,8 @@ if ($signedInMember) {
     ]);
 } else {
     $heroHeading = 'Welcome to DCW Engage';
-    $heroLead    = 'The DCW home for scholarships, fellowships, and membership, and else.';
+    $heroLead    = 'The DCW home for scholarships, fellowships, membership and more.';
     // "Track your application" lives in the menu, so there is no link under the headline.
-    $heroLeadHtml = '';
 
     // After signing out, member/logout lands here and leaves a one-time notice in the session.
     if (session_status() === PHP_SESSION_ACTIVE && !empty($_SESSION['member_notice'])) {
@@ -284,14 +283,25 @@ engage_header([
     'lead'        => $heroLead,
     'lead_html'   => $heroLeadHtml,
     'home'        => true,
-    'compact'     => (bool) $signedInMember,   // shorter band for signed-in members
+    'flat'        => (bool) $signedInMember,   // members: top bar only, content starts below the band
     'member'      => null,           // the header's own name / dashboard / sign-out row is replaced by 'tools'
     'tools'       => $headerTools,
     'description' => 'Scholarships, fellowships, volunteering, membership and more from Deoband Community Wikimedia.',
     'image'       => 'Group photo from DCW 5th Anniversary.jpg',   // Commons file name; change to any other photo
     'image_alt'   => 'Group photo from the DCW 5th Anniversary',
 ]);
+
+// Section headings sit on the blue band only for guests with nothing above them (white text).
+// For members the greeting comes first, so every heading is normal grey on the light page.
+$onBand = !$signedInMember;
 ?>
+        <?php if ($signedInMember): ?>
+            <section class="greet" aria-label="Welcome">
+                <h1><?= $h($greeting) ?></h1>
+                <?php if ($greetLine !== ''): ?><p><?= $h($greetLine) ?></p><?php endif; ?>
+            </section>
+        <?php endif; ?>
+
         <?php if (empty($cards) && empty($programs) && $reflectionCard === '' && empty($events)): ?>
             <div class="empty">
                 <h3>No open programs right now</h3>
@@ -316,7 +326,7 @@ engage_header([
         <?php endif; ?>
 
         <?php if (!empty($programs)): ?>
-            <?php $titleClass = 'section-title' . (empty($cards) ? ' first' : ''); ?>
+            <?php $titleClass = 'section-title' . (empty($cards) && $onBand ? ' first' : ''); ?>
             <?php if (!$beside): ?>
                 <h2 id="programs" class="<?= $titleClass ?>">Open programs</h2>
             <?php endif; ?>
@@ -343,7 +353,7 @@ engage_header([
 
 
         <?php if (!empty($events)): ?>
-            <?php $evTitleClass = 'section-title' . (empty($cards) && empty($programs) ? ' first' : ''); ?>
+            <?php $evTitleClass = 'section-title' . (empty($cards) && empty($programs) && $onBand ? ' first' : ''); ?>
             <?php if ($duo): ?>
                 <?php /* Title, events, title, reflection: each card has its own heading, and on phones it stacks in that order. */ ?>
                 <div class="duo" id="events">
@@ -428,12 +438,13 @@ engage_header([
         <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;0,600;1,400;1,500&display=swap" rel="stylesheet">
         <?php /* Card styles live in assets/css/engage.css (section: Selected reflections). */ ?>
         <script>
-            // One reflection at a time, fading gently to the next. Pauses while the visitor hovers or
-            // focuses the card, and never auto-advances for visitors who prefer reduced motion.
+            // One reflection at a time: the old one fades out, then the next fades in. Pauses while the
+            // visitor hovers or focuses the card, and never auto-advances for visitors who prefer reduced motion.
             (function () {
                 var root = document.getElementById('reflect');
                 if (!root) return;
-                var items = root.querySelectorAll('.rq'), dots = root.querySelectorAll('.rq-dot');
+                var items = root.querySelectorAll('.rq'), btns = root.querySelectorAll('.rq-btn');
+                var cur = root.querySelector('.rq-cur');
                 var ms = Math.max(5, +root.dataset.seconds || 12) * 1000;
                 var i = 0, timer = null;
                 var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -442,8 +453,8 @@ engage_header([
                     for (var k = 0; k < items.length; k++) {
                         items[k].classList.toggle('on', k === i);
                         items[k].setAttribute('aria-hidden', k === i ? 'false' : 'true');
-                        if (dots[k]) dots[k].classList.toggle('on', k === i);
                     }
+                    if (cur) cur.textContent = i + 1;
                 }
                 function stop() { clearInterval(timer); timer = null; }
                 function play() {
@@ -451,8 +462,10 @@ engage_header([
                     stop();
                     timer = setInterval(function () { show(i + 1); }, ms);
                 }
-                for (var d = 0; d < dots.length; d++) {
-                    (function (n) { dots[n].addEventListener('click', function () { show(n); play(); }); })(d);
+                for (var b = 0; b < btns.length; b++) {
+                    (function (btn) {
+                        btn.addEventListener('click', function () { show(i + (+btn.dataset.dir || 1)); play(); });
+                    })(btns[b]);
                 }
                 root.addEventListener('mouseenter', stop);
                 root.addEventListener('mouseleave', play);
