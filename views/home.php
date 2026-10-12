@@ -261,8 +261,8 @@ if ($signedInMember) {
         'events'   => !empty($events),
     ]);
 } else {
-    $heroHeading = 'Apply, join or renew with DCW';
-    $heroLead    = 'Scholarships, fellowships, volunteering and membership, all in one place.';
+    $heroHeading = 'Welcome to DCW Engage';
+    $heroLead    = 'The DCW home for scholarships, fellowships, and membership, and else.';
     // "Track your application" lives in the menu, so there is no link under the headline.
     $heroLeadHtml = '';
 
