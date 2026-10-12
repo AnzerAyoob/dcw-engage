@@ -27,13 +27,17 @@ function engage_asset(string $path): string {
  * Options:
  *   title    <title> text (" - DCW Engage" is added)
  *   heading  big heading in the hero (defaults to title)
- *   kicker   small pill above the heading
+ *   kicker   small pill above the heading (not shown on the home page)
  *   lead     optional sentence under the heading
  *   member   MemberSession::current() row, or null
  *   tools    raw, already-escaped HTML for the top-bar buttons (overrides the member links)
  *   wide     true for wide layouts (finance queue and tables)
- *   home     true for the public home page: big logo in the hero, no brand link in the top bar,
- *            and no breadcrumbs unless 'crumbs' is given
+ *   home     true for the public home page: a slim hero with a left-aligned heading and lead, the
+ *            brand and "About DCW" at the left of the top bar, 'tools' at the right, no big logo,
+ *            no kicker pill, and no breadcrumbs unless 'crumbs' is given
+ *   slim     true for any other page that should use the same slim top bar as the home page (brand and
+ *            "About DCW" at the left, 'tools' at the right) with a left-aligned heading and lead, no
+ *            kicker pill, and the breadcrumb trail kept. 'home' implies it.
  *   crumbs   breadcrumb trail, e.g. [['Home','/'],['Support','/support'],['Reimbursement']].
  *            The last item is the current page (no link). A "Back" button pointing to the
  *            nearest linked crumb is added automatically. Defaults to Home > heading
@@ -52,6 +56,7 @@ function engage_header(array $o) {
     $tools   = $o['tools'] ?? null;
     $wide    = !empty($o['wide']);
     $home    = !empty($o['home']);
+    $slim    = $home || !empty($o['slim']);
     $crumbs  = $o['crumbs'] ?? ($home ? [] : [['Home', '/'], [$heading]]);
     $backHref = null; $backLabel = null;
     foreach ($crumbs as $c) { if (!empty($c[1])) { $backHref = $c[1]; $backLabel = $c[0]; } }
@@ -78,9 +83,9 @@ function engage_header(array $o) {
     <link rel="stylesheet" href="<?= $e(engage_asset('/assets/css/engage.css')) ?>">
 </head>
 <body>
-<header class="hero<?= $home ? ' home' : '' ?>">
+<header class="hero<?= $slim ? ' slim' : '' ?><?= $home ? ' home' : '' ?>">
     <div class="topbar">
-        <a class="brand" href="/"><img src="https://dcwwiki.org/dcwwiki/images/5/56/DCW_logo.png" alt="">DCW Engage</a>
+        <a class="brand" href="/"><img src="https://dcwwiki.org/dcwwiki/images/5/56/DCW_logo.png" alt=""><span class="bname">DCW Engage</span></a>
         <?php engage_about_menu($about); ?>
         <div class="tools">
             <?php if ($tools !== null): ?>
@@ -94,9 +99,6 @@ function engage_header(array $o) {
             <?php endif; ?>
         </div>
     </div>
-    <?php if ($home): ?>
-        <img class="logo" src="https://dcwwiki.org/dcwwiki/images/5/56/DCW_logo.png" alt="Deoband Community Wikimedia">
-    <?php endif; ?>
     <?php if ($crumbs): ?>
     <nav class="crumbs" aria-label="Breadcrumb">
         <?php if ($backHref): ?><a class="back" href="<?= $e($backHref) ?>">&larr; Back</a><?php endif; ?>
@@ -110,9 +112,11 @@ function engage_header(array $o) {
         <?php endforeach; ?>
     </nav>
     <?php endif; ?>
-    <p class="kicker"><?= $e($kicker) ?></p>
+    <?php if ($slim): ?><div class="hero-copy"><?php endif; ?>
+    <?php if (!$slim): ?><p class="kicker"><?= $e($kicker) ?></p><?php endif; ?>
     <h1><?= $e($heading) ?></h1>
     <?php if ($lead): ?><p class="lead"><?= $e($lead) ?></p><?php endif; ?>
+    <?php if ($slim): ?></div><?php endif; ?>
 </header>
 <main class="wrap cards-wrap<?= $wide ? ' wide' : '' ?>">
 <?php
@@ -182,36 +186,102 @@ function engage_about_links(bool $withContact = false): array {
     $contact = engage_safe_url($c['contact_url'] ?? '');
     if ($withContact && $contact !== '') $out[] = ['Contact', $contact];
     $site = engage_safe_url($c['site']);
-    if ($site !== '') $out[] = ['Main website (' . $c['site_label'] . ')', $site];
+    if ($site !== '') $out[] = ['Main website', $site];
     return $out;
 }
 
 /**
  * Renders the "About DCW" dropdown inside the hero top bar.
  * Used by engage_header(). Prints nothing when $about is empty.
- * Needs the CSS variables from engage.css (--border, --ink, --primary, --primary-tint).
+ * Its styles live in assets/css/engage.css (section: Top bar menus).
+ * The link to the main website is set apart by a thin rule and marked with an arrow.
  */
 function engage_about_menu(array $about): void {
     if (!$about) return;
     $e = fn($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
+    $site = rtrim(engage_safe_url(engage_footer_config()['site'] ?? ''), '/');
     ?>
     <details class="about" id="about-menu">
-        <summary class="chip-btn">About DCW <span aria-hidden="true">&#9662;</span></summary>
+        <summary class="chip-btn">About DCW <span class="caret" aria-hidden="true">&#9662;</span></summary>
         <div class="about-menu">
             <?php foreach ($about as [$name, $href]): ?>
-                <a href="<?= $e($href) ?>" rel="noopener"><?= $e($name) ?></a>
+                <?php $isSite = $site !== '' && rtrim($href, '/') === $site; ?>
+                <?php if ($isSite): ?><div class="about-sep"></div><?php endif; ?>
+                <a href="<?= $e($href) ?>" rel="noopener"<?= $isSite ? ' class="ext"' : '' ?>><?= $e($name) ?><?php if ($isSite): ?> <span aria-hidden="true">&#8599;</span><?php endif; ?></a>
             <?php endforeach; ?>
         </div>
     </details>
-    <style>
-        .topbar .about { position: relative; margin: 0 auto 0 14px; }
-        .topbar .about summary { list-style: none; cursor: pointer; }
-        .topbar .about summary::-webkit-details-marker { display: none; }
-        .topbar .about .about-menu { position: absolute; z-index: 30; top: calc(100% + 8px); left: 0; min-width: 220px; padding: 8px; background: #fff; border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 16px 34px rgba(15,23,42,.18); }
-        .topbar .about .about-menu a { display: block; padding: 9px 12px; border-radius: 9px; color: var(--ink); font-size: 14.5px; font-weight: 600; text-decoration: none; }
-        .topbar .about .about-menu a:hover { background: var(--primary-tint); color: var(--primary); }
-    </style>
     <?php
+}
+
+/**
+ * The signed-in member's menu for the top bar: avatar plus three lines, opening a panel.
+ * Pass the result as the 'tools' option of engage_header() on any member page, so every member page
+ * has the same navigation. Returns HTML (already escaped).
+ *
+ *   $member   MemberSession::current() row
+ *   $o['home']      true on the home page: "Programs" and "Events" jump links replace the "Home" link
+ *   $o['programs']  home only: show "Programs" (there are open programs)
+ *   $o['events']    home only: show "Events" (there are upcoming events)
+ *   $o['current']   the path of the page being shown (e.g. '/member/dashboard'); that item is highlighted
+ *
+ * Support, Talk to DCW Support and Report a problem are always listed for a signed-in member: those pages
+ * explain any lock themselves (for example an expired membership), which is clearer than a missing link.
+ * The menu's open/close behaviour comes from the script in engage_footer().
+ */
+function engage_member_menu(array $member, array $o = []): string {
+    $e       = fn($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
+    $id      = (string) ($member['member_id'] ?? '');
+    $display = trim((string) ($member['full_name'] ?? '')) ?: $id;
+    $initial = mb_strtoupper(mb_substr($display, 0, 1));
+    $current = (string) ($o['current'] ?? '');
+    $home    = !empty($o['home']);
+
+    $link = function (string $label, string $href, string $class = '') use ($e, $current): string {
+        $isCur = $current !== '' && $href === $current;
+        $cls   = trim($class . ($isCur ? ' cur' : ''));
+        return '<a href="' . $e($href) . '"' . ($cls !== '' ? ' class="' . $e($cls) . '"' : '')
+             . ($isCur ? ' aria-current="page"' : '') . '>' . $e($label) . '</a>';
+    };
+
+    ob_start(); ?>
+    <nav class="mnav" aria-label="Member menu">
+        <details class="mmenu burger">
+            <summary aria-label="Open menu">
+                <span class="mav" aria-hidden="true"><?= $e($initial) ?></span>
+                <span class="bars" aria-hidden="true"><i></i><i></i><i></i></span>
+            </summary>
+            <div class="mpop">
+                <div class="mwho">
+                    <span class="mav lg" aria-hidden="true"><?= $e($initial) ?></span>
+                    <span>
+                        <strong><?= $e($display) ?></strong>
+                        <?php if ($id !== ''): ?><em><?= $e($id) ?></em><?php endif; ?>
+                    </span>
+                </div>
+
+                <?php if ($home): ?>
+                    <?php if (!empty($o['programs'])): ?><a href="#programs">Programs</a><?php endif; ?>
+                    <?php if (!empty($o['events'])):   ?><a href="#events">Events</a><?php endif; ?>
+                <?php else: ?>
+                    <?= $link('Home', '/') ?>
+                <?php endif; ?>
+                <?= $link('Track application', '/track') ?>
+
+                <div class="msep"></div>
+                <?= $link('My dashboard', '/member/dashboard') ?>
+                <?= $link('My certificates', '/member/certificates') ?>
+                <?= $link('Support', '/member/support') ?>
+                <?= $link('Talk to DCW Support', '/member/talk') ?>
+                <?= $link('Report a problem', '/member/report-problem') ?>
+
+                <div class="msep"></div>
+                <?= $link('Sign out', '/member/logout', 'out') ?>
+            </div>
+        </details>
+    </nav>
+    <?php
+    return ob_get_clean();
 }
 
 function engage_footer() {
@@ -241,6 +311,19 @@ function engage_footer() {
     // Staff pages (/admin, /finance) get a short footer: the member-facing links are not for them.
     $isStaff    = engage_is_staff_path();
     $aboutLinks = engage_about_links();
+
+    // Support is a members-only service, so its links are shown only to a signed-in member.
+    // This reads the member session only if the page has already loaded and started it (the footer
+    // runs after output, so it must never start a session itself). A page that has not done so
+    // simply shows the signed-out links.
+    $isMember = false;
+    if (!$isStaff && class_exists('MemberSession') && session_status() === PHP_SESSION_ACTIVE) {
+        try {
+            $isMember = (bool) MemberSession::current();
+        } catch (Throwable $ex) {
+            $isMember = false;
+        }
+    }
     ?>
 </main>
 <style>
@@ -310,9 +393,13 @@ function engage_footer() {
                 <ul>
                     <li><a href="/">All programs</a></li>
                     <li><a href="/membership">Join or renew</a></li>
-                    <li><a href="/member/support">Request support</a></li>
                     <li><a href="/track">Track an application</a></li>
-                    <li><a href="/member/login">Member sign in</a></li>
+                    <?php if ($isMember): ?>
+                        <li><a href="/member/dashboard">My dashboard</a></li>
+                        <li><a href="/member/support">Request support</a></li>
+                    <?php else: ?>
+                        <li><a href="/member/login">Member sign in</a></li>
+                    <?php endif; ?>
                 </ul>
             </nav>
 
@@ -333,8 +420,10 @@ function engage_footer() {
                 <ul>
                     <?php if ($contactUrl): ?><li><a href="<?= $e($contactUrl) ?>" rel="noopener">Contact us</a></li><?php endif; ?>
                     <?php if ($email): ?><li><a href="mailto:<?= $e($email) ?>"><?= $e($email) ?></a></li><?php endif; ?>
-                    <li><a href="/member/talk">Talk to DCW Support</a></li>
-                    <li><a href="/member/report-problem">Report a problem</a></li>
+                    <?php if ($isMember): ?>
+                        <li><a href="/member/talk">Talk to DCW Support</a></li>
+                        <li><a href="/member/report-problem">Report a problem</a></li>
+                    <?php endif; ?>
                 </ul>
                 <?php if ($subscribe): ?>
                     <p style="margin:14px 0 0;"><a class="sf-cta" href="<?= $e($subscribe) ?>" rel="noopener">Join our mailing list</a></p>
@@ -355,11 +444,25 @@ function engage_footer() {
 </footer>
 <?php endif; ?>
 <script>
-    // Close the "About DCW" menu when the visitor clicks anywhere else.
-    document.addEventListener('click', function (e) {
-        var m = document.getElementById('about-menu');
-        if (m && m.open && !m.contains(e.target)) m.open = false;
-    });
+    // Top-bar menus (About DCW, and the member menu): close on a click outside, on Esc, or after
+    // choosing a link; opening one closes the other.
+    (function () {
+        var menus = document.querySelectorAll('.topbar details');
+        if (!menus.length) return;
+        document.addEventListener('click', function (e) {
+            menus.forEach(function (d) { if (d.open && !d.contains(e.target)) d.open = false; });
+            var a = e.target.closest ? e.target.closest('.topbar details a') : null;
+            if (a) { var d = a.closest('details'); if (d) d.open = false; }
+        });
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') menus.forEach(function (d) { d.open = false; });
+        });
+        menus.forEach(function (d) {
+            d.addEventListener('toggle', function () {
+                if (d.open) menus.forEach(function (o) { if (o !== d) o.open = false; });
+            });
+        });
+    })();
 </script>
 </body>
 </html>
