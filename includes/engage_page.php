@@ -106,7 +106,8 @@ function engage_header(array $o) {
 <body>
 <header class="<?= $e($heroClass) ?>">
     <div class="topbar">
-        <a class="brand" href="/"><img src="https://dcwwiki.org/dcwwiki/images/5/56/DCW_logo.png" alt=""><span class="bname">DCW Engage</span></a>
+        <?php /* The logo sits inside .brand-logo: a small circle that crops the image (see engage.css). */ ?>
+        <a class="brand" href="/"><span class="brand-logo"><img src="https://dcwwiki.org/dcwwiki/images/5/56/DCW_logo.png" alt=""></span><span class="bname">DCW Engage</span></a>
         <div class="tools">
             <?php if ($tools !== null): ?>
                 <?= $tools ?>

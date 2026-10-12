@@ -132,6 +132,11 @@ a:focus-visible, summary:focus-visible, button:focus-visible { outline: 3px soli
     box-shadow: 0 0 0 2px rgba(255,255,255,.4);
 }
 .topbar .brand-logo img { display: block; width: 100%; height: 100%; object-fit: cover; transform: scale(var(--logo-zoom, 1.12)); }
+/* Safety net: a logo placed directly inside .brand (no .brand-logo wrapper) can never grow past the bar */
+.topbar .brand > img {
+    flex: none; display: block; width: 40px; height: 40px; border-radius: 50%; object-fit: cover; background: #fff;
+    box-shadow: 0 0 0 2px rgba(255,255,255,.4);
+}
 .topbar .tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; margin-left: auto; font-size: 14px; }
 .topbar form { margin: 0; }
 .who { color: rgba(255,255,255,.85); margin-right: 4px; }
