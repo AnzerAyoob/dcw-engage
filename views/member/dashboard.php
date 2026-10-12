@@ -22,7 +22,7 @@ require_once __DIR__ . '/../../includes/cert_rows.php';
  * so nobody sees anyone else's data.
  *
  * One Member ID can cover several memberships (the DCW Generic Community plus any clubs).
- * The identity is shown once; each membership is a slim row under it.
+ * The identity is shown once, with the greeting; each membership is a slim row under it.
  *
  * Certificates: only the latest few are shown here. The full list, with search and paging,
  * is /member/certificates.
@@ -33,7 +33,7 @@ require_once __DIR__ . '/../../includes/cert_rows.php';
  * other status reach the applicant by email, so they are not repeated here.
  *
  * Header: the same slim top bar as the home page, with the shared member menu (engage_member_menu()).
- * The intro line under the greeting is a short status built from the membership and the attention list.
+ * It is rendered "bare" (top bar only); the greeting lives in the identity card below.
  *
  * Shared look comes from /assets/css/engage.css. Certificate rows, buttons and icons come from
  * includes/cert_rows.php. The <style> block below only adds what the dashboard needs, scoped under .dash.
@@ -257,28 +257,15 @@ function dash_tile(array $icons, string $tone, string $icon, string $title, stri
 // Why a support tile is locked, if applicable.
 $lock = fn(bool $open) => !$memberActive ? 'Renew membership' : (!$open ? 'Currently closed' : '');
 
-// ---- Intro line under the greeting: membership status, and how many things need attention -------
-$leadBits = [];
-if (count($strips) === 1) {
-    $leadBits[] = 'Membership ' . strtolower($strips[0]['label']) . ' · ' . $strips[0]['line'];
-} else {
-    $activeCount = count(array_filter($strips, fn($s) => $s['active']));
-    $leadBits[] = $activeCount . ' of ' . count($strips) . ' memberships active';
-}
-if (!empty($alerts)) {
-    $leadBits[] = count($alerts) . ' ' . (count($alerts) === 1 ? 'item needs' : 'items need') . ' your attention';
-}
-
 // Same page frame as the rest of Engage: the slim top bar with the shared member menu.
+// "bare" renders the top bar only (no heading, lead or trail); the greeting is in the identity card.
 engage_header([
     'title'   => 'My dashboard',
-    'heading' => 'Hello, ' . $firstName,
-    'lead'    => implode('  ·  ', $leadBits),
-    'slim'    => true,
+    'heading' => 'Hello, ' . $firstName,      // used for the page title and share text only
+    'bare'    => true,                         // top bar only: no heading, lead or trail
     'member'  => $member,
     'tools'   => engage_member_menu($member, ['current' => '/member/dashboard']),
     'wide'    => true,
-    'crumbs'  => [['Home', '/'], ['My dashboard']],
 ]);
 cert_rows_css();   // icons, buttons and certificate rows shared with /member/certificates
 ?>
@@ -342,13 +329,13 @@ cert_rows_css();   // icons, buttons and certificate rows shared with /member/ce
 
 <div class="dash">
 
-    <!-- Identity (once) and memberships (one slim row each) -->
+    <!-- Greeting and identity (once), then memberships (one slim row each) -->
     <section class="d-id" aria-label="Membership">
         <div class="d-id-top">
             <span class="d-avatar" aria-hidden="true"><?= htmlspecialchars($initials) ?></span>
             <div class="d-id-who">
-                <h2><?= htmlspecialchars($fullName !== '' ? $fullName : (string) $member['member_id']) ?></h2>
-                <p>Member ID <?= htmlspecialchars((string) $member['member_id']) ?></p>
+                <h2>Hello, <?= htmlspecialchars($firstName) ?></h2>
+                <p><?= htmlspecialchars($fullName !== '' ? $fullName . ' · ' : '') ?>Member ID <?= htmlspecialchars((string) $member['member_id']) ?></p>
             </div>
         </div>
 
