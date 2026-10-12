@@ -439,7 +439,7 @@ function engage_footer() {
                     <img src="https://dcwwiki.org/dcwwiki/images/5/56/DCW_logo.png" alt="">
                     <span>Deoband Community Wikimedia</span>
                 </div>
-                <p class="sf-about"><strong>DCW Engage</strong> is the home for everything you do with Deoband Community Wikimedia: join or renew your membership, apply to programs, ask for support, and follow every request in one place.</p>
+                <p class="sf-about"><strong>DCW Engage</strong> serves as the central administrative hub for Deoband Community Wikimedia, connecting members to community governance, program applications, and support infrastructure.</p>
                 <?php if ($social): ?>
                     <div class="sf-social">
                         <?php foreach ($social as [$name, $href]): ?>
