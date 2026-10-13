@@ -7,6 +7,7 @@ require_once __DIR__ . '/../includes/engage_page.php';
 require_once __DIR__ . '/../models/InternetSupportModel.php';
 require_once __DIR__ . '/../models/ReimbursementSettingsModel.php';
 require_once __DIR__ . '/../models/ReimbursementModel.php';
+require_once __DIR__ . '/../models/MemberProfileModel.php';
 
 /**
  * DCW Engage - unified support entry point (/support).
@@ -19,6 +20,9 @@ require_once __DIR__ . '/../models/ReimbursementModel.php';
  * One page, then the member picks what they need. Type is chosen with ?type=internet|reimbursement.
  * All validation, privacy rules and state machines stay in InternetSupportModel / ReimbursementModel;
  * this file only does routing, sign-in checks and rendering.
+ *
+ * Internet support also needs a Wikimedia username that a reviewer or coordinator has verified
+ * (member_profile). The username on the request always comes from that profile, never from the form.
  */
 
 /**
@@ -55,6 +59,16 @@ $memberActive = !SUPPORT_REQUIRES_ACTIVE_MEMBER || MemberAuthModel::isActive($me
 // The member's own email is used for every request (it replaces the old email verification).
 $verifiedEmail = $memberActive ? strtolower((string) $member['email']) : '';
 $memberName = (string) ($member['full_name'] ?? '');
+
+// The member's verified Wikimedia username ('' if none). Needed for internet support.
+$verifiedUsername = '';
+if ($memberActive) {
+    try {
+        $verifiedUsername = (new MemberProfileModel())->verifiedUsername((string) $member['member_id']);
+    } catch (Throwable $e) {
+        error_log('Engage support profile lookup failed: ' . $e->getMessage());
+    }
+}
 
 $typeMeta = [
     'internet' => [
@@ -94,6 +108,8 @@ if ($action === 'submit_internet_request' && $type === 'internet') {
 
     if ($verifiedEmail === '') {
         $errors['system'] = "Support requests are for members with an active membership.";
+    } elseif ($verifiedUsername === '') {
+        $errors['system'] = "Please add and verify your Wikimedia username on your profile before requesting internet support.";
     } else {
         try {
             $applicantName = trim($_POST['applicant_name'] ?? '');
@@ -110,7 +126,7 @@ if ($action === 'submit_internet_request' && $type === 'internet') {
                 $_POST['validity_days'] ?? '',
                 $_POST['reason'] ?? '',
                 [
-                    'wikimedia_username' => $_POST['wikimedia_username'] ?? '',
+                    'wikimedia_username' => $verifiedUsername,   // from the verified profile, not the form
                     'edits_80'           => $_POST['edits_80'] ?? '',
                     'attended_ch'        => $_POST['attended_ch'] ?? '',
                     'tech_contributor'   => $_POST['tech_contributor'] ?? '',
@@ -362,6 +378,14 @@ engage_header([
                 <?= (int) InternetSupportModel::MIN_DAYS_BETWEEN_REQUESTS ?> days.
             </p>
 
+            <?php if ($verifiedUsername === ''): ?>
+                <div class="alert error" style="margin:0;">
+                    <strong>Verify your Wikimedia username first.</strong>
+                    Reviewers check your contributions against it. Add it on your
+                    <a href="/member/profile" style="color:#991b1b;">profile</a>; a reviewer or coordinator will verify it,
+                    and this form opens as soon as they have.
+                </div>
+            <?php else: ?>
             <form method="POST" action="/support?type=internet">
                 <?= CSRF::getInputField() ?>
                 <input type="hidden" name="action" value="submit_internet_request">
@@ -390,9 +414,9 @@ engage_header([
                         <input type="text" name="applicant_name" required maxlength="255" value="<?= $oldName() ?>">
                     </div>
                     <div class="field">
-                        <label>Wikimedia username <span class="req-star">*</span></label>
-                        <input type="text" name="wikimedia_username" required maxlength="255" value="<?= $old('wikimedia_username') ?>">
-                        <span class="hint">The username only, without "User:" or a link.</span>
+                        <label>Wikimedia username</label>
+                        <input type="text" value="<?= htmlspecialchars($verifiedUsername) ?>" readonly>
+                        <span class="hint">Verified on your profile. <a href="/member/profile">Change it</a> (a new account has to be verified again).</span>
                     </div>
                 </div>
 
@@ -469,6 +493,7 @@ engage_header([
                     update();
                 })();
             </script>
+            <?php endif; /* verified username */ ?>
 
         <?php else: /* reimbursement */ ?>
             <?php if (!empty($reimbursementSettings['instructions'])): ?>
