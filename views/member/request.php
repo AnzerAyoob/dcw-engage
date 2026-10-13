@@ -18,6 +18,10 @@ require_once __DIR__ . '/../../models/InternetSupportModel.php';
  *
  * Never shown here: payment details, phone number, uploaded receipts, internal staff notes.
  * The amounts shown are requested / approved / paid, with the reasons staff wrote for the member.
+ *
+ * Wikimedia username: on an internet support request it comes from the member's verified profile
+ * when the request is made. It is shown here read-only and is NOT part of what can be resubmitted,
+ * so a member cannot swap in an unverified account by answering a reviewer.
  */
 MemberSession::requireLogin();
 $member = MemberSession::current();
@@ -149,8 +153,8 @@ if ($isRb) {
         }
     } elseif ($internet && $isPost && $action === 'resubmit_draft') {
         $reply = trim((string) ($_POST['reply'] ?? ''));
+        // No wikimedia_username here on purpose: it is not editable after the request is made.
         $postedDraft = [
-            'wikimedia_username' => trim((string) ($_POST['wikimedia_username'] ?? '')),
             'reason'             => trim((string) ($_POST['reason'] ?? '')),
             'contributions'      => trim((string) ($_POST['contributions'] ?? '')),
             'plans'              => trim((string) ($_POST['plans'] ?? '')),
@@ -185,6 +189,7 @@ if ($isRb) {
             foreach (['edits_80', 'attended_ch', 'tech_contributor'] as $k) {
                 $internetDraft[$k] = req_yes_no($internetDraft[$k]);
             }
+            // wikimedia_username is shown read-only, straight from the saved request.
             foreach (['wikimedia_username', 'contributions', 'plans'] as $k) {
                 $internetDraft[$k] = (string) ($internetDraft[$k] ?? '');
             }
@@ -363,8 +368,8 @@ engage_header([
                 <legend>Your request was sent back to you</legend>
                 <p style="font-size:14px; color:var(--muted); margin-top:0;">
                     The reviewer needs more information. Read their message, correct your answers below if needed,
-                    add a short note, and resubmit. Your phone number and pack details are not shown here
-                    and stay as you gave them.
+                    add a short note, and resubmit. Your phone number, pack details and Wikimedia username
+                    are not editable here and stay as they were.
                 </p>
                 <?php $renderThread($internetThread); ?>
                 <form method="POST">
@@ -373,8 +378,9 @@ engage_header([
                     <input type="hidden" name="id" value="<?= $e($internet['tracking_id']) ?>">
 
                     <div class="field">
-                        <label>Wikimedia username <span class="req-star">*</span></label>
-                        <input type="text" name="wikimedia_username" maxlength="255" value="<?= $e($d['wikimedia_username']) ?>" required>
+                        <label>Wikimedia username</label>
+                        <input type="text" value="<?= $e($d['wikimedia_username']) ?>" readonly>
+                        <span class="hint">Taken from your verified profile when you made the request.</span>
                     </div>
                     <div class="field">
                         <label>80+ manual edits last month <span class="req-star">*</span></label>
