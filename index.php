@@ -87,9 +87,15 @@ if ($route === '/' || $route === '/index.php') {
     // Signed-in members only: the view calls MemberSession::requireLogin() itself.
     require __DIR__ . '/views/member/dashboard.php';
 
-    } elseif ($route === '/member/profile') {
+// Signed-in members only. Wikimedia username (verified by a reviewer or coordinator).
+} elseif ($route === '/member/profile') {
     require __DIR__ . '/views/member/profile.php';
-    
+
+// Full list of the member's certificates, with search and paging. The dashboard
+// shows only the latest few and links here. Signed-in members only.
+} elseif ($route === '/member/certificates') {
+    require __DIR__ . '/views/member/certificates.php';
+
 // --- Member support requests (signed-in members only) -------------------
 // Internet support and reimbursement are members-only. The member signs in,
 // starts a request at /member/support?type=internet|reimbursement, and then
@@ -153,6 +159,7 @@ if ($route === '/' || $route === '/index.php') {
 // Literal routes, so they must come before the catch-all dynamic form route
 // below or they would be treated as form types of their own.
 // 302 while rolling out; switch to 301 once everything has been confirmed.
+// NOTE: a redirect turns a POST into a GET, so no form may post to these URLs.
 } elseif ($route === '/support' || $route === '/reimbursement' || $route === '/internet-support') {
     $query = $_GET;
     unset($query['verify']);

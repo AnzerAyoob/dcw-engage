@@ -21,8 +21,8 @@ class MemberProfileModel
 
     public function __construct(?PDO $db = null)
     {
-        // ADAPT THIS ONE LINE: use the same connection call that MemberModel's constructor uses.
-        $this->db = $db ?? Database::getInstance()->getConnection();
+        // Same connection call as MemberModel's constructor.
+        $this->db = $db ?? DB::getInstance()->getConnection();
     }
 
     // ---- Reading -------------------------------------------------------------------------------
