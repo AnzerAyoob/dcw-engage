@@ -81,6 +81,7 @@ if ($type === 'renewal') {
         }
     } elseif (isset(MEMBERSHIP_NEW[$chapter])) {
         $slug = MEMBERSHIP_NEW[$chapter][1];   // no Member ID: normal application
+        unset($_SESSION['join_member_id'][$slug]);   // nothing typed this time: drop any ID parked earlier
     } elseif (isset($_GET['go'])) {
         $error = 'Enter your Member ID to renew, or choose a membership to apply as a new member.';
     }
@@ -213,6 +214,8 @@ engage_header([
         idInput.disabled = !showId;
         hintRenewal.style.display = (renewal && !loggedIn) ? '' : 'none';
         hintClub.style.display = joining ? '' : 'none';
+        // Only the hint that is showing is read out with the field.
+        idInput.setAttribute('aria-describedby', renewal ? 'hint-renewal' : 'hint-club');
         row.style.display = hasId ? 'none' : '';
         chapter.disabled = hasId;
     }
