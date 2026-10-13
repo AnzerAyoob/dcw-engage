@@ -10,9 +10,9 @@ require_once __DIR__ . '/../includes/crypto.php';
  *   Submitted --(support reviewer)--> Approved for Support | Rejected | Discarded
  *   Approved for Support --(finance)--> Awaiting Receipt | Recharge Failed | Submitted (sent back to review)
  *   Recharge Failed --(support reviewer)--> Approved for Support | Rejected | Discarded
- *   Submitted --(support reviewer)--> Info Requested --(applicant, via /track)--> Submitted
+ *   Submitted --(support reviewer)--> Info Requested --(applicant, via /member/request)--> Submitted
  *   Info Requested --(support reviewer)--> Rejected | Discarded (applicant never replied)
- *   Awaiting Receipt --(applicant, via /track)--> Receipt Submitted
+ *   Awaiting Receipt --(applicant, via /member/request)--> Receipt Submitted
  *   Receipt Submitted --(finance)--> Closed | Awaiting Receipt (receipt bounced)
  *
  * AMOUNTS. Three figures can exist for one request:
@@ -31,11 +31,17 @@ require_once __DIR__ . '/../includes/crypto.php';
  * notice is flagged to the reviewers (see packEndNoticeDays()) but never blocks a
  * request. Finance sees the date in the recharge queue, soonest first.
  *
+ * WIKIMEDIA USERNAME. When a request is made, the caller passes the member's VERIFIED username
+ * (from member_profile, see MemberProfileModel). It is stored on the request for reviewers.
+ * It is NOT editable afterwards: when a request is sent back ("Info Requested"), the applicant
+ * can change their other answers but not the username, so an unverified account cannot be
+ * swapped in by answering a reviewer.
+ *
  * "Info Requested" sends the request back to the applicant AS A DRAFT: on
- * /track they see the reviewer's question and their own editable answers
+ * /member/request they see the reviewer's question and their own editable answers
  * (getDraftForApplicant()), correct them, add a note and resubmit in one
- * step (resubmitDraft()). The phone number, pack and price are never shown
- * or changed from there.
+ * step (resubmitDraft()). The phone number, pack, price and username are never
+ * changed from there.
  *
  * Same conventions as ReimbursementModel: every transition is a conditional
  * UPDATE that re-checks the current status and reports success via
@@ -50,7 +56,7 @@ require_once __DIR__ . '/../includes/crypto.php';
  * template change or an error trace.
  *
  * Discard is silent, as with reimbursements: no email, and a discarded
- * request looks identical to "no record found" on /track.
+ * request looks identical to "no record found" for the applicant.
  */
 class InternetSupportModel {
     public const MIN_REASON_LENGTH = 15;
@@ -153,10 +159,11 @@ class InternetSupportModel {
      * everyone else needs BOTH 80+ manual edits in the past month AND
      * attendance at the last 3 Conversation Hours.
      *
-     * @param string $email        already verified (EmailVerificationModel, form_id NULL)
+     * @param string $email        the signed-in member's email
      * @param string $amountRupees e.g. "299" or "299.50"
      * @param mixed  $validityDays optional whole days, '' for none
-     * @param array  $eligibility  keys: wikimedia_username, edits_80, attended_ch, tech_contributor ('yes'|'no'),
+     * @param array  $eligibility  keys: wikimedia_username (the member's VERIFIED username, from member_profile),
+     *                             edits_80, attended_ch, tech_contributor ('yes'|'no'),
      *                             contributions, plans (free text), pack_ends_on ('YYYY-MM-DD': when the
      *                             applicant's current pack ends; required)
      * @throws \InvalidArgumentException on any validation failure
@@ -224,6 +231,7 @@ class InternetSupportModel {
         $packEndsOn = $this->cleanPackEndDate($eligibility['pack_ends_on'] ?? '');
 
         // --- Wikimedia username (lets reviewers check edits on XTools etc.) ---
+        // The caller passes the member's verified profile username; this is a last safety check.
         $wikiUser = trim(preg_replace('/\s+/', ' ', str_replace('_', ' ', (string) ($eligibility['wikimedia_username'] ?? ''))));
         $wikiUser = preg_replace('/^User:\s*/i', '', $wikiUser);
         if ($wikiUser === '') {
@@ -268,7 +276,7 @@ class InternetSupportModel {
         }
 
         if ($this->hasOpenRequest($email)) {
-            throw new \InvalidArgumentException('You already have an internet support request in progress. You can follow it on the tracking page.');
+            throw new \InvalidArgumentException('You already have an internet support request in progress. You can follow it from your dashboard.');
         }
         if ($this->hasRecentRequest($email)) {
             throw new \InvalidArgumentException('Internet support can be requested once every ' . self::MIN_DAYS_BETWEEN_REQUESTS . ' days.');
@@ -572,12 +580,12 @@ class InternetSupportModel {
     }
 
     /**
-     * Applicant answers via /track (tracking ID + email pair) WITHOUT editing
+     * Applicant answers (tracking ID + email pair) WITHOUT editing
      * anything. Moves Info Requested -> Submitted so it returns to the
      * reviewers' queue. Returns false if the pair doesn't match or the
      * request isn't waiting on them.
      *
-     * /track now uses resubmitDraft() instead, which also saves corrected
+     * /member/request now uses resubmitDraft() instead, which also saves corrected
      * answers. This stays for any caller that only wants to send a reply.
      *
      * @throws \InvalidArgumentException if the message is too short or long
@@ -626,7 +634,7 @@ class InternetSupportModel {
 
     /**
      * Same rules as createRequest() for the answers an applicant may edit.
-     * Phone, pack, price and operator are NOT editable here.
+     * Phone, pack, price, operator and the Wikimedia username are NOT editable here.
      *
      * @throws \InvalidArgumentException
      * @return array normalised values, eligibility flags as 1/0
@@ -639,15 +647,6 @@ class InternetSupportModel {
         }
         if ($len > self::MAX_REASON_LENGTH) {
             throw new \InvalidArgumentException('Reason is too long (' . self::MAX_REASON_LENGTH . ' characters max).');
-        }
-
-        $wikiUser = trim(preg_replace('/\s+/', ' ', str_replace('_', ' ', (string) ($in['wikimedia_username'] ?? ''))));
-        $wikiUser = preg_replace('/^User:\s*/i', '', $wikiUser);
-        if ($wikiUser === '') {
-            throw new \InvalidArgumentException('Please enter your Wikimedia username.');
-        }
-        if (strlen($wikiUser) > 255 || preg_match('/[#<>\[\]|{}\/@]/', $wikiUser)) {
-            throw new \InvalidArgumentException('That doesn\'t look like a valid Wikimedia username. Enter the username only, without "User:" or a link.');
         }
 
         $yesNo = function ($key) use ($in) {
@@ -681,7 +680,6 @@ class InternetSupportModel {
         }
 
         return [
-            'wikimedia_username' => $wikiUser,
             'reason'             => $reason,
             'contributions'      => $contributions,
             'plans'              => $plans,
@@ -692,9 +690,10 @@ class InternetSupportModel {
     }
 
     /**
-     * The applicant's own editable answers, for the draft form on /track.
+     * The applicant's own answers, for the draft form on /member/request.
      * Only returned while 'Info Requested' and the tracking ID + email pair
      * matches. Never selects the phone number or anything finance-side.
+     * wikimedia_username is included so the form can SHOW it (read-only).
      */
     public function getDraftForApplicant($trackingId, $email) {
         $stmt = $this->db->prepare(
@@ -708,13 +707,16 @@ class InternetSupportModel {
     }
 
     /**
-     * Applicant corrects their answers and answers the reviewer, via /track.
+     * Applicant corrects their answers and answers the reviewer.
      * Saves the edits, stores the note (with a line listing which answers
      * changed, visible to the reviewer in the thread) and moves
      * Info Requested -> Submitted in one transaction. Returns false if the
      * pair doesn't match or the request is no longer waiting on the applicant.
      *
-     * @param array $answers keys as in createRequest()'s $eligibility, plus 'reason'
+     * The Wikimedia username is deliberately not part of this: it is fixed when the
+     * request is made (from the verified profile) and cannot be changed here.
+     *
+     * @param array $answers keys: reason, contributions, plans, edits_80, attended_ch, tech_contributor
      * @throws \InvalidArgumentException on any validation failure
      */
     public function resubmitDraft($trackingId, $email, array $answers, $note) {
@@ -722,7 +724,6 @@ class InternetSupportModel {
         $new  = $this->cleanEditableAnswers($answers);
 
         $labels = [
-            'wikimedia_username' => 'Wikimedia username',
             'reason'             => 'Why you need support',
             'contributions'      => 'Contributions',
             'plans'              => 'Plans',
@@ -755,7 +756,7 @@ class InternetSupportModel {
 
             $update = $this->db->prepare(
                 "UPDATE internet_requests
-                 SET wikimedia_username = :wikimedia_username, reason = :reason,
+                 SET reason = :reason,
                      contributions = :contributions, plans = :plans,
                      edits_80 = :edits_80, attended_ch = :attended_ch, tech_contributor = :tech_contributor,
                      status = 'Submitted'
@@ -795,7 +796,7 @@ class InternetSupportModel {
     }
 
     /**
-     * Thread for /track. No author column: reviewers stay anonymous.
+     * Thread for the applicant. No author column: reviewers stay anonymous.
      * Same tracking ID + email pairing as getStatusForApplicant, and
      * Discarded requests look like "no record".
      */
@@ -1020,7 +1021,7 @@ class InternetSupportModel {
     }
 
     // ------------------------------------------------------------------
-    // Applicant (public /track, tracking ID + email pair)
+    // Applicant (signed-in member; tracking ID + email pair)
     // ------------------------------------------------------------------
 
     /**
