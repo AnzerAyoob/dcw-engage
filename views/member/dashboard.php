@@ -11,6 +11,7 @@ require_once __DIR__ . '/../../models/ReimbursementModel.php';
 require_once __DIR__ . '/../../models/MemberTicketModel.php';
 require_once __DIR__ . '/../../models/TechIssueModel.php';
 require_once __DIR__ . '/../../models/MemberCertificateModel.php';
+require_once __DIR__ . '/../../models/MemberProfileModel.php';
 require_once __DIR__ . '/../../includes/member_session.php';
 require_once __DIR__ . '/../../includes/member_requests.php';
 require_once __DIR__ . '/../../includes/cert_rows.php';
@@ -31,6 +32,9 @@ require_once __DIR__ . '/../../includes/cert_rows.php';
  * Applications the member has saved as a Draft (still to be finished, or sent back) are listed under
  * "Requires your attention", with a button that emails them a fresh resume link. Applications in any
  * other status reach the applicant by email, so they are not repeated here.
+ *
+ * Profile: when internet support is open, a member without a verified Wikimedia username is nudged
+ * to /member/profile from "Requires your attention".
  *
  * Header: the same slim top bar as the home page, with the shared member menu (engage_member_menu()).
  * It is rendered "bare" (top bar only); the greeting lives in the identity card below.
@@ -221,6 +225,22 @@ foreach ($ticketsWaiting as $t) {
 foreach ($techWaiting as $t) {
     $alerts[] = ['who' => 'Technical team', 'text' => 'New reply on “' . $t['title'] . '”',
                  'href' => '/member/report-problem?id=' . rawurlencode($t['tracking_id']), 'cta' => 'Read reply'];
+}
+// Internet support needs a verified Wikimedia username: nudge only when it is open and the member is active.
+if ($memberActive && $internetOpen) {
+    $profileState = '';
+    try {
+        $pf = (new MemberProfileModel())->get((string) $member['member_id']);
+        if (!$pf || empty($pf['wikimedia_username'])) {
+            $profileState = 'Add your Wikimedia username to request internet support';
+        } elseif (empty($pf['username_verified_at'])) {
+            $profileState = 'Your Wikimedia username is waiting to be verified';
+        }
+    } catch (Throwable $e) { /* table not created yet: stay quiet */ }
+    if ($profileState !== '') {
+        $alerts[] = ['who' => 'Profile', 'text' => $profileState,
+                     'href' => '/member/profile', 'cta' => 'Open profile'];
+    }
 }
 
 $icons = [
