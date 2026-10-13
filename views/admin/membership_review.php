@@ -6,16 +6,30 @@ require_once __DIR__ . '/../../includes/app_log.php';
 require_once __DIR__ . '/../../includes/engage_page.php';
 require_once __DIR__ . '/../../includes/wiki_username.php';
 require_once __DIR__ . '/../../models/MemberModel.php';
+require_once __DIR__ . '/../../models/MemberProfileModel.php';
 require_once __DIR__ . '/../../includes/mail/membership_mailer.php';
 
 // Organizers only work with application forms, so they are not in this list.
 requireRole(['membership_coordinator', 'membership_reviewer', 'owner']);
 
 $model = new MemberModel();
+$profiles = new MemberProfileModel();
 // Pass the FULL role list: an account can hold several roles, and Auth::role() is only the primary one.
 $scope = $model->scopeFor(Auth::roles(), (string) Auth::email());   // null = every chapter
 // Changing which Member ID a club membership uses is a reviewer decision, not a coordinator one.
 $canLinkIds = Auth::hasAnyRole(['membership_reviewer', 'owner']);
+
+// Profile rights: reviewers and owners for everyone; a coordinator for a person who holds at least
+// one membership in a chapter assigned to them. Every profile write goes through this check.
+$mayEditProfile = function (string $memberId) use ($model, $scope, $canLinkIds): bool {
+    if ($canLinkIds || $scope === null) return true;
+    if (!$scope) return false;
+    foreach ($model->membershipsFor($memberId) as $m) {
+        if (in_array(trim((string) ($m['chapter'] ?? '')), $scope, true)) return true;
+    }
+    return false;
+};
+
 $notice = ''; $error = '';
 $id = (int) ($_GET['id'] ?? $_POST['id'] ?? 0);
 $app = $id ? $model->getApplication($id, $scope) : false;
@@ -124,6 +138,26 @@ if (!$id && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') ==
     }
 }
 
+// ---------------------------------------------------------------------------
+// Quick verify / un-verify from the Accepted members table. The Member ID is posted, so the
+// chapter scope is checked here, not assumed from what the table showed.
+// ---------------------------------------------------------------------------
+if (!$id && $_SERVER['REQUEST_METHOD'] === 'POST' && in_array($_POST['action'] ?? '', ['profile_verify', 'profile_unverify'], true)) {
+    if (!CSRF::validate($_POST['csrf_token'] ?? '')) die('Invalid CSRF token.');
+    $verify = ($_POST['action'] === 'profile_verify');
+    try {
+        $mid = trim((string) ($_POST['member_id'] ?? ''));
+        if ($mid === '' || !$mayEditProfile($mid)) throw new Exception('You cannot change this member\'s profile.');
+        $profiles->setVerified($mid, currentAdminIdentifier(), $verify);
+        $_SESSION['membership_flash'] = ['ok', $verify ? 'Wikimedia username verified.' : 'Verification removed.'];
+    } catch (Throwable $e) {
+        $_SESSION['membership_flash'] = ['error', $e->getMessage()];
+    }
+    $keep = array_filter(['form' => $_GET['form'] ?? '', 'status' => $_GET['status'] ?? ''], 'strlen');
+    header('Location: /admin/membership-review' . ($keep ? '?' . http_build_query($keep) : '') . '#acceptedSect');
+    exit;
+}
+
 if ($app && $_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!CSRF::validate($_POST['csrf_token'] ?? '')) die('Invalid CSRF token.');
     $act = $_POST['action'] ?? '';
@@ -173,6 +207,19 @@ if ($app && $_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($new === '') throw new Exception('The username cannot be empty.');
             $model->setAnswer($app, $fieldName, $new, $by);
             $mail = null;
+        } elseif (in_array($act, ['profile_save', 'profile_save_verify', 'profile_verify', 'profile_unverify'], true)) {
+            // The person's profile (Wikimedia username). The Member ID comes from the application's
+            // email on the server, never from the request, and the chapter scope is checked.
+            $held = $model->membershipsForEmail((string) $app['email']);
+            $profileMemberId = $held ? (string) $held[0]['member_id'] : '';
+            if ($profileMemberId === '') throw new Exception('This person has no Member ID yet. The username is saved to their profile once they are approved.');
+            if (!$mayEditProfile($profileMemberId)) throw new Exception('You cannot change this member\'s profile.');
+            if ($act === 'profile_save' || $act === 'profile_save_verify') {
+                $profiles->saveByStaff($profileMemberId, (string) ($_POST['username'] ?? ''), $by, $act === 'profile_save_verify');
+            } else {
+                $profiles->setVerified($profileMemberId, $by, $act === 'profile_verify');
+            }
+            $mail = null;
         } elseif (in_array($act, ['link_id', 'unlink_id', 'relink_id'], true)) {
             // Share one Member ID between the Generic Community and a club. No email is sent.
             if (!$canLinkIds) throw new Exception('Only reviewers can change Member IDs.');
@@ -198,7 +245,8 @@ if ($app && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 MembershipMailer::sendDecisionFor($app, $mail[0], $mail[1], $mail[2], $mail[3] ?? false);
             } catch (Throwable $e) { app_log("Membership email failed for application #{$app['id']}: " . $e->getMessage()); }
         }
-        header('Location: /admin/membership-review?id=' . $app['id'] . '&done=' . urlencode($act));
+        header('Location: /admin/membership-review?id=' . $app['id'] . '&done=' . urlencode($act)
+            . (strpos($act, 'profile_') === 0 ? '#profile' : ''));
         exit;
     } catch (Throwable $e) { $error = $e->getMessage(); }
     $app = $model->getApplication($id, $scope);   // show fresh state after an error
@@ -206,6 +254,10 @@ if ($app && $_SERVER['REQUEST_METHOD'] === 'POST') {
 $doneText = ['approve' => 'Approved.', 'reject' => 'Rejected.', 'review' => 'Marked under review.',
              'info' => 'Sent back to the applicant.', 'resend' => 'Link sent again.',
              'fix_username' => 'Wikimedia username corrected.',
+             'profile_save' => 'Profile saved.',
+             'profile_save_verify' => 'Username saved and verified.',
+             'profile_verify' => 'Username verified.',
+             'profile_unverify' => 'Verification removed.',
              'link_id' => 'Linked. On approval this member keeps that ID and no new one is made.',
              'unlink_id' => 'Link removed.',
              'relink_id' => 'Member ID changed. The confirmation email they received shows the old ID, so let them know.'];
@@ -218,12 +270,26 @@ $bulk = $_SESSION['membership_bulk'] ?? null;
 unset($_SESSION['membership_bulk']);
 $bulkVerb = ['approve' => 'approved', 'reject' => 'rejected', 'review' => 'marked under review', 'info' => 'sent back for more information'];
 
+// One-line result of a quick verify from the Accepted table.
+$flash = $_SESSION['membership_flash'] ?? null;
+unset($_SESSION['membership_flash']);
+
 $fSlug = (string) ($_GET['form'] ?? ''); $fStatus = (string) ($_GET['status'] ?? '');
 $h = fn($v) => htmlspecialchars((string) $v);
 $label = fn($s) => $s === 'Draft' ? 'Awaiting applicant' : $s;
 // Colour class for a status pill.
 $tone = fn($s) => ['New' => 'st-new', 'Submitted' => 'st-new', 'Under Review' => 'st-review',
                    'Draft' => 'st-wait', 'Accepted' => 'st-ok', 'Rejected' => 'st-bad'][$s] ?? 'st-new';
+
+// Queue URL that keeps the active filters, with some of them overridden.
+$qUrl = function (array $over) use ($fSlug, $fStatus): string {
+    $q = array_filter(array_merge(['form' => $fSlug, 'status' => $fStatus], $over), 'strlen');
+    return '/admin/membership-review' . ($q ? '?' . http_build_query($q) : '');
+};
+
+// Wikimedia links for a username: global account page and contributions.
+$wmLinks = fn(string $u) => '<a class="dl" href="' . $h(MemberProfileModel::globalUrl($u)) . '" target="_blank" rel="noopener">Global account</a>'
+    . ' &middot; <a class="dl" href="' . $h(MemberProfileModel::contribsUrl($u)) . '" target="_blank" rel="noopener">Contributions</a>';
 
 // Chapter name for a queue row: from the slug, or from the answer on renewals
 // (MemberModel::chapterOf handles both). Falls back to the raw slug if unknown.
@@ -266,7 +332,10 @@ engage_header([
 ?>
 <style>
     /* Membership review only. Everything else comes from /assets/css/engage.css */
-    .sect { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 22px 24px; margin: 0 0 22px; box-shadow: 0 16px 34px rgba(15,23,42,.12); }
+
+    /* ---- Cards ---- */
+    .sect { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 20px 22px; margin: 0 0 18px; box-shadow: 0 6px 18px rgba(15,23,42,.06); }
+    .sect > h3:first-child, .sect .card-title { margin: 0 0 12px; font-size: 15px; font-weight: 800; letter-spacing: -.005em; }
     .sect select, .sect input[type=text] {
         padding: 8px 12px; background: #fff; color: var(--ink);
         border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 14px;
@@ -282,42 +351,84 @@ engage_header([
 
     .action-banner ul { flex-basis: 100%; margin: 6px 0 0; padding-left: 18px; }
     .flash-link { display: block; flex-basis: 100%; margin-top: 8px; padding: 10px; background: rgba(0,0,0,.06); border-radius: 6px; font-size: 12px; word-break: break-all; }
+    .muted { color: #94a3b8; }
 
-    dl.answers { margin: 14px 0 0; }
-    dl.answers dt { margin-top: 14px; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
-    dl.answers dd { margin: 3px 0 0; white-space: pre-wrap; }
+    /* ---- Queue: summary tiles, filter chips ---- */
+    .rv-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin: 0 0 18px; }
+    .rv-stat { --tone: var(--primary); padding: 14px 16px; background: var(--card); border: 1px solid var(--border); border-top: 4px solid var(--tone); border-radius: 14px; }
+    .rv-stat b { display: block; font-size: 28px; line-height: 1.1; font-weight: 800; color: var(--tone); font-variant-numeric: tabular-nums; }
+    .rv-stat span { font-size: 13px; font-weight: 600; color: var(--muted); }
+
+    .rv-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 18px; margin: 0 0 16px; }
+    .rv-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .rv-chip { padding: 6px 14px; border: 1px solid var(--border); border-radius: 999px; background: #fff; color: var(--ink); font-size: 13.5px; font-weight: 600; text-decoration: none; transition: border-color .15s, background .15s; }
+    .rv-chip:hover { border-color: var(--primary); }
+    .rv-chip .n { margin-left: 6px; color: var(--muted); font-weight: 700; font-variant-numeric: tabular-nums; }
+    .rv-chip.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+    .rv-chip.on .n { color: #fff; opacity: .85; }
+    .rv-bar form { display: flex; gap: 8px; align-items: center; margin: 0; }
+
+    .bulkbar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 0 0 14px; padding: 12px 14px; background: #fff; border: 1px solid var(--primary); border-radius: 12px; box-shadow: 0 8px 20px rgba(15,23,42,.12); }
+    .bulkbar .count { min-width: 90px; font-size: 14px; font-weight: 700; color: var(--primary); }
+    .bulkbar input[type=text] { flex: 1 1 240px; min-width: 200px; }
+    .tbl th.pick, .tbl td.pick { width: 36px; padding-right: 0; }
+    .tbl td.pick input, .tbl th.pick input { width: 16px; height: 16px; cursor: pointer; accent-color: var(--primary); }
+    .tbl td.pick input:disabled { cursor: not-allowed; }
+    .tbl td .sub { display: block; color: var(--muted); font-size: 12.5px; }
+
+    /* ---- Application page: answers on the left, decision and profile on the right ---- */
+    .rv-back { display: inline-block; margin: 0 0 14px; font-size: 14px; font-weight: 600; color: var(--primary); text-decoration: none; }
+    .rv-back:hover { text-decoration: underline; }
+    .rv-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin: 0 0 4px; }
+    .rv-head h2 { margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -.01em; overflow-wrap: anywhere; }
+    .rv-meta { margin: 0 0 20px; color: var(--muted); font-size: 14px; overflow-wrap: anywhere; }
+    .rv-grid { display: grid; gap: 0 22px; }
+    @media (min-width: 1000px) {
+        .rv-grid { grid-template-columns: minmax(0, 1fr) 370px; align-items: start; }
+        .rv-side { position: sticky; top: 12px; }
+    }
+
+    dl.answers { margin: 0; display: grid; grid-template-columns: minmax(130px, 240px) minmax(0, 1fr); }
+    dl.answers dt, dl.answers dd { margin: 0; padding: 11px 0; border-top: 1px solid var(--border); }
+    dl.answers dt:first-of-type, dl.answers dt:first-of-type + dd { border-top: 0; }
+    dl.answers dt { padding-right: 16px; font-size: 13px; font-weight: 700; color: var(--muted); }
+    dl.answers dd { white-space: pre-wrap; overflow-wrap: anywhere; }
+    dl.answers dd.u { white-space: normal; }
+    @media (max-width: 700px) {
+        dl.answers { grid-template-columns: 1fr; }
+        dl.answers dt { padding-bottom: 0; border-top: 1px solid var(--border); }
+        dl.answers dd { padding-top: 3px; border-top: 0; }
+        dl.answers dt:first-of-type { border-top: 0; }
+    }
     .hist { margin: 10px 0 0; font-size: 14px; }
 
     .actrow { display: flex; flex-wrap: wrap; gap: 10px; }
-    .actform { margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--border); }
-    .actform .field { margin-bottom: 12px; }
+    .rv-fold { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+    .rv-fold > summary { cursor: pointer; font-size: 14.5px; font-weight: 700; list-style: none; }
+    .rv-fold > summary::-webkit-details-marker { display: none; }
+    .rv-fold > summary::before { content: '\25B8'; margin-right: 8px; color: var(--muted); }
+    .rv-fold[open] > summary::before { content: '\25BE'; }
+    .rv-fold form { margin-top: 12px; }
+    .rv-fold .field { margin-bottom: 12px; }
 
     .idline { margin: 6px 0 0; font-size: 14.5px; }
     .idform { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 12px; }
-    .idform input[type=text] { width: 190px; }
+    .idform input[type=text] { flex: 1 1 180px; min-width: 0; }
     .idform label.chk { display: flex; align-items: center; gap: 6px; font-size: 13.5px; margin: 0; }
-    .idform .btn-ghost, .idform .btn-solid { width: auto; padding: 7px 16px; font-size: 13.5px; }
+    .idform .btn-ghost, .idform .btn-solid, .idform .btn-ok { width: auto; padding: 7px 16px; font-size: 13.5px; }
     .idlist { margin: 10px 0 0; padding-left: 18px; font-size: 14.5px; }
     .idlist li { margin: 3px 0; }
     .idwarn { margin: 12px 0 0; padding: 10px 12px; background: #fffbeb; border: 1px solid #fcd34d; border-radius: 10px; font-size: 14px; color: #92400e; }
     .idbad { margin: 12px 0 0; padding: 10px 12px; background: #fef2f2; border: 1px solid #fca5a5; border-radius: 10px; font-size: 14px; color: #991b1b; }
-
-    /* Inline fix form under a Wikimedia username answer */
     dl.answers dd .idform.userfix { margin-top: 6px; }
-    dl.answers dd .idform.userfix input[type=text] { width: 240px; }
+    dl.answers dd .idform.userfix input[type=text] { max-width: 260px; }
 
-    .filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 0 0 16px; }
-    .bulkbar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 0 0 14px; padding: 12px 14px; background: #fff; border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 4px 12px rgba(15,23,42,.08); }
-    .bulkbar .count { min-width: 90px; font-size: 14px; font-weight: 700; color: var(--muted); }
-    .bulkbar input[type=text] { flex: 1 1 240px; min-width: 200px; }
-    .rowform { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 0; }
-    .rowform input[type=text] { width: 170px; padding: 6px 10px; font-size: 13px; }
-    .rowform select { padding: 6px 8px; font-size: 13px; }
-    .tbl th.pick, .tbl td.pick { width: 36px; padding-right: 0; }
-    .tbl td.pick input, .tbl th.pick input { width: 16px; height: 16px; cursor: pointer; accent-color: var(--primary); }
-    .tbl td.pick input:disabled { cursor: not-allowed; }
+    /* Wikimedia username card */
+    .wm-name { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 0; font-size: 16px; font-weight: 700; overflow-wrap: anywhere; }
+    .wm-sub { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+    .wm-links { margin: 8px 0 0; font-size: 14px; }
 
-    /* Accepted members: a collapsible section. The summary line is always visible. */
+    /* ---- Accepted members: a collapsible section. The summary line is always visible. ---- */
     details.acc > summary {
         display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px;
         cursor: pointer; list-style: none;
@@ -329,9 +440,12 @@ engage_header([
     details.acc .acc-title { flex: 1 1 auto; font-size: 17px; font-weight: 800; }
     details.acc .acc-count { font-size: 14px; font-weight: 600; color: var(--muted); }
     details.acc[open] > summary { margin-bottom: 4px; }
+    .wm-cell form { display: inline; margin: 0; }
+    .wm-cell .btn-ghost, .wm-cell .btn-ok { width: auto; padding: 3px 12px; font-size: 12.5px; }
 </style>
 
 <?php if ($notice): ?><div class="alert ok"><?= $h($notice) ?></div><?php endif; ?>
+<?php if ($flash): ?><div class="alert <?= $flash[0] === 'ok' ? 'ok' : 'error' ?>"><?= $h($flash[1]) ?></div><?php endif; ?>
 <?php if ($manualLink): ?>
     <div class="action-banner">
         <span>The email was not sent automatically. Give the applicant this one-time link:</span>
@@ -364,161 +478,237 @@ engage_header([
     $mine = $model->membershipsForEmail((string) $app['email']);
     $mineIds = $idGroups($mine);
     $statedId = MemberModel::statedMemberId($app);
-    $outcome = $open ? $model->idOutcome($app) : null; ?>
-    <section class="sect">
-        <div class="qhead">
-            <h3><?= $h($app['applicant_name']) ?></h3>
-            <span class="pill <?= $tone($app['status']) ?>"><?= $h($label($app['status'])) ?></span>
-        </div>
-        <p class="qmeta">
-            <?= $h($app['email']) ?> &middot;
-            <?= $h(MemberModel::kindLabel($app, $held)) ?> &middot;
-            <?= $h($chapterLabel($app)) ?> &middot;
-            <?= $h($app['tracking_id']) ?>
-        </p>
-        <dl class="answers">
-        <?php foreach ($schema['fields'] ?? [] as $f): $v = $data[$f['name']] ?? ''; if (is_array($v)) $v = implode(', ', $v); ?>
-            <dt><?= MiniWikiText::inline($h($f['label'] ?? $f['name'])) ?></dt>
-            <dd>
-            <?php if ($v !== '' && WikiUsername::isField($f)):
-                $fixed = WikiUsername::normalize((string) $v); ?>
-                <?= $h($v) ?>
+    $outcome = $open ? $model->idOutcome($app) : null;
+
+    // Wikimedia profile of this person (by Member ID) and the username they gave on the application.
+    $pMid = $mine ? (string) $mine[0]['member_id'] : '';
+    $prof = $pMid !== '' ? $profiles->get($pMid) : null;
+    $profName = (string) ($prof['wikimedia_username'] ?? '');
+    $profVerified = $profName !== '' && !empty($prof['username_verified_at']);
+    $canProfile = $pMid !== '' && $mayEditProfile($pMid);
+    $appUser = '';
+    foreach ($schema['fields'] ?? [] as $f) {
+        if (!WikiUsername::isField($f)) continue;
+        $val = $data[$f['name']] ?? '';
+        if (is_string($val) && trim($val) !== '') { $appUser = WikiUsername::normalize($val); break; }
+    } ?>
+    <a class="rv-back" href="<?= $h($qUrl([])) ?>">&larr; Back to the queue</a>
+    <div class="rv-head">
+        <h2><?= $h($app['applicant_name'] ?: $app['email']) ?></h2>
+        <span class="pill <?= $tone($app['status']) ?>"><?= $h($label($app['status'])) ?></span>
+    </div>
+    <p class="rv-meta">
+        <?= $h($app['email']) ?> &middot;
+        <?= $h(MemberModel::kindLabel($app, $held)) ?> &middot;
+        <?= $h($chapterLabel($app)) ?> &middot;
+        <?= $h($app['tracking_id']) ?>
+    </p>
+
+    <div class="rv-grid">
+    <div class="rv-main">
+        <section class="sect">
+            <h3>Application</h3>
+            <dl class="answers">
+            <?php foreach ($schema['fields'] ?? [] as $f): $v = $data[$f['name']] ?? ''; if (is_array($v)) $v = implode(', ', $v); ?>
+                <dt><?= MiniWikiText::inline($h($f['label'] ?? $f['name'])) ?></dt>
+                <?php if ($v !== '' && WikiUsername::isField($f)):
+                    $fixed = WikiUsername::normalize((string) $v); ?>
+                <dd class="u"><?= $h($v) ?><br><?= $wmLinks((string) $fixed) ?>
                 <?php if ($open): ?>
-                <form method="POST" class="idform userfix"><?= CSRF::getInputField() ?>
+                    <form method="POST" class="idform userfix"><?= CSRF::getInputField() ?>
+                        <input type="hidden" name="id" value="<?= (int) $app['id'] ?>">
+                        <input type="hidden" name="field" value="<?= $h($f['name']) ?>">
+                        <input type="text" name="value" value="<?= $h($fixed) ?>" maxlength="255" autocomplete="off" required
+                               aria-label="Corrected Wikimedia username">
+                        <button name="action" value="fix_username" class="btn-ghost sm"><?= $fixed !== (string) $v ? 'Fix capitalisation' : 'Save' ?></button>
+                    </form>
+                <?php endif; ?></dd>
+                <?php else: ?>
+                <dd><?= $v === '' ? '&mdash;' : (($f['type'] ?? '') === 'file' ? 'File uploaded: ' . $h($v) : $h($v)) ?></dd>
+                <?php endif; ?>
+            <?php endforeach; ?>
+            </dl>
+        </section>
+    </div>
+
+    <aside class="rv-side">
+        <?php if ($open): ?>
+        <section class="sect">
+            <h3>Decision</h3>
+            <form method="POST" class="actrow"><?= CSRF::getInputField() ?>
+                <input type="hidden" name="id" value="<?= (int) $app['id'] ?>">
+                <button name="action" value="approve" class="btn-ok">Approve</button>
+                <button name="action" value="review" class="btn-ghost">Mark under review</button>
+            </form>
+            <details class="rv-fold">
+                <summary>Ask for more information</summary>
+                <form method="POST"><?= CSRF::getInputField() ?>
                     <input type="hidden" name="id" value="<?= (int) $app['id'] ?>">
-                    <input type="hidden" name="field" value="<?= $h($f['name']) ?>">
-                    <input type="text" name="value" value="<?= $h($fixed) ?>" maxlength="255" autocomplete="off" required
-                           aria-label="Corrected Wikimedia username">
-                    <button name="action" value="fix_username" class="btn-ghost sm"><?= $fixed !== (string) $v ? 'Fix capitalisation' : 'Save' ?></button>
+                    <div class="field">
+                        <label>Sent to the applicant with a link to edit and resubmit</label>
+                        <textarea name="message" rows="3" placeholder="e.g. Please upload a clearer photo of your student ID."></textarea>
+                    </div>
+                    <button name="action" value="info" class="btn-ghost">Send back</button>
                 </form>
+            </details>
+            <details class="rv-fold">
+                <summary>Reject</summary>
+                <form method="POST"><?= CSRF::getInputField() ?>
+                    <input type="hidden" name="id" value="<?= (int) $app['id'] ?>">
+                    <div class="field">
+                        <label>Reason (sent to the applicant)</label>
+                        <textarea name="reason" rows="3"></textarea>
+                    </div>
+                    <button name="action" value="reject" class="btn-bad">Reject</button>
+                </form>
+            </details>
+        </section>
+        <?php elseif ($model->awaitingApplicant($app)): ?>
+        <section class="sect">
+            <h3>Waiting for the applicant</h3>
+            <p style="margin:0 0 12px;">They need to update and resubmit. It returns to the queue when they do.</p>
+            <form method="POST"><?= CSRF::getInputField() ?>
+                <input type="hidden" name="id" value="<?= (int) $app['id'] ?>">
+                <button name="action" value="resend" class="btn-ghost">Send the link again</button>
+            </form>
+        </section>
+        <?php else: ?>
+            <div class="empty-note" style="margin-bottom:18px;">This application has been decided and is locked.</div>
+        <?php endif; ?>
+
+        <section class="sect" id="profile">
+            <h3>Wikimedia username</h3>
+            <?php if ($pMid === ''): ?>
+                <p class="idline">No Member ID yet. Once approved, this person gets a profile and the username can be verified here.</p>
+                <?php if ($appUser !== ''): ?>
+                    <p class="idline">Given on the application: <strong><?= $h($appUser) ?></strong></p>
+                    <p class="wm-links"><?= $wmLinks($appUser) ?></p>
                 <?php endif; ?>
             <?php else: ?>
-                <?= $v === '' ? '&mdash;' : (($f['type'] ?? '') === 'file' ? 'File uploaded: ' . $h($v) : $h($v)) ?>
+                <?php if ($profName !== ''): ?>
+                    <p class="wm-name"><?= $h($profName) ?>
+                        <?php if ($profVerified): ?><span class="pill" style="--tone:#047857;">Verified</span>
+                        <?php else: ?><span class="pill" style="--tone:#b45309;">Not verified</span><?php endif; ?></p>
+                    <?php if ($profVerified): ?>
+                        <p class="wm-sub">By <?= $h($prof['username_verified_by']) ?> on <?= $h(MemberAuthModel::formatIst((string) $prof['username_verified_at'], 'j M Y')) ?></p>
+                    <?php endif; ?>
+                    <p class="wm-links"><?= $wmLinks($profName) ?></p>
+                <?php else: ?>
+                    <p class="idline">No username on the profile yet.<?= $appUser !== '' ? ' The one from the application is filled in below.' : '' ?></p>
+                    <?php if ($appUser !== ''): ?><p class="wm-links"><?= $wmLinks($appUser) ?></p><?php endif; ?>
+                <?php endif; ?>
+
+                <?php if ($canProfile): ?>
+                <form method="POST" class="idform"><?= CSRF::getInputField() ?>
+                    <input type="hidden" name="id" value="<?= (int) $app['id'] ?>">
+                    <input type="text" name="username" maxlength="255" autocomplete="off" required
+                           value="<?= $h($profName !== '' ? $profName : $appUser) ?>" aria-label="Wikimedia username">
+                    <button name="action" value="profile_save" class="btn-ghost">Save</button>
+                    <button name="action" value="profile_save_verify" class="btn-ok"><?= $profVerified ? 'Save &amp; re-verify' : 'Save &amp; verify' ?></button>
+                    <?php if ($profVerified): ?>
+                        <button name="action" value="profile_unverify" class="btn-ghost" formnovalidate>Remove verification</button>
+                    <?php endif; ?>
+                </form>
+                <p class="wm-sub" style="margin-top:10px;">Check the account on the links above before verifying. Changing to a different account clears verification.
+                    This profile is shared across all of this person's memberships.</p>
+                <?php else: ?>
+                    <p class="wm-sub" style="margin-top:10px;">You can view this profile, but only a reviewer or a coordinator of one of this person's chapters can change it.</p>
+                <?php endif; ?>
             <?php endif; ?>
-            </dd>
-        <?php endforeach; ?>
-        </dl>
-    </section>
+        </section>
 
-    <section class="sect">
-        <h3 style="margin:0 0 4px; font-size:17px; font-weight:800;">Member ID</h3>
-        <?php if ($mineIds): ?>
-            <p class="idline">Already holds, under <?= $h($app['email']) ?>:</p>
-            <ul class="idlist">
-            <?php foreach ($mine as $m): ?>
-                <li><code><?= $h($m['member_id']) ?></code> &middot; <?= $h(MemberModel::CHAPTER_NAMES[$m['chapter']] ?? $m['chapter']) ?>
-                    &middot; <?= $h($m['status']) ?>, valid until <?= $h(MemberAuthModel::formatIst($m['expires_at'], 'j M Y')) ?></li>
-            <?php endforeach; ?>
-            </ul>
-        <?php else: ?>
-            <p class="idline">No membership is held under this email yet.</p>
-        <?php endif; ?>
-
-        <?php if ($statedId !== null): ?>
-            <p class="idline">Member ID given on this application: <code><?= $h($statedId) ?></code>
-                <?= isset($mineIds[$statedId]) ? '(matches their email)' : '(does not match any membership under this email)' ?></p>
-        <?php endif; ?>
-
-        <?php if (count($mineIds) > 1): ?>
-            <div class="idwarn"><strong>More than one Member ID.</strong> This person holds <?= count($mineIds) ?> different IDs
-                (<?= $h(implode(', ', array_keys($mineIds))) ?>). They are meant to have just one.</div>
-        <?php endif; ?>
-
-        <?php if ($outcome !== null): ?>
-            <?php if ($outcome['error']): ?>
-                <div class="idbad"><strong>Approval would fail:</strong> <?= $h($outcome['error']) ?></div>
-            <?php elseif ($outcome['id'] !== null): ?>
-                <p class="idline"><strong>On approval:</strong> keeps <code><?= $h($outcome['id']) ?></code>. No new ID is made.</p>
+        <section class="sect">
+            <h3>Member ID</h3>
+            <?php if ($mineIds): ?>
+                <p class="idline" style="margin-top:0;">Already holds, under <?= $h($app['email']) ?>:</p>
+                <ul class="idlist">
+                <?php foreach ($mine as $m): ?>
+                    <li><code><?= $h($m['member_id']) ?></code> &middot; <?= $h(MemberModel::CHAPTER_NAMES[$m['chapter']] ?? $m['chapter']) ?>
+                        &middot; <?= $h($m['status']) ?>, valid until <?= $h(MemberAuthModel::formatIst($m['expires_at'], 'j M Y')) ?></li>
+                <?php endforeach; ?>
+                </ul>
             <?php else: ?>
-                <p class="idline"><strong>On approval:</strong> a new Member ID is generated.</p>
+                <p class="idline" style="margin-top:0;">No membership is held under this email yet.</p>
             <?php endif; ?>
-        <?php endif; ?>
-    </section>
 
-    <?php if ($hist = $model->history((int) $app['id'])): ?>
-    <section class="sect">
-        <h3 style="margin:0 0 4px; font-size:17px; font-weight:800;">History</h3>
-        <?php foreach ($hist as $e): ?>
-            <p class="hist"><?= $h(str_replace('_', ' ', $e['decision'])) ?> &middot;
-               <?= $h($e['decided_by']) ?> &middot; <?= $h($e['decided_at']) ?>
-               <?= $e['reason'] ? '<br><em>' . nl2br($h($e['reason'])) . '</em>' : '' ?></p>
-        <?php endforeach; ?>
-    </section>
-    <?php endif; ?>
+            <?php if ($statedId !== null): ?>
+                <p class="idline">Member ID given on this application: <code><?= $h($statedId) ?></code>
+                    <?= isset($mineIds[$statedId]) ? '(matches their email)' : '(does not match any membership under this email)' ?></p>
+            <?php endif; ?>
 
-    <?php
-    // Member ID sharing: reviewers only, and only for club memberships (the Generic Community is the anchor).
-    if ($canLinkIds && $chapterKey !== null && $chapterKey !== 'generic'):
-        $link = $model->linkFor((int) $app['id']);
-        $memberRow = $app['status'] === 'Accepted' ? $model->memberRowFor($app) : null;
-        if ($open || $memberRow): ?>
-    <section class="sect">
-        <h3 style="margin:0 0 4px; font-size:17px; font-weight:800;">Change Member ID</h3>
-        <?php if ($memberRow): ?>
-            <p class="idline">Current Member ID for this club: <code><?= $h($memberRow['member_id']) ?></code>.
-                To put this member on their DCW Generic Community ID instead, enter it below.</p>
-        <?php elseif ($link): ?>
-            <p class="idline">Linked to <code><?= $h($link['member_id']) ?></code> by <?= $h($link['linked_by']) ?>.
-                On approval this member keeps that ID and no new one is made.</p>
-        <?php else: ?>
-            <p class="idline">If this person already holds a membership under this email, that ID is reused automatically.
-                If they used a different email, enter their DCW Generic Community Member ID here.</p>
-        <?php endif; ?>
+            <?php if (count($mineIds) > 1): ?>
+                <div class="idwarn"><strong>More than one Member ID.</strong> This person holds <?= count($mineIds) ?> different IDs
+                    (<?= $h(implode(', ', array_keys($mineIds))) ?>). They are meant to have just one.</div>
+            <?php endif; ?>
 
-        <form method="POST" class="idform"><?= CSRF::getInputField() ?>
-            <input type="hidden" name="id" value="<?= (int) $app['id'] ?>">
-            <input type="text" name="link_member_id" maxlength="<?= MemberModel::MEMBER_ID_DIGITS + 1 ?>" autocomplete="off"
-                   placeholder="e.g. D48213977" value="<?= $h($link['member_id'] ?? '') ?>" required>
-            <label class="chk"><input type="checkbox" name="link_confirm" value="1"> Link even if the email differs</label>
+            <?php if ($outcome !== null): ?>
+                <?php if ($outcome['error']): ?>
+                    <div class="idbad"><strong>Approval would fail:</strong> <?= $h($outcome['error']) ?></div>
+                <?php elseif ($outcome['id'] !== null): ?>
+                    <p class="idline"><strong>On approval:</strong> keeps <code><?= $h($outcome['id']) ?></code>. No new ID is made.</p>
+                <?php else: ?>
+                    <p class="idline"><strong>On approval:</strong> a new Member ID is generated.</p>
+                <?php endif; ?>
+            <?php endif; ?>
+        </section>
+
+        <?php
+        // Member ID sharing: reviewers only, and only for club memberships (the Generic Community is the anchor).
+        if ($canLinkIds && $chapterKey !== null && $chapterKey !== 'generic'):
+            $link = $model->linkFor((int) $app['id']);
+            $memberRow = $app['status'] === 'Accepted' ? $model->memberRowFor($app) : null;
+            if ($open || $memberRow): ?>
+        <section class="sect">
+            <h3>Change Member ID</h3>
             <?php if ($memberRow): ?>
-                <button name="action" value="relink_id" class="btn-ghost"
-                        onclick="return confirm('Change this member\'s ID? The email they already received shows the old one.');">Change Member ID</button>
+                <p class="idline" style="margin-top:0;">Current Member ID for this club: <code><?= $h($memberRow['member_id']) ?></code>.
+                    To put this member on their DCW Generic Community ID instead, enter it below.</p>
+            <?php elseif ($link): ?>
+                <p class="idline" style="margin-top:0;">Linked to <code><?= $h($link['member_id']) ?></code> by <?= $h($link['linked_by']) ?>.
+                    On approval this member keeps that ID and no new one is made.</p>
             <?php else: ?>
-                <button name="action" value="link_id" class="btn-ghost"><?= $link ? 'Update link' : 'Link Member ID' ?></button>
-                <?php if ($link): ?><button name="action" value="unlink_id" class="btn-ghost" formnovalidate>Remove link</button><?php endif; ?>
+                <p class="idline" style="margin-top:0;">If this person already holds a membership under this email, that ID is reused automatically.
+                    If they used a different email, enter their DCW Generic Community Member ID here.</p>
             <?php endif; ?>
-        </form>
-    </section>
-    <?php endif; endif; ?>
 
-    <?php if ($open): ?>
-    <section class="sect">
-        <form method="POST" class="actrow"><?= CSRF::getInputField() ?>
-            <input type="hidden" name="id" value="<?= (int) $app['id'] ?>">
-            <button name="action" value="approve" class="btn-ok">Approve</button>
-            <button name="action" value="review" class="btn-ghost">Mark under review</button>
-        </form>
-        <form method="POST" class="actform"><?= CSRF::getInputField() ?>
-            <input type="hidden" name="id" value="<?= (int) $app['id'] ?>">
-            <div class="field">
-                <label>Ask for more information (sent to the applicant with a link to edit and resubmit)</label>
-                <textarea name="message" rows="3" placeholder="e.g. Please upload a clearer photo of your student ID."></textarea>
-            </div>
-            <button name="action" value="info" class="btn-ghost">Send back for more information</button>
-        </form>
-        <form method="POST" class="actform"><?= CSRF::getInputField() ?>
-            <input type="hidden" name="id" value="<?= (int) $app['id'] ?>">
-            <div class="field">
-                <label>Reason for rejecting (sent to the applicant)</label>
-                <textarea name="reason" rows="3"></textarea>
-            </div>
-            <button name="action" value="reject" class="btn-bad">Reject</button>
-        </form>
-    </section>
-    <?php elseif ($model->awaitingApplicant($app)): ?>
-    <section class="sect">
-        <p style="margin:0 0 12px;">Waiting for the applicant to update and resubmit. It returns to the queue when they do.</p>
-        <form method="POST"><?= CSRF::getInputField() ?>
-            <input type="hidden" name="id" value="<?= (int) $app['id'] ?>">
-            <button name="action" value="resend" class="btn-ghost">Send the link again</button>
-        </form>
-    </section>
-    <?php else: ?>
-        <div class="empty-note">This application has been decided and is locked.</div>
-    <?php endif; ?>
+            <form method="POST" class="idform"><?= CSRF::getInputField() ?>
+                <input type="hidden" name="id" value="<?= (int) $app['id'] ?>">
+                <input type="text" name="link_member_id" maxlength="<?= MemberModel::MEMBER_ID_DIGITS + 1 ?>" autocomplete="off"
+                       placeholder="e.g. D48213977" value="<?= $h($link['member_id'] ?? '') ?>" required>
+                <label class="chk"><input type="checkbox" name="link_confirm" value="1"> Link even if the email differs</label>
+                <?php if ($memberRow): ?>
+                    <button name="action" value="relink_id" class="btn-ghost"
+                            onclick="return confirm('Change this member\'s ID? The email they already received shows the old one.');">Change Member ID</button>
+                <?php else: ?>
+                    <button name="action" value="link_id" class="btn-ghost"><?= $link ? 'Update link' : 'Link Member ID' ?></button>
+                    <?php if ($link): ?><button name="action" value="unlink_id" class="btn-ghost" formnovalidate>Remove link</button><?php endif; ?>
+                <?php endif; ?>
+            </form>
+        </section>
+        <?php endif; endif; ?>
+
+        <?php if ($hist = $model->history((int) $app['id'])): ?>
+        <section class="sect">
+            <h3>History</h3>
+            <?php foreach ($hist as $e): ?>
+                <p class="hist"><?= $h(str_replace('_', ' ', $e['decision'])) ?> &middot;
+                   <?= $h($e['decided_by']) ?> &middot; <?= $h($e['decided_at']) ?>
+                   <?= $e['reason'] ? '<br><em>' . nl2br($h($e['reason'])) . '</em>' : '' ?></p>
+            <?php endforeach; ?>
+        </section>
+        <?php endif; ?>
+    </aside>
+    </div>
 
 <?php else:
-    $rows = $model->listApplications($fSlug, $fStatus, $scope);
+    $all = $model->listApplications('', '', $scope);
+    $rows = ($fSlug === '' && $fStatus === '') ? $all : $model->listApplications($fSlug, $fStatus, $scope);
+
+    // Counts for the tiles and the status chips (within the chosen membership, if one is chosen).
+    $scoped = $fSlug === '' ? $all : array_filter($all, fn($r) => (string) $r['form_type'] === $fSlug);
+    $cnt = ['New' => 0, 'Submitted' => 0, 'Under Review' => 0, 'Draft' => 0, 'Accepted' => 0, 'Rejected' => 0];
+    foreach ($scoped as $r) { if (isset($cnt[$r['status']])) $cnt[$r['status']]++; }
+
     // Accepted applications live in their own section below, with the Member ID each person was assigned.
     $queue = array_values(array_filter($rows, fn($r) => $r['status'] !== 'Accepted'));
     $accepted = array_values(array_filter($rows, fn($r) => $r['status'] === 'Accepted'));
@@ -556,21 +746,41 @@ engage_header([
     $acceptedPeopleCount = count($acceptedGroups);
     $acceptedMembershipCount = 0;
     foreach ($acceptedGroups as $g) $acceptedMembershipCount += count($g['memberships']);
-    ?>
-    <section class="sect">
-        <form method="GET" class="filters">
-            <select name="form"><option value="">All memberships</option>
-                <?php foreach ($model->formSlugs() as $s): ?>
-                    <option value="<?= $h($s) ?>" <?= $s === $fSlug ? 'selected' : '' ?>><?= $h($slugLabel($s)) ?></option>
-                <?php endforeach; ?></select>
-            <select name="status"><option value="">All statuses</option>
-                <?php foreach (['New','Submitted','Under Review','Draft','Accepted','Rejected'] as $s): ?>
-                    <option value="<?= $h($s) ?>" <?= $s === $fStatus ? 'selected' : '' ?>><?= $h($label($s)) ?></option>
-                <?php endforeach; ?></select>
-            <button class="btn-ghost sm">Filter</button>
-        </form>
 
-        <?php /* Both forms post back to this same URL, so the active filters are kept. */ ?>
+    // Wikimedia usernames for everyone in the accepted list, in one query.
+    $profMap = [];
+    try { $profMap = $profiles->mapFor(array_column($acceptedGroups, 'mid')); } catch (Throwable $e) { app_log('Profile lookup failed: ' . $e->getMessage()); }
+
+    $chips = [['', 'All', array_sum($cnt)], ['New', 'New', $cnt['New']], ['Submitted', 'Submitted', $cnt['Submitted']],
+              ['Under Review', 'Under Review', $cnt['Under Review']], ['Draft', 'Awaiting applicant', $cnt['Draft']],
+              ['Accepted', 'Accepted', $cnt['Accepted']], ['Rejected', 'Rejected', $cnt['Rejected']]];
+    ?>
+    <div class="rv-stats">
+        <div class="rv-stat" style="--tone: var(--primary);"><b><?= $cnt['New'] + $cnt['Submitted'] ?></b><span>To review</span></div>
+        <div class="rv-stat" style="--tone: #6d28d9;"><b><?= $cnt['Under Review'] ?></b><span>Under review</span></div>
+        <div class="rv-stat" style="--tone: #b45309;"><b><?= $cnt['Draft'] ?></b><span>Awaiting applicant</span></div>
+        <div class="rv-stat" style="--tone: #047857;"><b><?= $cnt['Accepted'] ?></b><span>Accepted</span></div>
+        <div class="rv-stat" style="--tone: #b91c1c;"><b><?= $cnt['Rejected'] ?></b><span>Rejected</span></div>
+    </div>
+
+    <section class="sect">
+        <div class="rv-bar">
+            <nav class="rv-chips" aria-label="Filter by status">
+                <?php foreach ($chips as [$val, $text, $n]): ?>
+                    <a class="rv-chip<?= $val === $fStatus ? ' on' : '' ?>" href="<?= $h($qUrl(['status' => $val])) ?>"><?= $h($text) ?><span class="n"><?= (int) $n ?></span></a>
+                <?php endforeach; ?>
+            </nav>
+            <form method="GET">
+                <?php if ($fStatus !== ''): ?><input type="hidden" name="status" value="<?= $h($fStatus) ?>"><?php endif; ?>
+                <select name="form" aria-label="Membership" onchange="this.form.submit()"><option value="">All memberships</option>
+                    <?php foreach ($model->formSlugs() as $s): ?>
+                        <option value="<?= $h($s) ?>" <?= $s === $fSlug ? 'selected' : '' ?>><?= $h($slugLabel($s)) ?></option>
+                    <?php endforeach; ?></select>
+                <noscript><button class="btn-ghost sm">Filter</button></noscript>
+            </form>
+        </div>
+
+        <?php /* Posts back to this same URL, so the active filters are kept. */ ?>
         <form method="POST" id="bulkForm" class="bulkbar" style="display:none"><?= CSRF::getInputField() ?>
             <input type="hidden" name="action" value="bulk">
             <div id="bulkIdsContainer"></div>
@@ -591,7 +801,7 @@ engage_header([
         <div class="tbl-wrap">
         <table class="tbl"><thead><tr>
             <th class="pick"><input type="checkbox" id="pickAll" aria-label="Select all"></th>
-            <th>Applicant</th><th>Membership</th><th>Member ID</th><th>Status</th><th>Submitted</th><th>Update</th></tr></thead><tbody>
+            <th>Applicant</th><th>Membership</th><th>Member ID</th><th>Status</th><th>Submitted</th><th></th></tr></thead><tbody>
         <?php foreach ($queue as $r):
             $rowOpen = in_array($r['status'], MemberModel::OPEN, true);
             $kind = MemberModel::kindLabel($r, $held);
@@ -607,7 +817,7 @@ engage_header([
                 <td>
                 <?php if ($rowIds): foreach ($rowIds as $mid => $chs): ?>
                     <code><?= $h($mid) ?></code> <span class="sub"><?= $h(implode(', ', $chs)) ?></span>
-                <?php endforeach; else: ?><span style="color:#94a3b8">&mdash;</span><?php endif; ?>
+                <?php endforeach; else: ?><span class="muted">&mdash;</span><?php endif; ?>
                 <?php if ($rowStated !== null && !isset($rowIds[$rowStated])): ?>
                     <span class="sub">Entered: <code><?= $h($rowStated) ?></code> (no match)</span>
                 <?php endif; ?>
@@ -615,22 +825,8 @@ engage_header([
                 </td>
                 <td><span class="pill <?= $tone($r['status']) ?>"><?= $h($label($r['status'])) ?></span></td>
                 <td><?= $h($r['created_at']) ?></td>
-                <td>
-                <?php if ($rowOpen): ?>
-                    <form method="POST" class="rowform"><?= CSRF::getInputField() ?>
-                        <input type="hidden" name="action" value="bulk">
-                        <input type="hidden" name="ids[]" value="<?= (int) $r['id'] ?>">
-                        <select name="bulk_action" aria-label="Set status">
-                            <option value="review">Under Review</option>
-                            <option value="approve">Accepted</option>
-                            <option value="info">Needs information</option>
-                            <option value="reject">Rejected</option>
-                        </select>
-                        <input type="text" name="note" placeholder="Note to applicant">
-                        <button type="submit" class="btn-ghost sm">Apply</button>
-                    </form>
-                <?php else: ?><span style="color:#94a3b8">&mdash;</span><?php endif; ?>
-                </td></tr>
+                <td><a class="dl" href="?id=<?= (int) $r['id'] ?>"><?= $rowOpen ? 'Review' : 'View' ?> &rarr;</a></td>
+            </tr>
         <?php endforeach; if (!$queue): ?><tr><td colspan="7">Nothing to review here.</td></tr><?php endif; ?>
         </tbody></table>
         </div>
@@ -644,18 +840,21 @@ engage_header([
             <span class="acc-count"><?= $acceptedPeopleCount ?> <?= $acceptedPeopleCount === 1 ? 'person' : 'people' ?>
                 &middot; <?= $acceptedMembershipCount ?> membership<?= $acceptedMembershipCount === 1 ? '' : 's' ?></span>
         </summary>
-        <p class="qmeta" style="margin:6px 0 14px;">One row per person, counted by Member ID: one ID is one person even when it covers several clubs,
+        <p class="rv-meta" style="margin:6px 0 14px;">One row per person, counted by Member ID: one ID is one person even when it covers several clubs,
             and all their memberships are listed together (click one to open that application). Approved by and Accepted show the latest approval;
-            Valid until shows the latest expiry (hover for each membership).</p>
+            Valid until shows the latest expiry (hover for each membership). The Wikimedia username is shared by all of a person's memberships.</p>
         <?php if (!$acceptedGroups): ?>
             <div class="empty-note">No accepted memberships yet.</div>
         <?php else: ?>
         <div class="tbl-wrap">
         <table class="tbl"><thead><tr>
-            <th>Member</th><th>Membership</th><th>Member ID</th><th>Approved by</th><th>Accepted</th><th>Valid until</th></tr></thead><tbody>
+            <th>Member</th><th>Membership</th><th>Member ID</th><th>Wikimedia username</th><th>Approved by</th><th>Accepted</th><th>Valid until</th></tr></thead><tbody>
         <?php foreach ($acceptedGroups as $g):
             $latest = $g['latest'];
             $mships = array_values($g['memberships']);
+            $pr = $g['mid'] !== '' ? ($profMap[$g['mid']] ?? null) : null;
+            $prName = (string) ($pr['wikimedia_username'] ?? '');
+            $prOk = $prName !== '' && !empty($pr['username_verified_at']);
             $expTitle = [];
             foreach ($mships as $m) {
                 $expTitle[] = $m['label'] . ': ' . ($m['expires'] ? MemberAuthModel::formatIst($m['expires'], 'j M Y') : 'no date'); } ?>
@@ -663,10 +862,27 @@ engage_header([
                 <td><a class="dl" href="?id=<?= (int) $latest['id'] ?>"><?= $h($latest['applicant_name'] ?: $latest['email']) ?></a>
                     <span class="sub"><?= $h($latest['email']) ?></span></td>
                 <td><?php foreach ($mships as $i => $m): ?><?= $i ? ', ' : '' ?><a class="dl" href="?id=<?= (int) $m['id'] ?>"><?= $h($m['label']) ?></a><?php endforeach; ?></td>
-                <td><?= $g['mid'] !== '' ? '<code>' . $h($g['mid']) . '</code>' : '<span style="color:#94a3b8">&mdash;</span>' ?></td>
-                <td><?= !empty($latest['approved_by']) ? $h($latest['approved_by']) : '<span style="color:#94a3b8">&mdash;</span>' ?></td>
-                <td><?= !empty($latest['approved_at']) ? $h(MemberAuthModel::formatIst($latest['approved_at'])) : '<span style="color:#94a3b8">&mdash;</span>' ?></td>
-                <td title="<?= $h(implode('; ', $expTitle)) ?>"><?= !empty($g['expires']) ? $h(MemberAuthModel::formatIst($g['expires'], 'j M Y')) : '<span style="color:#94a3b8">&mdash;</span>' ?>
+                <td><?= $g['mid'] !== '' ? '<code>' . $h($g['mid']) . '</code>' : '<span class="muted">&mdash;</span>' ?></td>
+                <td class="wm-cell">
+                <?php if ($g['mid'] === ''): ?>
+                    <span class="muted">&mdash;</span>
+                <?php elseif ($prName === ''): ?>
+                    <span class="muted">Not set</span> <a class="dl" href="?id=<?= (int) $latest['id'] ?>#profile">Add</a>
+                <?php else: ?>
+                    <strong><?= $h($prName) ?></strong>
+                    <span class="pill" style="--tone:<?= $prOk ? '#047857' : '#b45309' ?>;"><?= $prOk ? 'Verified' : 'Not verified' ?></span>
+                    <span class="sub"><?= $wmLinks($prName) ?> &middot; <a class="dl" href="?id=<?= (int) $latest['id'] ?>#profile">Edit</a></span>
+                    <?php if (!$prOk): ?>
+                    <form method="POST"><?= CSRF::getInputField() ?>
+                        <input type="hidden" name="member_id" value="<?= $h($g['mid']) ?>">
+                        <button name="action" value="profile_verify" class="btn-ok">Verify</button>
+                    </form>
+                    <?php endif; ?>
+                <?php endif; ?>
+                </td>
+                <td><?= !empty($latest['approved_by']) ? $h($latest['approved_by']) : '<span class="muted">&mdash;</span>' ?></td>
+                <td><?= !empty($latest['approved_at']) ? $h(MemberAuthModel::formatIst($latest['approved_at'])) : '<span class="muted">&mdash;</span>' ?></td>
+                <td title="<?= $h(implode('; ', $expTitle)) ?>"><?= !empty($g['expires']) ? $h(MemberAuthModel::formatIst($g['expires'], 'j M Y')) : '<span class="muted">&mdash;</span>' ?>
                     <?php if (count($mships) > 1): ?><span class="sub">latest of <?= count($mships) ?></span><?php endif; ?></td>
             </tr>
         <?php endforeach; ?>
@@ -741,17 +957,6 @@ engage_header([
             });
             var apply = document.getElementById('bulkApply');
             apply.disabled = true; apply.textContent = 'Working…';
-        });
-
-        // Per-row Apply uses the same checks.
-        document.querySelectorAll('.rowform').forEach(function (f) {
-            f.addEventListener('submit', function (e) {
-                var act = f.querySelector('select').value;
-                var text = f.querySelector('input[type=text]').value;
-                if (!ok(act, text)) { e.preventDefault(); return; }
-                var warn = confirmText(act, 1);
-                if (warn && !confirm(warn)) { e.preventDefault(); }
-            });
         });
 
         sync();
