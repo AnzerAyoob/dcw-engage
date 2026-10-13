@@ -5,6 +5,7 @@ require_once __DIR__ . '/../../includes/wikitext.php';
 require_once __DIR__ . '/../../includes/app_log.php';
 require_once __DIR__ . '/../../includes/engage_page.php';
 require_once __DIR__ . '/../../includes/wiki_username.php';
+require_once __DIR__ . '/../../models/MemberAuthModel.php';   // formatIst(); MemberModel does not load it
 require_once __DIR__ . '/../../models/MemberModel.php';
 require_once __DIR__ . '/../../models/MemberProfileModel.php';
 require_once __DIR__ . '/../../includes/mail/membership_mailer.php';
@@ -481,8 +482,12 @@ engage_header([
     $outcome = $open ? $model->idOutcome($app) : null;
 
     // Wikimedia profile of this person (by Member ID) and the username they gave on the application.
+    // The profile lookup is guarded: if the member_profile table is missing, the page still opens.
     $pMid = $mine ? (string) $mine[0]['member_id'] : '';
-    $prof = $pMid !== '' ? $profiles->get($pMid) : null;
+    $prof = null;
+    if ($pMid !== '') {
+        try { $prof = $profiles->get($pMid); } catch (Throwable $e) { app_log('Profile lookup failed: ' . $e->getMessage()); }
+    }
     $profName = (string) ($prof['wikimedia_username'] ?? '');
     $profVerified = $profName !== '' && !empty($prof['username_verified_at']);
     $canProfile = $pMid !== '' && $mayEditProfile($pMid);
