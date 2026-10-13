@@ -87,6 +87,9 @@ if ($route === '/' || $route === '/index.php') {
     // Signed-in members only: the view calls MemberSession::requireLogin() itself.
     require __DIR__ . '/views/member/dashboard.php';
 
+    } elseif ($route === '/member/profile') {
+    require __DIR__ . '/views/member/profile.php';
+    
 // --- Member support requests (signed-in members only) -------------------
 // Internet support and reimbursement are members-only. The member signs in,
 // starts a request at /member/support?type=internet|reimbursement, and then
