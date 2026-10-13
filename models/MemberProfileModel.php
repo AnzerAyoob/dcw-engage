@@ -149,10 +149,14 @@ class MemberProfileModel
         return $u;
     }
 
-    /** Lower-cased, underscores as spaces: what uniqueness is checked on. */
+    /**
+     * What uniqueness is checked on: the normalised name, exactly as Wikimedia identifies the account
+     * (first letter capitalised, underscores as spaces). Case and accents after the first letter
+     * matter, because "Alice" and "ALICE" are different accounts. The column is utf8mb4_bin.
+     */
     public static function usernameKey(string $u): string
     {
-        return mb_strtolower(trim(str_replace('_', ' ', $u)), 'UTF-8');
+        return WikiUsername::normalize($u);
     }
 
     private static function slug(string $u): string
