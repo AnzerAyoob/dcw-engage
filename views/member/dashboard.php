@@ -33,8 +33,9 @@ require_once __DIR__ . '/../../includes/cert_rows.php';
  * "Requires your attention", with a button that emails them a fresh resume link. Applications in any
  * other status reach the applicant by email, so they are not repeated here.
  *
- * Profile: when internet support is open, a member without a verified Wikimedia username is nudged
- * to /member/profile from "Requires your attention".
+ * Profile: the identity card links to /member/profile and shows the Wikimedia username status. When
+ * internet support is open, a member without a verified username is also nudged from "Requires your
+ * attention". Everything else about who the member is lives on the profile page, not here.
  *
  * Header: the same slim top bar as the home page, with the shared member menu (engage_member_menu()).
  * It is rendered "bare" (top bar only); the greeting lives in the identity card below.
@@ -128,6 +129,12 @@ foreach ($memberships as $m) {
     $strips[] = $state;
     if ($state['active']) $memberActive = true;
 }
+
+// ---- The member's profile (Wikimedia username status), read once for the identity card and the nudge ----
+$dashProfile = null;
+try { $dashProfile = (new MemberProfileModel())->get((string) $member['member_id']); } catch (Throwable $e) { /* table not created yet: stay quiet */ }
+$wmName = (string) ($dashProfile['wikimedia_username'] ?? '');
+$wmOk   = $wmName !== '' && !empty($dashProfile['username_verified_at']);
 
 // ---- What is open (each guarded so the page never breaks) -------------------------------------
 try { $internetOpen = (new InternetSupportModel())->isOpen(); } catch (Throwable $e) { $internetOpen = false; }
@@ -229,14 +236,11 @@ foreach ($techWaiting as $t) {
 // Internet support needs a verified Wikimedia username: nudge only when it is open and the member is active.
 if ($memberActive && $internetOpen) {
     $profileState = '';
-    try {
-        $pf = (new MemberProfileModel())->get((string) $member['member_id']);
-        if (!$pf || empty($pf['wikimedia_username'])) {
-            $profileState = 'Add your Wikimedia username to request internet support';
-        } elseif (empty($pf['username_verified_at'])) {
-            $profileState = 'Your Wikimedia username is waiting to be verified';
-        }
-    } catch (Throwable $e) { /* table not created yet: stay quiet */ }
+    if ($wmName === '') {
+        $profileState = 'Add your Wikimedia username to request internet support';
+    } elseif (!$wmOk) {
+        $profileState = 'Your Wikimedia username is waiting to be verified';
+    }
     if ($profileState !== '') {
         $alerts[] = ['who' => 'Profile', 'text' => $profileState,
                      'href' => '/member/profile', 'cta' => 'Open profile'];
@@ -252,6 +256,7 @@ $icons = [
     'chat'     => '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
     'alert'    => '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>',
     'bell'     => '<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>',
+    'user'     => '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
 ];
 
 /** Small inline icon for the dashboard blocks. */
@@ -295,7 +300,10 @@ cert_rows_css();   // icons, buttons and certificate rows shared with /member/ce
     /* ---- Identity card: shown once. The logo's three-color stripe on top, like the site footer ---- */
     .d-id { position: relative; overflow: hidden; margin: 0 0 28px; padding: 26px 22px 6px; background: var(--card); border: 1px solid var(--border); border-radius: 16px; box-shadow: 0 6px 18px rgba(15,23,42,.06); }
     .d-id::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 5px; background: linear-gradient(90deg, var(--primary) 0 40%, var(--accent) 40% 70%, var(--leaf) 70% 100%); }
-    .d-id-top { display: flex; align-items: center; gap: 16px; padding: 0 2px 18px; }
+    .d-id-top { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; padding: 0 2px 18px; }
+    .d-id-link { display: flex; align-items: center; gap: 16px; min-width: 0; color: inherit; text-decoration: none; }
+    .d-id-link:hover h2 { color: var(--primary); }
+    .d-prof { margin-left: auto; padding: 7px 16px; font-size: 13.5px; }
     .d-avatar { width: 52px; height: 52px; flex: none; border-radius: 50%; display: grid; place-items: center; font-size: 18px; font-weight: 700; color: var(--primary-dark); background: var(--primary-tint); }
     .d-id-who { min-width: 0; }
     .d-id-who h2 { margin: 0; font-size: 19px; font-weight: 700; letter-spacing: -.01em; line-height: 1.3; overflow-wrap: anywhere; }
@@ -352,11 +360,14 @@ cert_rows_css();   // icons, buttons and certificate rows shared with /member/ce
     <!-- Greeting and identity (once), then memberships (one slim row each) -->
     <section class="d-id" aria-label="Membership">
         <div class="d-id-top">
-            <span class="d-avatar" aria-hidden="true"><?= htmlspecialchars($initials) ?></span>
-            <div class="d-id-who">
-                <h2>Hello, <?= htmlspecialchars($firstName) ?></h2>
-                <p><?= htmlspecialchars($fullName !== '' ? $fullName . ' · ' : '') ?>Member ID <?= htmlspecialchars((string) $member['member_id']) ?></p>
-            </div>
+            <a class="d-id-link" href="/member/profile" aria-label="Open my profile">
+                <span class="d-avatar" aria-hidden="true"><?= htmlspecialchars($initials) ?></span>
+                <div class="d-id-who">
+                    <h2>Hello, <?= htmlspecialchars($firstName) ?></h2>
+                    <p><?= htmlspecialchars($fullName !== '' ? $fullName . ' · ' : '') ?>Member ID <?= htmlspecialchars((string) $member['member_id']) ?></p>
+                </div>
+            </a>
+            <a class="d-btn line d-prof" href="/member/profile">My profile</a>
         </div>
 
         <ul class="d-ms">
@@ -374,6 +385,7 @@ cert_rows_css();   // icons, buttons and certificate rows shared with /member/ce
         <nav class="d-glance" aria-label="Jump to a section">
             <a class="d-chip" style="--tone: var(--leaf-dark);" href="#certificates"><?= cert_icon('award') ?><b><?= (int) $certCount ?></b> certificate<?= $certCount === 1 ? '' : 's' ?></a>
             <a class="d-chip" style="--tone: var(--primary);" href="#requests"><?= dash_svg($icons, 'doc') ?><b><?= (int) $totalRequests ?></b> request<?= $totalRequests === 1 ? '' : 's' ?></a>
+            <a class="d-chip" style="--tone: <?= $wmName === '' ? 'var(--muted)' : ($wmOk ? 'var(--leaf-dark)' : '#b45309') ?>;" href="/member/profile#wikimedia"><?= dash_svg($icons, 'user') ?><?php if ($wmName === ''): ?>Add Wikimedia username<?php else: ?><b><?= htmlspecialchars($wmName) ?></b> <?= $wmOk ? 'Verified' : 'Not verified' ?><?php endif; ?></a>
             <a class="d-chip" style="--tone: var(--accent);" href="#conversations"><?= dash_svg($icons, 'chat') ?><b><?= count($tickets) ?></b> conversation<?= count($tickets) === 1 ? '' : 's' ?></a>
         </nav>
     </section>
