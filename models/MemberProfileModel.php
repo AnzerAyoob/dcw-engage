@@ -21,7 +21,6 @@ class MemberProfileModel
 
     public function __construct(?PDO $db = null)
     {
-        // Same connection call as MemberModel's constructor.
         $this->db = $db ?? DB::getInstance()->getConnection();
     }
 
@@ -128,6 +127,82 @@ class MemberProfileModel
 
         app_log("Member profile username: $memberId '" . ($old['wikimedia_username'] ?? '') . "' -> '$name' by $by"
             . ($verify ? ' (verified)' : ''));
+    }
+
+    // ---- About you: bio, languages, contribution areas ----------------------------------------
+
+    public const BIO_MAX = 280;
+    public const LANGUAGES_MAX = 10;
+
+    /** Fixed list of contribution areas: key => label. Only these keys are ever stored. */
+    public const AREAS = [
+        'wikipedia'   => 'Wikipedia',
+        'commons'     => 'Wikimedia Commons',
+        'wikidata'    => 'Wikidata',
+        'wikisource'  => 'Wikisource',
+        'translation' => 'Translation',
+        'technical'   => 'Technical work',
+        'events'      => 'Events and outreach',
+        'other'       => 'Other',
+    ];
+
+    /**
+     * Save the optional "About you" fields. Creates the profile row if there is none yet.
+     * $languages is free text (commas, semicolons or new lines between languages).
+     * $areas is a list of AREAS keys; anything else is dropped.
+     */
+    public function saveAbout(string $memberId, string $bio, string $languages, array $areas, string $by): void
+    {
+        $memberId = trim($memberId);
+        if ($memberId === '') throw new InvalidArgumentException('Missing Member ID.');
+
+        $bio = trim(preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F]/u', '', str_replace("\r", '', $bio)));
+        $bio = preg_replace("/\n{3,}/", "\n\n", $bio);
+        if (mb_strlen($bio) > self::BIO_MAX) {
+            throw new InvalidArgumentException('Please keep your bio to ' . self::BIO_MAX . ' characters or fewer.');
+        }
+
+        $langs = [];
+        foreach (preg_split('/[,;\n]+/u', $languages) ?: [] as $l) {
+            $l = trim(preg_replace('/\s+/u', ' ', strip_tags($l)));
+            if ($l === '') continue;
+            if (mb_strlen($l) > 40) throw new InvalidArgumentException('A language name is too long. Please list them separated by commas.');
+            $langs[mb_strtolower($l)] = $l;   // de-duplicate, ignoring case
+        }
+        if (count($langs) > self::LANGUAGES_MAX) {
+            throw new InvalidArgumentException('Please list at most ' . self::LANGUAGES_MAX . ' languages.');
+        }
+
+        $areaKeys = array_values(array_intersect(array_keys(self::AREAS), array_map('strval', $areas)));
+
+        $st = $this->db->prepare(
+            'INSERT INTO member_profile (member_id, bio, languages, contribution_areas, updated_by)
+             VALUES (?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE bio = VALUES(bio), languages = VALUES(languages),
+                    contribution_areas = VALUES(contribution_areas), updated_by = VALUES(updated_by)'
+        );
+        $st->execute([
+            $memberId,
+            $bio !== '' ? $bio : null,
+            $langs ? implode(', ', $langs) : null,
+            $areaKeys ? implode(',', $areaKeys) : null,
+            $by,
+        ]);
+        app_log("Member profile about saved: $memberId by $by");
+    }
+
+    /** Languages of a profile row, as a list. */
+    public static function languagesOf(?array $row): array
+    {
+        $v = trim((string) ($row['languages'] ?? ''));
+        return $v === '' ? [] : array_map('trim', explode(',', $v));
+    }
+
+    /** Contribution-area keys of a profile row, as a list (only keys that still exist in AREAS). */
+    public static function areasOf(?array $row): array
+    {
+        $v = trim((string) ($row['contribution_areas'] ?? ''));
+        return $v === '' ? [] : array_values(array_intersect(array_keys(self::AREAS), explode(',', $v)));
     }
 
     private const TAKEN = 'That Wikimedia username is already linked to another member. If it is yours, please contact DCW Support.';
