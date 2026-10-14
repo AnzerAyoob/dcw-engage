@@ -324,6 +324,7 @@ function engage_member_menu(array $member, array $o = []): string {
 
                 <div class="msep"></div>
                 <?= $link('My dashboard', '/member/dashboard') ?>
+                <?= $link('My profile', '/member/profile') ?>
                 <?= $link('My certificates', '/member/certificates') ?>
                 <?= $link('Support', '/member/support') ?>
                 <?= $link('Talk to DCW Support', '/member/talk') ?>
@@ -459,6 +460,7 @@ function engage_footer() {
                     <li><a href="/track">Track an application</a></li>
                     <?php if ($isMember): ?>
                         <li><a href="/member/dashboard">My dashboard</a></li>
+                        <li><a href="/member/profile">My profile</a></li>
                         <li><a href="/member/support">Request support</a></li>
                     <?php else: ?>
                         <li><a href="/member/login">Member sign in</a></li>
