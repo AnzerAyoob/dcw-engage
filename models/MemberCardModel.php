@@ -2,17 +2,26 @@
 require_once __DIR__ . '/../includes/app_log.php';
 require_once __DIR__ . '/MemberAuthModel.php';
 require_once __DIR__ . '/MemberModel.php';
+require_once __DIR__ . '/MemberProfileModel.php';
+require_once __DIR__ . '/MemberStrikeModel.php';
 
 /**
  * DCW Engage - membership cards (the QR code a member shows).
  *
  * A card is a random 32-character token in the link /card/<token>. The token says nothing about the member;
  * it only points to a row in member_cards. A member has one live card (replaced_at IS NULL). Replacing the
- * card retires the old token, so a printed or screenshotted old code stops working at once.
+ * card retires the old token, so a printed or screenshotted old code stops working at once. Striking a member
+ * off (MemberStrikeModel) retires it too, and lookup() refuses struck members as well.
  *
- * What the public check shows is decided by lookup(): first name and last initial, each chapter and whether it
- * is current. Nothing else leaves this class for the public page. "Current" uses MemberAuthModel::isActive(),
- * the same rule the rest of the app uses.
+ * What the public check shows is decided by lookup(): first name and last initial, each chapter (with its
+ * logo) and whether it is current. Nothing else leaves this class for the public page. The Wikimedia username
+ * is only in summary(), for the member's own card and PDF, and only when it is verified.
+ *
+ * "Current" uses MemberAuthModel::isActive(), the same rule the rest of the app uses: members.status is
+ * 'active' and expires_at (a UTC datetime) is in the future. Status 'active' with a past date is "expired".
+ *
+ * Logos: assets/chapters/<chapter key>.png. A chapter with no file of its own (for now the Photographers
+ * club) uses generic.png, the DCW logo.
  *
  * Tables: member_cards and member_card_hits (member_cards.sql).
  */
@@ -21,11 +30,52 @@ class MemberCardModel
     /** Public checks allowed per connection per minute. */
     public const RATE_LIMIT = 30;
 
+    /** Where chapter logos live, under the project root (also the public path). */
+    private const LOGO_DIR = '/assets/chapters/';
+
     private PDO $db;
+    private MemberStrikeModel $strikes;
 
     public function __construct(?PDO $db = null)
     {
-        $this->db = $db ?? DB::getInstance()->getConnection();
+        $this->db      = $db ?? DB::getInstance()->getConnection();
+        $this->strikes = new MemberStrikeModel($this->db);
+    }
+
+    // ---- Logos -----------------------------------------------------------------------------------
+
+    /** File name of the logo for a chapter (its own, else generic.png), or null if neither exists. */
+    public static function logoName(string $chapter): ?string
+    {
+        $dir = dirname(__DIR__) . self::LOGO_DIR;
+        foreach ([$chapter, 'generic'] as $key) {
+            if (preg_match('/^[a-z]+$/', $key) && is_file($dir . $key . '.png')) {
+                return $key . '.png';
+            }
+        }
+        return null;
+    }
+
+    /** Public URL of a chapter's logo (with a version so a replaced file shows up), or null. */
+    public static function logoUrl(string $chapter): ?string
+    {
+        $name = self::logoName($chapter);
+        if ($name === null) {
+            return null;
+        }
+        $v = @filemtime(dirname(__DIR__) . self::LOGO_DIR . $name);
+        return self::LOGO_DIR . $name . ($v ? '?v=' . $v : '');
+    }
+
+    /** The logo as a data: URI, for the PDF. */
+    public static function logoDataUri(string $chapter): ?string
+    {
+        $name = self::logoName($chapter);
+        if ($name === null) {
+            return null;
+        }
+        $bytes = @file_get_contents(dirname(__DIR__) . self::LOGO_DIR . $name);
+        return $bytes === false ? null : 'data:image/png;base64,' . base64_encode($bytes);
     }
 
     // ---- Public page helpers ---------------------------------------------------------------------
@@ -60,9 +110,9 @@ class MemberCardModel
     }
 
     /**
-     * What /card/<token> shows, or null if the token is unknown or was replaced (both look the same
-     * to the visitor). Shape: ['overall' => valid|expired|inactive, 'name' => 'Asha K.',
-     * 'memberships' => [['name', 'state' => active|expired|inactive, 'date']]]
+     * What /card/<token> shows, or null if the token is unknown, was replaced, or the member is struck off
+     * (all three look the same to the visitor). Shape: ['overall' => valid|expired|inactive,
+     * 'name' => 'Asha K.', 'memberships' => [['name', 'state' => active|expired|inactive, 'date', 'logo']]]
      */
     public function lookup(string $token): ?array
     {
@@ -73,6 +123,9 @@ class MemberCardModel
         $st->execute([$token]);
         $memberId = $st->fetchColumn();
         if ($memberId === false) {
+            return null;
+        }
+        if ($this->strikes->isStruck((string) $memberId)) {
             return null;
         }
         $s = $this->summary((string) $memberId);
@@ -126,14 +179,20 @@ class MemberCardModel
     }
 
     /**
-     * Everything the member's own card page and PDF need: ['member_id', 'full_name', 'short_name', 'overall',
-     * 'memberships' => [['name', 'state', 'date']]], or null if the Member ID has no usable membership.
+     * Everything the member's own card page and PDF need, or null if the Member ID has no usable membership:
+     *   member_id, full_name, short_name, overall (valid|expired|inactive),
+     *   username (the VERIFIED Wikimedia username, or ''),
+     *   primary     => ['chapter', 'name', 'logo', 'state']   the chapter shown on the card header
+     *   memberships => [['chapter', 'name', 'state', 'date', 'logo']]   primary first, then current, expired, other
+     *
+     * Primary = the earliest membership under the ID that is still current, or the earliest overall if none
+     * is (the same "first joined" idea the login uses for the password).
      */
     public function summary(string $memberId): ?array
     {
         $st = $this->db->prepare(
-            "SELECT chapter, status, expires_at, full_name FROM members
-             WHERE member_id = ? AND status <> 'rejected' ORDER BY id DESC"
+            "SELECT id, chapter, status, expires_at, full_name FROM members
+             WHERE member_id = ? AND status <> 'rejected' ORDER BY id ASC"
         );
         $st->execute([$memberId]);
         $rows = $st->fetchAll(PDO::FETCH_ASSOC);
@@ -145,40 +204,53 @@ class MemberCardModel
         foreach ($rows as $r) {
             if (MemberAuthModel::isActive($r)) {
                 $state = 'active';
-            } elseif ((string) $r['status'] === 'approved') {
-                $state = 'expired';
+            } elseif ((string) $r['status'] === 'active') {
+                $state = 'expired';          // approved, but past its end date
             } else {
                 $state = 'inactive';
             }
-            $date = '';
-            $exp  = substr((string) ($r['expires_at'] ?? ''), 0, 10);
-            if ($exp !== '' && $exp !== '0000-00-00') {
-                try {
-                    $date = (new DateTimeImmutable($exp))->format('j M Y');
-                } catch (Throwable $e) {
-                    $date = '';
-                }
-            }
             $key    = trim((string) $r['chapter']);
             $list[] = [
-                'name'  => MemberModel::CHAPTER_NAMES[$key] ?? ($key !== '' ? $key : 'DCW membership'),
-                'state' => $state,
-                'date'  => $date,
+                'id'      => (int) $r['id'],
+                'chapter' => $key,
+                'name'    => MemberModel::CHAPTER_NAMES[$key] ?? ($key !== '' ? $key : 'DCW membership'),
+                'state'   => $state,
+                'date'    => self::istDate((string) ($r['expires_at'] ?? '')),
+                'logo'    => self::logoUrl($key),
             ];
         }
+
+        $primary = $list[0];
+        foreach ($list as $e) {
+            if ($e['state'] === 'active') {
+                $primary = $e;
+                break;
+            }
+        }
         $rank = ['active' => 0, 'expired' => 1, 'inactive' => 2];
-        usort($list, fn($a, $b) => $rank[$a['state']] <=> $rank[$b['state']]);
+        $rest = array_values(array_filter($list, fn($e) => $e['id'] !== $primary['id']));
+        usort($rest, fn($a, $b) => [$rank[$a['state']], $a['id']] <=> [$rank[$b['state']], $b['id']]);
+        $ordered = array_merge([$primary], $rest);
 
         $states  = array_column($list, 'state');
         $overall = in_array('active', $states, true) ? 'valid' : (in_array('expired', $states, true) ? 'expired' : 'inactive');
 
-        $full = trim((string) $rows[0]['full_name']);
+        $username = '';
+        try {
+            $username = (new MemberProfileModel($this->db))->verifiedUsername($memberId);
+        } catch (Throwable $e) {
+            app_log('Card username read failed: ' . $e->getMessage());
+        }
+
+        $full = trim((string) end($rows)['full_name']);
         return [
             'member_id'   => $memberId,
             'full_name'   => $full,
             'short_name'  => self::shortName($full),
             'overall'     => $overall,
-            'memberships' => $list,
+            'username'    => $username,
+            'primary'     => ['chapter' => $primary['chapter'], 'name' => $primary['name'], 'logo' => $primary['logo'], 'state' => $primary['state']],
+            'memberships' => $ordered,
         ];
     }
 
@@ -195,6 +267,21 @@ class MemberCardModel
         return $parts[0] . ' ' . mb_strtoupper(mb_substr($parts[count($parts) - 1], 0, 1)) . '.';
     }
 
+    /** A stored UTC datetime as a date in India time, e.g. "31 Mar 2027". Empty if there is none. */
+    private static function istDate(string $utc): string
+    {
+        $utc = trim($utc);
+        if ($utc === '' || strpos($utc, '0000-00-00') === 0) {
+            return '';
+        }
+        try {
+            return (new DateTimeImmutable($utc, new DateTimeZone('UTC')))
+                ->setTimezone(new DateTimeZone(MemberAuthModel::DISPLAY_TZ))->format('j M Y');
+        } catch (Throwable $e) {
+            return '';
+        }
+    }
+
     // ---- Internals -------------------------------------------------------------------------------
 
     private function insertCard(string $memberId): string
@@ -207,13 +294,16 @@ class MemberCardModel
 
     /**
      * Run $work with the member's rows locked, so two requests at once cannot make two live cards.
-     * Also proves the Member ID exists.
+     * Also proves the Member ID exists and is not struck off.
      */
     private function inTransaction(string $memberId, callable $work): string
     {
         $memberId = trim($memberId);
         if ($memberId === '') {
             throw new InvalidArgumentException('Missing Member ID.');
+        }
+        if ($this->strikes->isStruck($memberId)) {
+            throw new InvalidArgumentException('This membership has ended.');
         }
         $this->db->beginTransaction();
         try {
