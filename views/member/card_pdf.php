@@ -42,14 +42,23 @@ try {
         'margin_left' => 20, 'margin_right' => 20,
     ]);
     $mpdf->SetTitle('DCW Membership Card ' . $memberId);
+
+    // Hand the images to mPDF as bytes (src="var:name") so they are not part of the HTML string.
+    $mpdf->imageVars['qr'] = $png;
+    $logoUri = MemberCardModel::logoDataUri($data['primary']['chapter']);
+    $logoRef = '';
+    if ($logoUri !== null) {
+        $mpdf->imageVars['logo'] = base64_decode(substr($logoUri, strpos($logoUri, ',') + 1));
+        $logoRef = 'var:logo';
+    }
     $mpdf->WriteHTML(member_card_html([
         'name'           => $data['full_name'] !== '' ? $data['full_name'] : $memberId,
         'member_id'      => $memberId,
         'primary_name'   => $data['primary']['name'],
         'other_chapters' => $others,
         'username'       => $data['username'],
-        'logo_uri'       => MemberCardModel::logoDataUri($data['primary']['chapter']) ?? '',
-        'qr_uri'         => 'data:image/png;base64,' . base64_encode($png),
+        'logo_uri'       => $logoRef,
+        'qr_uri'         => 'var:qr',
     ]));
 
     $filename = 'DCW-Membership-Card-' . preg_replace('/[^A-Za-z0-9_-]/', '_', $memberId) . '.pdf';
