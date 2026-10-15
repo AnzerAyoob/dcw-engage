@@ -7,6 +7,36 @@ require_once __DIR__ . '/../../includes/member_card_template.php';
 require_once __DIR__ . '/../../models/MemberCardModel.php';
 
 /**
+ * Cut the empty margin (transparent or near-white) off a logo PNG so the card shows the artwork itself.
+ * Needs PHP's GD extension; without it, or if anything fails, the logo is used as it is.
+ */
+function trim_logo(string $png): string
+{
+    if (!function_exists('imagecreatefromstring') || !function_exists('imagecropauto')) {
+        return $png;
+    }
+    $im = @imagecreatefromstring($png);
+    if ($im === false) {
+        return $png;
+    }
+    foreach ([[IMG_CROP_TRANSPARENT, 0.0], [IMG_CROP_THRESHOLD, 0.08]] as [$mode, $threshold]) {
+        $cropped = $mode === IMG_CROP_THRESHOLD
+            ? @imagecropauto($im, $mode, $threshold, 0xFFFFFF)
+            : @imagecropauto($im, $mode);
+        if ($cropped !== false) {
+            imagedestroy($im);
+            $im = $cropped;
+        }
+    }
+    imagesavealpha($im, true);
+    ob_start();
+    imagepng($im);
+    $out = (string) ob_get_clean();
+    imagedestroy($im);
+    return $out !== '' ? $out : $png;
+}
+
+/**
  * DCW Engage - the member's card as a PDF (/member/card/pdf).
  * Signed-in members only, and only their own card. Built in memory and streamed as a download;
  * nothing is saved on the server (same approach as the finance receipts).
@@ -48,7 +78,7 @@ try {
     $logoUri = MemberCardModel::logoDataUri($data['primary']['chapter']);
     $logoRef = '';
     if ($logoUri !== null) {
-        $mpdf->imageVars['logo'] = base64_decode(substr($logoUri, strpos($logoUri, ',') + 1));
+        $mpdf->imageVars['logo'] = trim_logo(base64_decode(substr($logoUri, strpos($logoUri, ',') + 1)));
         $logoRef = 'var:logo';
     }
     $mpdf->WriteHTML(member_card_html([
