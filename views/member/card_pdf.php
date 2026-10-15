@@ -9,6 +9,7 @@ require_once __DIR__ . '/../../models/MemberCardModel.php';
 /**
  * Cut the empty margin (transparent or near-white) off a logo PNG so the card shows the artwork itself.
  * Needs PHP's GD extension; without it, or if anything fails, the logo is used as it is.
+ * Only used for PNG logos; an SVG is passed to mPDF as it is.
  */
 function trim_logo(string $png): string
 {
@@ -78,11 +79,17 @@ try {
     $logoUri = MemberCardModel::logoDataUri($data['primary']['chapter']);
     $logoRef = '';
     if ($logoUri !== null) {
-        $mpdf->imageVars['logo'] = trim_logo(base64_decode(substr($logoUri, strpos($logoUri, ',') + 1)));
-        $logoRef = 'var:logo';
+        $bytes = base64_decode(substr($logoUri, strpos($logoUri, ',') + 1));
+        if ($bytes !== false && $bytes !== '') {
+            if (strncmp($bytes, "\x89PNG", 4) === 0) {
+                $bytes = trim_logo($bytes);   // PNG only; an SVG goes in as it is
+            }
+            $mpdf->imageVars['logo'] = $bytes;
+            $logoRef = 'var:logo';
+        }
     }
     $mpdf->WriteHTML(member_card_html([
-        'name'           => $data['full_name'] !== '' ? $data['full_name'] : $memberId,
+        'chapter'        => $data['primary']['chapter'],
         'member_id'      => $memberId,
         'primary_name'   => $data['primary']['name'],
         'other_chapters' => $others,
