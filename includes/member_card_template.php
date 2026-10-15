@@ -33,8 +33,6 @@ function member_card_html(array $c): string
     return '
 <style>
     body { font-family: dejavusans, sans-serif; color: #0f172a; font-size: 10pt; }
-    h1 { font-size: 15pt; margin: 0 0 4mm; color: #047857; }
-    p.small { font-size: 9pt; color: #475569; line-height: 1.5; margin: 0 0 3mm; }
     table.card { width: 85.6mm; border: 0.4mm solid #047857; border-collapse: separate; border-radius: 3mm; }
     td.band { background-color: #047857; padding: 2mm 3mm; }
     td.lg { background-color: #ffffff; padding: 1mm; }
@@ -49,11 +47,6 @@ function member_card_html(array $c): string
     .scan { font-size: 6pt; color: #475569; margin-top: 0.8mm; }
     td.foot { padding: 0 4mm 2.5mm 4mm; font-size: 5.5pt; color: #64748b; }
 </style>
-
-<h1>Your DCW membership card</h1>
-<p class="small">Print this page and cut along the border, or keep the PDF on your phone. Anyone can scan the code to check your membership.
-It shows only your first name and last initial, your chapters and whether they are current. If you lose the card or share it by mistake,
-replace it on your Membership card page and the old code stops working.</p>
 
 <table class="card" cellpadding="0" cellspacing="0">
     <tr><td class="band" colspan="2">
