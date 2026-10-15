@@ -11,9 +11,10 @@ require_once __DIR__ . '/../models/MemberCardModel.php';
  * PUBLIC: no sign-in, and it does not use the session at all. A scan usually comes from a camera or another
  * app, and the session cookie is SameSite=Strict, so it would not arrive on that first request anyway.
  *
- * What it shows is deliberately small: first name and last initial, each chapter, and whether it is current.
- * Never an email, phone, Member ID or Wikimedia username. An unknown token (never issued, or replaced when the
- * member replaced their card) gets the same plain "not valid" page, so nothing can be learned by guessing.
+ * What it shows is deliberately small: first name and last initial, each chapter (with its logo), and whether
+ * it is current. Never an email, phone, Member ID or Wikimedia username. An unknown token (never issued,
+ * replaced when the member replaced their card, or the member was struck off) gets the same plain "not valid"
+ * page, so nothing can be learned by guessing.
  *
  * Not indexed and not cached, so an old answer is never shown and search engines never keep one.
  * $cardToken comes from the router (the /card/{token} route in index.php).
@@ -80,7 +81,8 @@ engage_header([
     .cc-list { list-style: none; margin: 10px 0 0; padding: 0; }
     .cc-list li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; padding: 10px 0; border-top: 1px solid var(--border); font-size: 15px; }
     .cc-list li:first-child { border-top: 0; }
-    .cc-list .n { font-weight: 600; }
+    .cc-list .n { display: inline-flex; align-items: center; gap: 10px; font-weight: 600; }
+    .cc-lg { width: 28px; height: 28px; object-fit: contain; flex: none; }
     .cc-list .st { font-size: 13.5px; color: var(--muted); }
     .cc-pill { padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; margin-right: 6px; color: var(--tone); background: color-mix(in srgb, var(--tone) 12%, #fff); }
     .cc-note { margin: 18px 0 0; padding-top: 14px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13px; line-height: 1.6; }
@@ -97,12 +99,15 @@ engage_header([
                 <?php foreach ($card['memberships'] as $m):
                     $tone = $m['state'] === 'active' ? '#047857' : ($m['state'] === 'expired' ? '#b45309' : '#b91c1c'); ?>
                     <li style="--tone: <?= $h($tone) ?>;">
-                        <span class="n"><?= $h($m['name']) ?></span>
+                        <span class="n">
+                            <?php if (!empty($m['logo'])): ?><img class="cc-lg" src="<?= $h($m['logo']) ?>" alt="" width="28" height="28"><?php endif; ?>
+                            <?= $h($m['name']) ?>
+                        </span>
                         <span class="st">
                             <?php if ($m['state'] === 'active'): ?>
-                                <span class="cc-pill">Current</span>valid until <?= $h($m['date']) ?>
+                                <span class="cc-pill">Current</span><?= $m['date'] !== '' ? 'valid until ' . $h($m['date']) : '' ?>
                             <?php elseif ($m['state'] === 'expired'): ?>
-                                <span class="cc-pill">Expired</span>on <?= $h($m['date']) ?>
+                                <span class="cc-pill">Expired</span><?= $m['date'] !== '' ? 'on ' . $h($m['date']) : '' ?>
                             <?php else: ?>
                                 <span class="cc-pill">Not active</span>
                             <?php endif; ?>
