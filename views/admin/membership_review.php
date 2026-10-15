@@ -7,6 +7,7 @@ require_once __DIR__ . '/../../includes/engage_page.php';
 require_once __DIR__ . '/../../includes/wiki_username.php';
 require_once __DIR__ . '/../../models/MemberModel.php';
 require_once __DIR__ . '/../../models/MemberProfileModel.php';
+require_once __DIR__ . '/../../models/MemberStrikeModel.php';
 require_once __DIR__ . '/../../includes/mail/membership_mailer.php';
 
 // Organizers only work with application forms, so they are not in this list.
@@ -14,10 +15,13 @@ requireRole(['membership_coordinator', 'membership_reviewer', 'owner']);
 
 $model = new MemberModel();
 $profiles = new MemberProfileModel();
+$strikes = new MemberStrikeModel();
 // Pass the FULL role list: an account can hold several roles, and Auth::role() is only the primary one.
 $scope = $model->scopeFor(Auth::roles(), (string) Auth::email());   // null = every chapter
 // Changing which Member ID a club membership uses is a reviewer decision, not a coordinator one.
 $canLinkIds = Auth::hasAnyRole(['membership_reviewer', 'owner']);
+// Striking members off and reinstating them: reviewers and owners only.
+$canStrike = $canLinkIds;
 
 // Profile rights: reviewers and owners for everyone; a coordinator for a person who holds at least
 // one membership in a chapter assigned to them. Every profile write goes through this check.
@@ -42,6 +46,8 @@ if ($id && !$app) { http_response_code(404); die('Application not found.'); }
 // request, and anything no longer open is skipped rather than failing the
 // batch. Every item is handled on its own: one failure never stops the rest,
 // and an email failure never undoes a decision that is already saved.
+// A struck-off member is refused by MemberModel::approve(), so a bulk approve
+// reports them under "Skipped".
 // ---------------------------------------------------------------------------
 const BULK_MAX = 100;
 
@@ -158,6 +164,24 @@ if (!$id && $_SERVER['REQUEST_METHOD'] === 'POST' && in_array($_POST['action'] ?
     exit;
 }
 
+// ---------------------------------------------------------------------------
+// Reinstate from the "Struck off" list on the queue. Reviewers and owners only; the check is
+// made here, not assumed from the list being hidden for coordinators.
+// ---------------------------------------------------------------------------
+if (!$id && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'strike_lift') {
+    if (!CSRF::validate($_POST['csrf_token'] ?? '')) die('Invalid CSRF token.');
+    try {
+        if (!$canStrike) throw new Exception('Only reviewers can reinstate members.');
+        $strikes->reinstate((string) ($_POST['member_id'] ?? ''), (string) ($_POST['reason'] ?? ''), currentAdminIdentifier());
+        $_SESSION['membership_flash'] = ['ok', 'Member reinstated. They get a new card on their next visit.'];
+    } catch (Throwable $e) {
+        $_SESSION['membership_flash'] = ['error', $e->getMessage()];
+    }
+    $keep = array_filter(['form' => $_GET['form'] ?? '', 'status' => $_GET['status'] ?? ''], 'strlen');
+    header('Location: /admin/membership-review' . ($keep ? '?' . http_build_query($keep) : '') . '#struckSect');
+    exit;
+}
+
 if ($app && $_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!CSRF::validate($_POST['csrf_token'] ?? '')) die('Invalid CSRF token.');
     $act = $_POST['action'] ?? '';
@@ -220,6 +244,20 @@ if ($app && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 $profiles->setVerified($profileMemberId, $by, $act === 'profile_verify');
             }
             $mail = null;
+        } elseif (in_array($act, ['strike', 'strike_reinstate'], true)) {
+            // Strike a person off, or lift it. Reviewers and owners only. The Member ID comes from
+            // the application's email on the server, never from the request. No email is sent.
+            if (!$canStrike) throw new Exception('Only reviewers can strike members off or reinstate them.');
+            $strikeHeld = $model->membershipsForEmail((string) $app['email']);
+            $strikeMid = $strikeHeld ? (string) $strikeHeld[0]['member_id'] : '';
+            if ($strikeMid === '') throw new Exception('This person has no Member ID yet, so there is nothing to strike.');
+            $why = (string) ($_POST['reason'] ?? '');
+            if ($act === 'strike') {
+                $strikes->strike($strikeMid, $why, $by);
+            } else {
+                $strikes->reinstate($strikeMid, $why, $by);
+            }
+            $mail = null;
         } elseif (in_array($act, ['link_id', 'unlink_id', 'relink_id'], true)) {
             // Share one Member ID between the Generic Community and a club. No email is sent.
             if (!$canLinkIds) throw new Exception('Only reviewers can change Member IDs.');
@@ -246,7 +284,7 @@ if ($app && $_SERVER['REQUEST_METHOD'] === 'POST') {
             } catch (Throwable $e) { app_log("Membership email failed for application #{$app['id']}: " . $e->getMessage()); }
         }
         header('Location: /admin/membership-review?id=' . $app['id'] . '&done=' . urlencode($act)
-            . (strpos($act, 'profile_') === 0 ? '#profile' : ''));
+            . (strpos($act, 'profile_') === 0 ? '#profile' : (strpos($act, 'strike') === 0 ? '#strike' : '')));
         exit;
     } catch (Throwable $e) { $error = $e->getMessage(); }
     $app = $model->getApplication($id, $scope);   // show fresh state after an error
@@ -258,6 +296,8 @@ $doneText = ['approve' => 'Approved.', 'reject' => 'Rejected.', 'review' => 'Mar
              'profile_save_verify' => 'Username saved and verified.',
              'profile_verify' => 'Username verified.',
              'profile_unverify' => 'Verification removed.',
+             'strike' => 'Member struck off. Their sessions, card and reset links no longer work.',
+             'strike_reinstate' => 'Member reinstated. They get a new card on their next visit.',
              'link_id' => 'Linked. On approval this member keeps that ID and no new one is made.',
              'unlink_id' => 'Link removed.',
              'relink_id' => 'Member ID changed. The confirmation email they received shows the old ID, so let them know.'];
@@ -270,7 +310,7 @@ $bulk = $_SESSION['membership_bulk'] ?? null;
 unset($_SESSION['membership_bulk']);
 $bulkVerb = ['approve' => 'approved', 'reject' => 'rejected', 'review' => 'marked under review', 'info' => 'sent back for more information'];
 
-// One-line result of a quick verify from the Accepted table.
+// One-line result of a quick verify / reinstate from the queue.
 $flash = $_SESSION['membership_flash'] ?? null;
 unset($_SESSION['membership_flash']);
 
@@ -420,6 +460,7 @@ engage_header([
     .idlist li { margin: 3px 0; }
     .idwarn { margin: 12px 0 0; padding: 10px 12px; background: #fffbeb; border: 1px solid #fcd34d; border-radius: 10px; font-size: 14px; color: #92400e; }
     .idbad { margin: 12px 0 0; padding: 10px 12px; background: #fef2f2; border: 1px solid #fca5a5; border-radius: 10px; font-size: 14px; color: #991b1b; }
+    .rv-meta + .idbad { margin: -8px 0 18px; }
     dl.answers dd .idform.userfix { margin-top: 6px; }
     dl.answers dd .idform.userfix input[type=text] { max-width: 260px; }
 
@@ -428,7 +469,7 @@ engage_header([
     .wm-sub { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
     .wm-links { margin: 8px 0 0; font-size: 14px; }
 
-    /* ---- Accepted members: a collapsible section. The summary line is always visible. ---- */
+    /* ---- Accepted members / Struck off: collapsible sections. The summary line is always visible. ---- */
     details.acc > summary {
         display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px;
         cursor: pointer; list-style: none;
@@ -486,6 +527,10 @@ engage_header([
     $profName = (string) ($prof['wikimedia_username'] ?? '');
     $profVerified = $profName !== '' && !empty($prof['username_verified_at']);
     $canProfile = $pMid !== '' && $mayEditProfile($pMid);
+
+    // Strike in force for this person (covers every chapter they hold), or null.
+    $struck = ($pMid !== '') ? $strikes->activeFor($pMid) : null;
+
     $appUser = '';
     foreach ($schema['fields'] ?? [] as $f) {
         if (!WikiUsername::isField($f)) continue;
@@ -496,6 +541,7 @@ engage_header([
     <div class="rv-head">
         <h2><?= $h($app['applicant_name'] ?: $app['email']) ?></h2>
         <span class="pill <?= $tone($app['status']) ?>"><?= $h($label($app['status'])) ?></span>
+        <?php if ($struck): ?><span class="pill st-bad">Struck off</span><?php endif; ?>
     </div>
     <p class="rv-meta">
         <?= $h($app['email']) ?> &middot;
@@ -503,6 +549,11 @@ engage_header([
         <?= $h($chapterLabel($app)) ?> &middot;
         <?= $h($app['tracking_id']) ?>
     </p>
+    <?php if ($struck): ?>
+        <div class="idbad"><strong>Struck off</strong> by <?= $h($struck['struck_by']) ?> on
+            <?= $h(MemberAuthModel::formatIst((string) $struck['struck_at'], 'j M Y')) ?>. This applies to every chapter they hold.
+            <br><em><?= nl2br($h($struck['reason'])) ?></em></div>
+    <?php endif; ?>
 
     <div class="rv-grid">
     <div class="rv-main">
@@ -537,9 +588,12 @@ engage_header([
             <h3>Decision</h3>
             <form method="POST" class="actrow"><?= CSRF::getInputField() ?>
                 <input type="hidden" name="id" value="<?= (int) $app['id'] ?>">
-                <button name="action" value="approve" class="btn-ok">Approve</button>
+                <?php if (!$struck): ?><button name="action" value="approve" class="btn-ok">Approve</button><?php endif; ?>
                 <button name="action" value="review" class="btn-ghost">Mark under review</button>
             </form>
+            <?php if ($struck): ?>
+                <p class="wm-sub" style="margin-top:10px;">Approval is blocked while this person is struck off. Reinstate them first.</p>
+            <?php endif; ?>
             <details class="rv-fold">
                 <summary>Ask for more information</summary>
                 <form method="POST"><?= CSRF::getInputField() ?>
@@ -652,6 +706,38 @@ engage_header([
             <?php endif; ?>
         </section>
 
+        <?php if ($canStrike && $pMid !== ''): ?>
+        <section class="sect" id="strike">
+            <h3>Strike off</h3>
+            <?php if ($struck): ?>
+                <p class="idline" style="margin-top:0;">Currently struck off. Reinstating lifts it for all chapters; the old card stays dead.</p>
+                <form method="POST"><?= CSRF::getInputField() ?>
+                    <input type="hidden" name="id" value="<?= (int) $app['id'] ?>">
+                    <div class="field" style="margin-top:12px;">
+                        <label>Reason for reinstating (kept in the record)</label>
+                        <textarea name="reason" rows="3" required maxlength="2000"></textarea>
+                    </div>
+                    <button name="action" value="strike_reinstate" class="btn-ok"
+                            onclick="return confirm('Reinstate this member?');">Reinstate</button>
+                </form>
+            <?php else: ?>
+                <p class="idline" style="margin-top:0;">Covers every chapter under <code><?= $h($pMid) ?></code>. Ends their session,
+                    retires their card, cancels reset links and blocks new approvals.</p>
+                <details class="rv-fold"><summary>Strike this member off</summary>
+                    <form method="POST"><?= CSRF::getInputField() ?>
+                        <input type="hidden" name="id" value="<?= (int) $app['id'] ?>">
+                        <div class="field">
+                            <label>Reason (kept in the record, not emailed)</label>
+                            <textarea name="reason" rows="3" required maxlength="2000"></textarea>
+                        </div>
+                        <button name="action" value="strike" class="btn-bad"
+                                onclick="return confirm('Strike this member off? It applies to all their chapters and takes effect immediately.');">Strike off</button>
+                    </form>
+                </details>
+            <?php endif; ?>
+        </section>
+        <?php endif; ?>
+
         <?php
         // Member ID sharing: reviewers only, and only for club memberships (the Generic Community is the anchor).
         if ($canLinkIds && $chapterKey !== null && $chapterKey !== 'generic'):
@@ -751,6 +837,10 @@ engage_header([
     $profMap = [];
     try { $profMap = $profiles->mapFor(array_column($acceptedGroups, 'mid')); } catch (Throwable $e) { app_log('Profile lookup failed: ' . $e->getMessage()); }
 
+    // Strikes in force: [member_id => row] for the "Struck off" pills, and the full list for reviewers.
+    $strikeMap = $strikes->activeMap();
+    $struckList = $canStrike ? $strikes->activeList() : [];
+
     $chips = [['', 'All', array_sum($cnt)], ['New', 'New', $cnt['New']], ['Submitted', 'Submitted', $cnt['Submitted']],
               ['Under Review', 'Under Review', $cnt['Under Review']], ['Draft', 'Awaiting applicant', $cnt['Draft']],
               ['Accepted', 'Accepted', $cnt['Accepted']], ['Rejected', 'Rejected', $cnt['Rejected']]];
@@ -817,6 +907,7 @@ engage_header([
                 <td>
                 <?php if ($rowIds): foreach ($rowIds as $mid => $chs): ?>
                     <code><?= $h($mid) ?></code> <span class="sub"><?= $h(implode(', ', $chs)) ?></span>
+                    <?php if (isset($strikeMap[strtoupper(trim((string) $mid))])): ?><span class="pill st-bad">Struck off</span><?php endif; ?>
                 <?php endforeach; else: ?><span class="muted">&mdash;</span><?php endif; ?>
                 <?php if ($rowStated !== null && !isset($rowIds[$rowStated])): ?>
                     <span class="sub">Entered: <code><?= $h($rowStated) ?></code> (no match)</span>
@@ -862,7 +953,10 @@ engage_header([
                 <td><a class="dl" href="?id=<?= (int) $latest['id'] ?>"><?= $h($latest['applicant_name'] ?: $latest['email']) ?></a>
                     <span class="sub"><?= $h($latest['email']) ?></span></td>
                 <td><?php foreach ($mships as $i => $m): ?><?= $i ? ', ' : '' ?><a class="dl" href="?id=<?= (int) $m['id'] ?>"><?= $h($m['label']) ?></a><?php endforeach; ?></td>
-                <td><?= $g['mid'] !== '' ? '<code>' . $h($g['mid']) . '</code>' : '<span class="muted">&mdash;</span>' ?></td>
+                <td><?= $g['mid'] !== '' ? '<code>' . $h($g['mid']) . '</code>' : '<span class="muted">&mdash;</span>' ?>
+                    <?php if ($g['mid'] !== '' && isset($strikeMap[strtoupper(trim($g['mid']))])): ?>
+                        <span class="pill st-bad">Struck off</span>
+                    <?php endif; ?></td>
                 <td class="wm-cell">
                 <?php if ($g['mid'] === ''): ?>
                     <span class="muted">&mdash;</span>
@@ -884,6 +978,43 @@ engage_header([
                 <td><?= !empty($latest['approved_at']) ? $h(MemberAuthModel::formatIst($latest['approved_at'])) : '<span class="muted">&mdash;</span>' ?></td>
                 <td title="<?= $h(implode('; ', $expTitle)) ?>"><?= !empty($g['expires']) ? $h(MemberAuthModel::formatIst($g['expires'], 'j M Y')) : '<span class="muted">&mdash;</span>' ?>
                     <?php if (count($mships) > 1): ?><span class="sub">latest of <?= count($mships) ?></span><?php endif; ?></td>
+            </tr>
+        <?php endforeach; ?>
+        </tbody></table>
+        </div>
+        <?php endif; ?>
+    </details>
+    <?php endif; ?>
+
+    <?php if ($canStrike): ?>
+    <details class="sect acc" id="struckSect"<?= $struckList ? '' : '' ?>>
+        <summary>
+            <span class="acc-title">Struck off</span>
+            <span class="acc-count"><?= count($struckList) ?> <?= count($struckList) === 1 ? 'person' : 'people' ?></span>
+        </summary>
+        <p class="rv-meta" style="margin:6px 0 14px;">A strike covers every chapter a person holds. It ends their session, retires their card and blocks new approvals.
+            To strike someone off, open their application and use the Strike off card.</p>
+        <?php if (!$struckList): ?>
+            <div class="empty-note">Nobody is struck off.</div>
+        <?php else: ?>
+        <div class="tbl-wrap">
+        <table class="tbl"><thead><tr>
+            <th>Member</th><th>Member ID</th><th>Reason</th><th>Struck by</th><th>When</th><th>Reinstate</th></tr></thead><tbody>
+        <?php foreach ($struckList as $s): ?>
+            <tr>
+                <td><?= $h($s['full_name'] ?: ($s['email'] ?: '—')) ?><span class="sub"><?= $h($s['email']) ?></span></td>
+                <td><code><?= $h($s['member_id']) ?></code></td>
+                <td style="white-space:pre-wrap"><?= $h($s['reason']) ?></td>
+                <td><?= $h($s['struck_by']) ?></td>
+                <td><?= $h(MemberAuthModel::formatIst((string) $s['struck_at'], 'j M Y')) ?></td>
+                <td>
+                    <form method="POST" class="idform" style="margin:0"><?= CSRF::getInputField() ?>
+                        <input type="hidden" name="member_id" value="<?= $h($s['member_id']) ?>">
+                        <input type="text" name="reason" placeholder="Reason" required maxlength="2000" aria-label="Reason for reinstating">
+                        <button name="action" value="strike_lift" class="btn-ghost"
+                                onclick="return confirm('Reinstate this member?');">Reinstate</button>
+                    </form>
+                </td>
             </tr>
         <?php endforeach; ?>
         </tbody></table>
