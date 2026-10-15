@@ -10,6 +10,7 @@
  * MemberAuthModel checks credentials; this class only keeps the session.
  */
 require_once __DIR__ . '/../models/MemberAuthModel.php';
+require_once __DIR__ . '/../models/MemberStrikeModel.php';
 
 class MemberSession {
     /** Member row loaded by check() for this request. */
@@ -46,6 +47,14 @@ class MemberSession {
             self::logout();
             return false;
         }
+
+        // Struck off: end the session at once. This runs on every request, so a strike takes effect
+        // immediately on every device and on every gated page.
+        if ((new MemberStrikeModel())->isStruck((string) $row['member_id'])) {
+            self::logout();
+            return false;
+        }
+
         self::$row = $row;
         return true;
     }
