@@ -166,7 +166,7 @@ function member_card_html(array $c): string
     td.left { background-color: {{tint}}; padding: 3mm 2mm 2.5mm 4mm; vertical-align: top; width: 51mm; }
     td.right { background-color: {{tint}}; padding: 3mm 4mm 2.5mm 0; vertical-align: top; text-align: center; width: 30mm; }
     .lb { font-size: 5.5pt; font-weight: bold; color: {{accent}}; text-transform: uppercase; letter-spacing: 0.25mm; margin: 0 0 0.6mm; }
-    .nm { font-size: 12pt; font-weight: bold; color: {{ink}}; margin: 0 0 2.4mm; }
+    .nm { font-size: 12pt; font-weight: bold; color: {{ink}}; margin: 0 0 3.5mm; }
     td.chip { background-color: {{accent}}; color: #ffffff; font-family: dejavusansmono, monospace; font-size: 10pt; font-weight: bold;
               letter-spacing: 0.3mm; padding: 0.9mm 2.4mm; border-radius: 1.2mm; }
     .ch { font-size: 7.5pt; color: #334155; margin: 0 0 0.7mm; }
