@@ -27,6 +27,14 @@ try {
 
     $png = QrCode::png(MemberCardModel::url($token), 10);
 
+    // Chapters other than the primary one go on their own lines under the Member ID.
+    $others = [];
+    foreach ($data['memberships'] as $m) {
+        if ($m['chapter'] !== $data['primary']['chapter']) {
+            $others[] = $m['name'];
+        }
+    }
+
     require_once __DIR__ . '/../../vendor/autoload.php';
     $mpdf = new \Mpdf\Mpdf([
         'format' => 'A4',
@@ -35,10 +43,13 @@ try {
     ]);
     $mpdf->SetTitle('DCW Membership Card ' . $memberId);
     $mpdf->WriteHTML(member_card_html([
-        'name'        => $data['full_name'] !== '' ? $data['full_name'] : $memberId,
-        'member_id'   => $memberId,
-        'memberships' => $data['memberships'],
-        'qr_uri'      => 'data:image/png;base64,' . base64_encode($png),
+        'name'           => $data['full_name'] !== '' ? $data['full_name'] : $memberId,
+        'member_id'      => $memberId,
+        'primary_name'   => $data['primary']['name'],
+        'other_chapters' => $others,
+        'username'       => $data['username'],
+        'logo_uri'       => (string) MemberCardModel::logoDataUri($data['primary']['chapter']),
+        'qr_uri'         => 'data:image/png;base64,' . base64_encode($png),
     ]));
 
     $filename = 'DCW-Membership-Card-' . preg_replace('/[^A-Za-z0-9_-]/', '_', $memberId) . '.pdf';
