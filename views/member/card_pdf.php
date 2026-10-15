@@ -27,10 +27,10 @@ try {
 
     $png = QrCode::png(MemberCardModel::url($token), 10);
 
-    // Chapters other than the primary one go on their own lines under the Member ID.
+    // Memberships come primary first. The PDF lists the other chapters that are current.
     $others = [];
-    foreach ($data['memberships'] as $m) {
-        if ($m['chapter'] !== $data['primary']['chapter']) {
+    foreach (array_slice($data['memberships'], 1) as $m) {
+        if ($m['state'] === 'active') {
             $others[] = $m['name'];
         }
     }
@@ -48,7 +48,7 @@ try {
         'primary_name'   => $data['primary']['name'],
         'other_chapters' => $others,
         'username'       => $data['username'],
-        'logo_uri'       => (string) MemberCardModel::logoDataUri($data['primary']['chapter']),
+        'logo_uri'       => MemberCardModel::logoDataUri($data['primary']['chapter']) ?? '',
         'qr_uri'         => 'data:image/png;base64,' . base64_encode($png),
     ]));
 
