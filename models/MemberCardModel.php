@@ -13,9 +13,9 @@ require_once __DIR__ . '/MemberStrikeModel.php';
  * card retires the old token, so a printed or screenshotted old code stops working at once. Striking a member
  * off (MemberStrikeModel) retires it too, and lookup() refuses struck members as well.
  *
- * What the public check shows is decided by lookup(): first name and last initial, each chapter (with its
- * logo) and whether it is current. Nothing else leaves this class for the public page. The Wikimedia username
- * is only in summary(), for the member's own card and PDF, and only when it is verified.
+ * What the public check shows is decided by lookup(): the member's verified Wikimedia username (never their
+ * real name), each chapter (with its logo) and whether it is current. Nothing else leaves this class for the
+ * public page. A member with no verified username is shown without a name line.
  *
  * "Current" uses MemberAuthModel::isActive(), the same rule the rest of the app uses: members.status is
  * 'active' and expires_at (a UTC datetime) is in the future. Status 'active' with a past date is "expired".
@@ -112,7 +112,8 @@ class MemberCardModel
     /**
      * What /card/<token> shows, or null if the token is unknown, was replaced, or the member is struck off
      * (all three look the same to the visitor). Shape: ['overall' => valid|expired|inactive,
-     * 'name' => 'Asha K.', 'memberships' => [['name', 'state' => active|expired|inactive, 'date', 'logo']]]
+     * 'name' => 'Aafi' (the verified Wikimedia username, or '' if there is none),
+     * 'memberships' => [['name', 'state' => active|expired|inactive, 'date', 'logo']]]
      */
     public function lookup(string $token): ?array
     {
@@ -132,7 +133,7 @@ class MemberCardModel
         if ($s === null) {
             return null;
         }
-        return ['overall' => $s['overall'], 'name' => $s['short_name'], 'memberships' => $s['memberships']];
+        return ['overall' => $s['overall'], 'name' => $s['username'], 'memberships' => $s['memberships']];
     }
 
     /** The full link a QR code should carry. Set ENGAGE_BASE_URL in config to override the default. */
