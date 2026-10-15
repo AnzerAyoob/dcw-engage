@@ -11,8 +11,9 @@ require_once __DIR__ . '/../models/MemberCardModel.php';
  * PUBLIC: no sign-in, and it does not use the session at all. A scan usually comes from a camera or another
  * app, and the session cookie is SameSite=Strict, so it would not arrive on that first request anyway.
  *
- * What it shows is deliberately small: first name and last initial, each chapter (with its logo), and whether
- * it is current. Never an email, phone, Member ID or Wikimedia username. An unknown token (never issued,
+ * What it shows is deliberately small: the member's verified Wikimedia username (never their real name),
+ * each chapter (with its logo), and whether it is current. Never an email, phone, Member ID or real name.
+ * A member with no verified username is shown without a name line. An unknown token (never issued,
  * replaced when the member replaced their card, or the member was struck off) gets the same plain "not valid"
  * page, so nothing can be learned by guessing.
  *
@@ -94,7 +95,9 @@ engage_header([
         <p class="cc-sub"><?= $h($subline) ?></p>
 
         <?php if ($card !== null): ?>
-            <p class="cc-name"><?= $h($card['name']) ?></p>
+            <?php if ($card['name'] !== ''): ?>
+                <p class="cc-name"><?= $h($card['name']) ?></p>
+            <?php endif; ?>
             <ul class="cc-list">
                 <?php foreach ($card['memberships'] as $m):
                     $tone = $m['state'] === 'active' ? '#047857' : ($m['state'] === 'expired' ? '#b45309' : '#b91c1c'); ?>
