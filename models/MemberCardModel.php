@@ -20,8 +20,9 @@ require_once __DIR__ . '/MemberStrikeModel.php';
  * "Current" uses MemberAuthModel::isActive(), the same rule the rest of the app uses: members.status is
  * 'active' and expires_at (a UTC datetime) is in the future. Status 'active' with a past date is "expired".
  *
- * Logos: assets/chapters/<chapter key>.png. A chapter with no file of its own (for now the Photographers
- * club) uses generic.png, the DCW logo.
+ * Logos: assets/chapters/<chapter key>.svg and/or .png. A chapter with no file of its own (for now the
+ * Photographers club) uses the generic file, the DCW logo. The screen and the public page prefer the SVG
+ * (sharp at any size); the PDF prefers the PNG, because mPDF's SVG support is only partial.
  *
  * Tables: member_cards and member_card_hits (member_cards.sql).
  */
@@ -44,16 +45,30 @@ class MemberCardModel
 
     // ---- Logos -----------------------------------------------------------------------------------
 
-    /** File name of the logo for a chapter (its own, else generic.png), or null if neither exists. */
-    public static function logoName(string $chapter): ?string
+    /**
+     * File name of the logo for a chapter. Tries each extension in order for the chapter's own file first,
+     * then for generic. Null if nothing exists.
+     */
+    private static function logoFile(string $chapter, array $exts): ?string
     {
         $dir = dirname(__DIR__) . self::LOGO_DIR;
         foreach ([$chapter, 'generic'] as $key) {
-            if (preg_match('/^[a-z]+$/', $key) && is_file($dir . $key . '.png')) {
-                return $key . '.png';
+            if (!preg_match('/^[a-z]+$/', $key)) {
+                continue;
+            }
+            foreach ($exts as $ext) {
+                if (is_file($dir . $key . '.' . $ext)) {
+                    return $key . '.' . $ext;
+                }
             }
         }
         return null;
+    }
+
+    /** File name of the logo shown on screen (SVG, else PNG), or null if there is none. */
+    public static function logoName(string $chapter): ?string
+    {
+        return self::logoFile($chapter, ['svg', 'png']);
     }
 
     /** Public URL of a chapter's logo (with a version so a replaced file shows up), or null. */
@@ -67,15 +82,19 @@ class MemberCardModel
         return self::LOGO_DIR . $name . ($v ? '?v=' . $v : '');
     }
 
-    /** The logo as a data: URI, for the PDF. */
+    /** The logo as a data: URI, for the PDF (PNG preferred, SVG if that is all there is). */
     public static function logoDataUri(string $chapter): ?string
     {
-        $name = self::logoName($chapter);
+        $name = self::logoFile($chapter, ['png', 'svg']);
         if ($name === null) {
             return null;
         }
         $bytes = @file_get_contents(dirname(__DIR__) . self::LOGO_DIR . $name);
-        return $bytes === false ? null : 'data:image/png;base64,' . base64_encode($bytes);
+        if ($bytes === false) {
+            return null;
+        }
+        $mime = substr($name, -4) === '.svg' ? 'image/svg+xml' : 'image/png';
+        return 'data:' . $mime . ';base64,' . base64_encode($bytes);
     }
 
     // ---- Public page helpers ---------------------------------------------------------------------
