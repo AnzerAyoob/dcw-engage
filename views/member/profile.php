@@ -153,6 +153,7 @@ cert_rows_css();   // .d-btn buttons and icons
     .pf-id h2 { margin: 0; font-size: 20px; font-weight: 800; letter-spacing: -.01em; overflow-wrap: anywhere; }
     .pf-mid { display: inline-flex; align-items: center; gap: 8px; margin: 8px 0 0; }
     .pf-mid code { font-size: 14px; padding: 3px 10px; border-radius: 8px; background: #eef3f8; letter-spacing: .04em; }
+    .pf-cardbtn { margin: 14px 0 0; }
     .pf-facts { margin: 18px 0 0; padding-top: 14px; border-top: 1px solid var(--border); text-align: left; display: grid; grid-template-columns: auto 1fr; gap: 8px 14px; font-size: 14px; }
     .pf-facts dt { color: var(--muted); font-weight: 600; }
     .pf-facts dd { margin: 0; overflow-wrap: anywhere; }
@@ -217,6 +218,7 @@ cert_rows_css();   // .d-btn buttons and icons
                 <code><?= $h($memberId) ?></code>
                 <button type="button" class="d-btn soft" data-copy="<?= $h($memberId) ?>" aria-label="Copy Member ID"><span>Copy</span></button>
             </p>
+            <p class="pf-cardbtn"><a class="d-btn fill" href="/member/card">Membership card</a></p>
             <dl class="pf-facts">
                 <dt>Email</dt><dd><?= $h($email) ?></dd>
                 <?php if ($joined !== null): ?><dt>Member since</dt><dd><?= $h(pf_date($joined)) ?></dd><?php endif; ?>

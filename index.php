@@ -91,6 +91,13 @@ if ($route === '/' || $route === '/index.php') {
 } elseif ($route === '/member/profile') {
     require __DIR__ . '/views/member/profile.php';
 
+// Signed-in members only. The member's own membership card (QR code), and the same card as a PDF
+// that is built in memory and downloaded. The public page the QR code opens is /card/{token} below.
+} elseif ($route === '/member/card') {
+    require __DIR__ . '/views/member/card.php';
+} elseif ($route === '/member/card/pdf') {
+    require __DIR__ . '/views/member/card_pdf.php';
+
 // Full list of the member's certificates, with search and paging. The dashboard
 // shows only the latest few and links here. Signed-in members only.
 } elseif ($route === '/member/certificates') {
@@ -122,6 +129,14 @@ if ($route === '/' || $route === '/index.php') {
     global $memberSetToken;
     $memberSetToken = $matches[1];
     require __DIR__ . '/views/member/set_password.php';
+
+// Public membership check, opened by scanning a member's QR code. No sign-in and no session needed: the
+// 32-character token in the link is what identifies the card (see MemberCardModel). A literal pattern, so it
+// must come before the catch-all dynamic form route below.
+} elseif (preg_match('/^\/card\/([a-f0-9]{32})$/', $route, $matches)) {
+    global $cardToken;
+    $cardToken = $matches[1];
+    require __DIR__ . '/views/card_check.php';
 
 // Coordinator / reviewer queue for membership applications. Role check is
 // inside the view: requireRole(['membership_coordinator', 'membership_reviewer',
