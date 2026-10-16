@@ -19,7 +19,7 @@ if (MemberSession::check()) {
 $error = '';
 $memberId = '';
 
-// One-shot message handed over by the set-password page.
+// One-shot message handed over by the set-password page (and by the Member ID reminder page).
 $notice = $_SESSION['member_notice'] ?? '';
 unset($_SESSION['member_notice']);
 
@@ -65,6 +65,7 @@ require __DIR__ . '/_head.php';
 
             <p class="links">
                 <a href="/member/forgot">First time here, or forgot your password?</a><br>
+                <a href="/member/forgot-id">Forgot your Member ID?</a><br>
                 <a href="/membership">Not a member yet? Join DCW</a>
             </p>
 <?php require __DIR__ . '/_foot.php'; ?>
