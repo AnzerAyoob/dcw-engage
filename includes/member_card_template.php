@@ -143,15 +143,16 @@ function member_card_html(array $c): string
         (array) ($c['other_chapters'] ?? [])
     ), 'strlen'));
     if ($list) {
-        $others = '<div class="lb" style="margin: 0 0 1mm;">Also a member of</div>';
+        $cells = '';
         foreach (array_slice($list, 0, 2) as $n) {
             $dot = member_card_theme(member_card_key_for_name($n))['accent'];
-            $others .= '<div class="pill"><span style="color: ' . $dot . ';">&#9679;</span>&nbsp;' . $h($n) . '</div>';
+            $cells .= '<td class="pill"><span style="color: ' . $dot . ';">&#9679;</span>&nbsp;' . $h($n) . '</td><td style="width: 1.2mm;"></td>';
         }
         if (count($list) > 2) {
-            $others .= '<div class="pill">+' . (count($list) - 2) . ' more</div>';
+            $cells .= '<td class="pill">+' . (count($list) - 2) . ' more</td>';
         }
-        $others .= '<div style="clear: both;"></div>';
+        $others = '<div class="lb" style="margin: 0 0 1mm;">Also a member of</div>'
+                . '<table cellpadding="0" cellspacing="0" style="border-collapse: separate;"><tr>' . $cells . '</tr></table>';
         $othersRow = '<tr><td class="chapters" colspan="2">' . $others . '</td></tr>';
     }
 
@@ -169,11 +170,11 @@ function member_card_html(array $c): string
 
     td.stripe { padding: 0; }
 
-    td.left  { background-color: {{tint}}; padding: 2.5mm 2mm 2mm 4.5mm; vertical-align: middle; width: 56mm; }
-    td.right { background-color: {{tint}}; padding: 2.5mm 4.5mm 2mm 0; vertical-align: middle; text-align: center; width: 28mm; }
+    td.left  { background-color: {{tint}}; padding: 2.5mm 2mm 2mm 4.5mm; vertical-align: middle; width: 53mm; }
+    td.right { background-color: {{tint}}; padding: 2.5mm 2mm 2mm 2mm; vertical-align: middle; text-align: center; width: 31mm; }
 
     .lb { font-size: 5.5pt; font-weight: bold; color: {{accent}}; text-transform: uppercase; letter-spacing: 0.35mm; margin: 0 0 0.8mm; }
-    .nm { font-size: 12pt; font-weight: bold; color: {{ink}}; margin: 0 0 4.5mm; }
+    .nm { font-size: 12pt; font-weight: bold; color: {{ink}}; margin: 0; padding: 0 0 5mm 0; }
 
     td.chip { background-color: #ffffff; border: 0.25mm solid {{accent}}; color: {{ink}};
               font-family: dejavusansmono, monospace; font-size: 10pt; font-weight: bold;
@@ -183,8 +184,8 @@ function member_card_html(array $c): string
     .scan { font-size: 6pt; font-weight: bold; color: {{accent}}; margin-top: 1.2mm; }
 
     td.chapters { background-color: {{tint}}; padding: 0 4.5mm 2mm 4.5mm; }
-    .pill { float: left; background-color: #ffffff; border: 0.2mm solid #cbd5e1; border-radius: 2mm;
-            padding: 0.5mm 2mm; margin: 0 1.2mm 0 0; font-size: 6pt; color: #334155; }
+    td.pill { background-color: #ffffff; border: 0.2mm solid #cbd5e1; border-radius: 2mm;
+              padding: 0.5mm 2mm; font-size: 6pt; color: #334155; }
 
     td.foot { background-color: {{accent}}; color: #ffffff; padding: 1.5mm 4mm; font-size: 5.8pt; text-align: center;
               border-radius: 0 0 2.5mm 2.5mm; }
@@ -219,7 +220,7 @@ function member_card_html(array $c): string
             <table cellpadding="0" cellspacing="0"><tr><td class="chip">{{member_id}}</td></tr></table>
         </td>
         <td class="right">
-            <table cellpadding="0" cellspacing="0" align="center"><tr><td class="qr">
+            <table cellpadding="0" cellspacing="0" align="center" style="margin: 0 auto;"><tr><td class="qr">
                 <img src="{{qr}}" style="width: 18mm; height: 18mm;" />
             </td></tr></table>
             <div class="scan">Scan to verify</div>
