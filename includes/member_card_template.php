@@ -6,16 +6,17 @@
  * member_card_accent() gives the chapter's main colour and is also used by views/member/card.php.
  * member_card_theme() holds the full palette of each chapter, taken from its logo.
  *
- * The card is credit-card size (85.6 mm wide; the height now follows the content) on an A4 page, so it can be printed and cut out.
- * Faint corner marks sit outside the card to guide the scissors.
+ * The card is 85.6 mm wide on an A4 page (the height follows the content), so it can be printed and cut
+ * out. Faint corner marks sit outside the card to guide the scissors. Corners are square on purpose:
+ * mPDF cannot clip child cells to a rounded border, so a square card prints cleaner.
  *
  * Layout, top to bottom (identical for every chapter, only the palette changes):
  *   1. White header: the chapter's logo and the chapter name in the chapter's colour.
  *   2. A stripe in the logo's own colours.
- *   3. Tinted body. Left: the Wikimedia username (bold, no label), a gap, then the Member ID.
- *      Right: the QR code in a framed white box.
- *   4. Optional full-width row of small pills: the member's other current chapters.
- *   5. A solid colour footer with the motto: Identify, Learn, Think, Mentor.
+ *   3. Tinted body, one block. Left: the Wikimedia username (bold, no label), a gap, the Member ID,
+ *      a gap, then the other current chapters (a coloured dot and a name each).
+ *      Right: the QR code in a framed white box, centred against the whole body height.
+ *   4. A solid colour footer with the motto: Identify, Learn, Think, Mentor.
  *
  * The PDF deliberately shows no status or dates: those change, and the QR code always shows the live
  * answer. It shows the Wikimedia username, not the person's real name.
@@ -105,6 +106,10 @@ function member_card_html(array $c): string
 {
     $h = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
 
+    // Vertical space. mPDF honours a table row's height, but often ignores margin/padding on a div.
+    $gap = fn(float $mm) => '<table cellpadding="0" cellspacing="0"><tr><td style="height: ' . $mm
+         . 'mm; font-size: 1pt; line-height: 1pt;">&nbsp;</td></tr></table>';
+
     $chapter = (string) ($c['chapter'] ?? 'generic');
     $t       = member_card_theme($chapter);
     $org     = 'Deoband Community Wikimedia';
@@ -121,7 +126,7 @@ function member_card_html(array $c): string
     $subClass = $isOrg ? 's up' : 's';
 
     $logo = !empty($c['logo_uri'])
-        ? '<td class="lg"><img src="' . $h($c['logo_uri']) . '" style="height: 9mm;" /></td>'
+        ? '<td class="lg"><img src="' . $h($c['logo_uri']) . '" style="height: 11mm;" /></td>'
         : '';
 
     // Stripe under the header, one equal cell per colour.
@@ -133,40 +138,39 @@ function member_card_html(array $c): string
 
     // Username: bold, no label. Without one, the Member ID simply stands alone.
     $username = trim((string) ($c['username'] ?? ''));
-    // The gap is a table row with a fixed height: mPDF honours that, but often ignores margin/padding on a div.
     $who = $username !== ''
-        ? '<table cellpadding="0" cellspacing="0"><tr><td class="nm" style="font-weight: bold;"><b>' . $h($username) . '</b></td></tr>'
-          . '<tr><td style="height: 7mm; font-size: 1pt; line-height: 1pt;">&nbsp;</td></tr></table>'
+        ? '<div class="nm"><b>' . $h($username) . '</b></div>' . $gap(5)
         : '';
 
-    // Other current chapters: small pills in a full-width row under the body.
-    // At most two names plus a "+N more" pill, so the row stays on one line and the card keeps its size.
-    $othersRow = '';
+    // Other current chapters: a coloured dot and the name, one per line, no boxes.
+    // At most two names plus a "+N more" line, so the card keeps its size.
+    $others = '';
     $list = array_values(array_filter(array_map(
         fn($n) => member_card_display_name((string) $n),
         (array) ($c['other_chapters'] ?? [])
     ), 'strlen'));
     if ($list) {
-        $cells = '';
+        $others = $gap(5) . '<div class="lb">Also a member of</div>' . $gap(1.2);
         foreach (array_slice($list, 0, 2) as $n) {
             $dot = member_card_theme(member_card_key_for_name($n))['accent'];
-            $cells .= '<td class="pill"><span style="color: ' . $dot . ';">&#9679;</span>&nbsp;' . $h($n) . '</td><td style="width: 1.2mm;"></td>';
+            $others .= '<div class="ch"><span style="color: ' . $dot . ';">&#9679;</span>&nbsp;&nbsp;' . $h($n) . '</div>' . $gap(0.8);
         }
         if (count($list) > 2) {
-            $cells .= '<td class="pill">+' . (count($list) - 2) . ' more</td>';
+            $others .= '<div class="ch" style="color: #64748b;">+' . (count($list) - 2) . ' more</div>';
         }
-        $others = '<div class="lb" style="margin: 0 0 1.5mm;">Also a member of</div>'
-                . '<table cellpadding="0" cellspacing="0" style="border-collapse: separate;"><tr>' . $cells . '</tr></table>';
-        $othersRow = '<tr><td class="chapters" colspan="2">' . $others . '</td></tr>';
     }
+
+    // Motto, with a small diamond in the body tint between the words.
+    $sep   = '&nbsp;&nbsp;<span style="color: ' . $t['tint'] . '; font-size: 6pt;">&#9670;</span>&nbsp;&nbsp;';
+    $motto = implode($sep, ['Identify', 'Learn', 'Think', 'Mentor']);
 
     $tpl = '
 <style>
     body { font-family: dejavusans, sans-serif; color: #0f172a; font-size: 10pt; }
-    table.card { width: 85.6mm; border: 0.5mm solid {{accent}}; border-collapse: separate; border-radius: 3mm; }
+    table.card { width: 85.6mm; border: 0.5mm solid {{accent}}; border-collapse: separate; }
 
-    td.head { background-color: #ffffff; padding: 3mm 5mm; border-radius: 2.5mm 2.5mm 0 0; }
-    td.lg { padding-right: 3mm; vertical-align: middle; }
+    td.head { background-color: #ffffff; padding: 3mm 5mm; }
+    td.lg { padding-right: 3.5mm; vertical-align: middle; }
     td.bt { vertical-align: middle; }
     .t { font-size: 9.5pt; font-weight: bold; color: {{ink}}; line-height: 1.3; white-space: nowrap; }
     .s { font-size: 6pt; color: #475569; margin-top: 0.4mm; }
@@ -174,25 +178,22 @@ function member_card_html(array $c): string
 
     td.stripe { padding: 0; }
 
-    td.left  { background-color: {{tint}}; padding: 5mm 2mm 5mm 5mm; vertical-align: middle; width: 53mm; }
-    td.right { background-color: {{tint}}; padding: 5mm 2mm 5mm 2mm; vertical-align: middle; text-align: center; width: 31mm; }
+    td.left  { background-color: {{tint}}; padding: 5mm 2mm 5mm 5mm; vertical-align: middle; width: 50mm; }
+    td.right { background-color: {{tint}}; padding: 5mm 5mm 5mm 0; vertical-align: middle; text-align: center; width: 34mm; }
 
     .lb { font-size: 5.5pt; font-weight: bold; color: {{accent}}; text-transform: uppercase; letter-spacing: 0.35mm; margin: 0 0 0.8mm; }
-    td.nm { font-size: 13pt; font-weight: bold; color: {{ink}}; padding: 0; }
+    .nm { font-size: 13pt; font-weight: bold; color: {{ink}}; }
+    .ch { font-size: 7pt; color: #334155; }
 
     td.chip { background-color: #ffffff; border: 0.25mm solid {{accent}}; color: {{ink}};
               font-family: dejavusansmono, monospace; font-size: 10pt; font-weight: normal;
-              letter-spacing: 0.3mm; padding: 0.8mm 2.4mm; border-radius: 1.2mm; }
+              letter-spacing: 0.3mm; padding: 0.8mm 2.4mm; }
 
-    td.qr { background-color: #ffffff; border: 0.5mm solid {{accent}}; border-radius: 2mm; padding: 1mm; }
-    .scan { font-size: 6pt; font-weight: bold; color: {{accent}}; margin-top: 1.2mm; }
+    td.qr { background-color: #ffffff; border: 0.5mm solid {{accent}}; padding: 1mm; }
+    .scan { font-size: 6pt; font-weight: bold; color: {{accent}}; text-align: center; }
 
-    td.chapters { background-color: {{tint}}; padding: 0 5mm 4mm 5mm; }
-    td.pill { background-color: #ffffff; border: 0.2mm solid #cbd5e1; border-radius: 2mm;
-              padding: 0.5mm 2mm; font-size: 6pt; color: #334155; }
-
-    td.foot { background-color: {{accent}}; color: #ffffff; padding: 2.6mm 4mm; font-size: 7pt; font-weight: bold; letter-spacing: 0.4mm; text-align: center;
-              border-radius: 0 0 2.5mm 2.5mm; }
+    td.foot { background-color: {{accent}}; color: #ffffff; padding: 2.8mm 4mm; font-size: 7pt; font-weight: bold;
+              letter-spacing: 0.3mm; text-align: center; }
     .cut { margin-top: 3mm; font-size: 7pt; color: #94a3b8; }
 </style>
 
@@ -222,16 +223,17 @@ function member_card_html(array $c): string
             {{who}}
             <div class="lb">Member ID</div>
             <table cellpadding="0" cellspacing="0"><tr><td class="chip">{{member_id}}</td></tr></table>
+            {{others}}
         </td>
         <td class="right">
             <table cellpadding="0" cellspacing="0" align="center" style="margin: 0 auto;"><tr><td class="qr">
-                <img src="{{qr}}" style="width: 18mm; height: 18mm;" />
+                <img src="{{qr}}" style="width: 21mm; height: 21mm;" />
             </td></tr></table>
+            {{scan_gap}}
             <div class="scan">Scan to verify</div>
         </td>
     </tr>
-    {{others_row}}
-    <tr><td class="foot" colspan="2">Identify &middot; Learn &middot; Think &middot; Mentor</td></tr>
+    <tr><td class="foot" colspan="2">{{motto}}</td></tr>
 </table>
         </td>
         <td></td>
@@ -245,17 +247,19 @@ function member_card_html(array $c): string
 <div class="cut">Confirms membership only, not identity. Ask for photo ID if unsure.<br />Print at 100% (no scaling) and cut at the corner marks.</div>';
 
     return strtr($tpl, [
-        '{{accent}}'     => $t['accent'],
-        '{{ink}}'        => $t['ink'],
-        '{{tint}}'       => $t['tint'],
-        '{{logo}}'       => $logo,
-        '{{primary}}'    => $h($primary),
-        '{{subclass}}'   => $subClass,
-        '{{sub}}'        => $h($sub),
-        '{{stripe}}'     => $stripe,
-        '{{who}}'        => $who,
-        '{{member_id}}'  => $h($c['member_id'] ?? ''),
-        '{{others_row}}' => $othersRow,
-        '{{qr}}'         => $h($c['qr_uri'] ?? ''),
+        '{{accent}}'    => $t['accent'],
+        '{{ink}}'       => $t['ink'],
+        '{{tint}}'      => $t['tint'],
+        '{{logo}}'      => $logo,
+        '{{primary}}'   => $h($primary),
+        '{{subclass}}'  => $subClass,
+        '{{sub}}'       => $h($sub),
+        '{{stripe}}'    => $stripe,
+        '{{who}}'       => $who,
+        '{{member_id}}' => $h($c['member_id'] ?? ''),
+        '{{others}}'    => $others,
+        '{{qr}}'        => $h($c['qr_uri'] ?? ''),
+        '{{scan_gap}}'  => $gap(2),
+        '{{motto}}'     => $motto,
     ]);
 }
