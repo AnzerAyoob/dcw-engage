@@ -244,6 +244,15 @@ if ($app && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 $profiles->setVerified($profileMemberId, $by, $act === 'profile_verify');
             }
             $mail = null;
+        } elseif ($act === 'profile_title') {
+            // The title printed on the card instead of the Member ID (for example a founder or chair).
+            // Reviewers and owners only. The Member ID comes from the application's email, never from the request.
+            if (!$canLinkIds) throw new Exception('Only reviewers can set a card title.');
+            $titleHeld = $model->membershipsForEmail((string) $app['email']);
+            $titleMid = $titleHeld ? (string) $titleHeld[0]['member_id'] : '';
+            if ($titleMid === '') throw new Exception('This person has no Member ID yet.');
+            $profiles->setCardTitle($titleMid, (string) ($_POST['card_title'] ?? ''), $by);
+            $mail = null;
         } elseif (in_array($act, ['strike', 'strike_reinstate'], true)) {
             // Strike a person off, or lift it. Reviewers and owners only. The Member ID comes from
             // the application's email on the server, never from the request. No email is sent.
@@ -296,6 +305,7 @@ $doneText = ['approve' => 'Approved.', 'reject' => 'Rejected.', 'review' => 'Mar
              'profile_save_verify' => 'Username saved and verified.',
              'profile_verify' => 'Username verified.',
              'profile_unverify' => 'Verification removed.',
+             'profile_title' => 'Card title saved.',
              'strike' => 'Member struck off. Their sessions, card and reset links no longer work.',
              'strike_reinstate' => 'Member reinstated. They get a new card on their next visit.',
              'link_id' => 'Linked. On approval this member keeps that ID and no new one is made.',
@@ -668,6 +678,17 @@ engage_header([
                 <?php else: ?>
                     <p class="wm-sub" style="margin-top:10px;">You can view this profile, but only a reviewer or a coordinator of one of this person's chapters can change it.</p>
                 <?php endif; ?>
+
+                <?php if ($canLinkIds): ?>
+                <form method="POST" class="idform"><?= CSRF::getInputField() ?>
+                    <input type="hidden" name="id" value="<?= (int) $app['id'] ?>">
+                    <input type="text" name="card_title" maxlength="120" autocomplete="off"
+                           value="<?= $h($prof['card_title'] ?? '') ?>"
+                           placeholder="Card title, e.g. Founder and Chair, Executive Board" aria-label="Card title">
+                    <button name="action" value="profile_title" class="btn-ghost">Save card title</button>
+                </form>
+                <p class="wm-sub">When set, the card shows this instead of the Member ID. Leave it empty to show the ID.</p>
+                <?php endif; ?>
             <?php endif; ?>
         </section>
 
@@ -703,6 +724,10 @@ engage_header([
                 <?php else: ?>
                     <p class="idline"><strong>On approval:</strong> a new Member ID is generated.</p>
                 <?php endif; ?>
+            <?php endif; ?>
+
+            <?php if ($canLinkIds && $pMid !== '' && !$struck): ?>
+                <p class="idline"><a class="btn-ghost sm" href="/admin/membership-card?id=<?= (int) $app['id'] ?>">Download card (PDF)</a></p>
             <?php endif; ?>
         </section>
 
@@ -956,6 +981,9 @@ engage_header([
                 <td><?= $g['mid'] !== '' ? '<code>' . $h($g['mid']) . '</code>' : '<span class="muted">&mdash;</span>' ?>
                     <?php if ($g['mid'] !== '' && isset($strikeMap[strtoupper(trim($g['mid']))])): ?>
                         <span class="pill st-bad">Struck off</span>
+                    <?php endif; ?>
+                    <?php if ($canLinkIds && $g['mid'] !== '' && !isset($strikeMap[strtoupper(trim($g['mid']))])): ?>
+                        <span class="sub"><a class="dl" href="/admin/membership-card?id=<?= (int) $latest['id'] ?>">Card PDF</a></span>
                     <?php endif; ?></td>
                 <td class="wm-cell">
                 <?php if ($g['mid'] === ''): ?>
