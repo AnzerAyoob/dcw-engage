@@ -6,7 +6,7 @@
  * member_card_accent() gives the chapter's main colour and is also used by views/member/card.php.
  * member_card_theme() holds the full palette of each chapter, taken from its logo.
  *
- * The card is credit-card size (85.6 mm wide) on an A4 page, so it can be printed and cut out.
+ * The card is credit-card size (85.6 mm wide; the height now follows the content) on an A4 page, so it can be printed and cut out.
  * Faint corner marks sit outside the card to guide the scissors.
  *
  * Layout, top to bottom (identical for every chapter, only the palette changes):
@@ -15,7 +15,7 @@
  *   3. Tinted body. Left: the Wikimedia username (bold, no label), a gap, then the Member ID.
  *      Right: the QR code in a framed white box.
  *   4. Optional full-width row of small pills: the member's other current chapters.
- *   5. A solid colour footer with the one-line "membership only" notice.
+ *   5. A solid colour footer with the motto: Identify, Learn, Think, Mentor.
  *
  * The PDF deliberately shows no status or dates: those change, and the QR code always shows the live
  * answer. It shows the Wikimedia username, not the person's real name.
@@ -133,7 +133,11 @@ function member_card_html(array $c): string
 
     // Username: bold, no label. Without one, the Member ID simply stands alone.
     $username = trim((string) ($c['username'] ?? ''));
-    $who = $username !== '' ? '<div class="nm">' . $h($username) . '</div>' : '';
+    // The gap is a table row with a fixed height: mPDF honours that, but often ignores margin/padding on a div.
+    $who = $username !== ''
+        ? '<table cellpadding="0" cellspacing="0"><tr><td class="nm" style="font-weight: bold;"><b>' . $h($username) . '</b></td></tr>'
+          . '<tr><td style="height: 7mm; font-size: 1pt; line-height: 1pt;">&nbsp;</td></tr></table>'
+        : '';
 
     // Other current chapters: small pills in a full-width row under the body.
     // At most two names plus a "+N more" pill, so the row stays on one line and the card keeps its size.
@@ -151,7 +155,7 @@ function member_card_html(array $c): string
         if (count($list) > 2) {
             $cells .= '<td class="pill">+' . (count($list) - 2) . ' more</td>';
         }
-        $others = '<div class="lb" style="margin: 0 0 1mm;">Also a member of</div>'
+        $others = '<div class="lb" style="margin: 0 0 1.5mm;">Also a member of</div>'
                 . '<table cellpadding="0" cellspacing="0" style="border-collapse: separate;"><tr>' . $cells . '</tr></table>';
         $othersRow = '<tr><td class="chapters" colspan="2">' . $others . '</td></tr>';
     }
@@ -161,7 +165,7 @@ function member_card_html(array $c): string
     body { font-family: dejavusans, sans-serif; color: #0f172a; font-size: 10pt; }
     table.card { width: 85.6mm; border: 0.5mm solid {{accent}}; border-collapse: separate; border-radius: 3mm; }
 
-    td.head { background-color: #ffffff; padding: 1.8mm 4.5mm; border-radius: 2.5mm 2.5mm 0 0; }
+    td.head { background-color: #ffffff; padding: 3mm 5mm; border-radius: 2.5mm 2.5mm 0 0; }
     td.lg { padding-right: 3mm; vertical-align: middle; }
     td.bt { vertical-align: middle; }
     .t { font-size: 9.5pt; font-weight: bold; color: {{ink}}; line-height: 1.3; white-space: nowrap; }
@@ -170,24 +174,24 @@ function member_card_html(array $c): string
 
     td.stripe { padding: 0; }
 
-    td.left  { background-color: {{tint}}; padding: 2.5mm 2mm 2mm 4.5mm; vertical-align: middle; width: 53mm; }
-    td.right { background-color: {{tint}}; padding: 2.5mm 2mm 2mm 2mm; vertical-align: middle; text-align: center; width: 31mm; }
+    td.left  { background-color: {{tint}}; padding: 5mm 2mm 5mm 5mm; vertical-align: middle; width: 53mm; }
+    td.right { background-color: {{tint}}; padding: 5mm 2mm 5mm 2mm; vertical-align: middle; text-align: center; width: 31mm; }
 
     .lb { font-size: 5.5pt; font-weight: bold; color: {{accent}}; text-transform: uppercase; letter-spacing: 0.35mm; margin: 0 0 0.8mm; }
-    .nm { font-size: 12pt; font-weight: bold; color: {{ink}}; margin: 0; padding: 0 0 5mm 0; }
+    td.nm { font-size: 13pt; font-weight: bold; color: {{ink}}; padding: 0; }
 
     td.chip { background-color: #ffffff; border: 0.25mm solid {{accent}}; color: {{ink}};
-              font-family: dejavusansmono, monospace; font-size: 10pt; font-weight: bold;
+              font-family: dejavusansmono, monospace; font-size: 10pt; font-weight: normal;
               letter-spacing: 0.3mm; padding: 0.8mm 2.4mm; border-radius: 1.2mm; }
 
     td.qr { background-color: #ffffff; border: 0.5mm solid {{accent}}; border-radius: 2mm; padding: 1mm; }
     .scan { font-size: 6pt; font-weight: bold; color: {{accent}}; margin-top: 1.2mm; }
 
-    td.chapters { background-color: {{tint}}; padding: 0 4.5mm 2mm 4.5mm; }
+    td.chapters { background-color: {{tint}}; padding: 0 5mm 4mm 5mm; }
     td.pill { background-color: #ffffff; border: 0.2mm solid #cbd5e1; border-radius: 2mm;
               padding: 0.5mm 2mm; font-size: 6pt; color: #334155; }
 
-    td.foot { background-color: {{accent}}; color: #ffffff; padding: 1.5mm 4mm; font-size: 5.8pt; text-align: center;
+    td.foot { background-color: {{accent}}; color: #ffffff; padding: 2.6mm 4mm; font-size: 7pt; font-weight: bold; letter-spacing: 0.4mm; text-align: center;
               border-radius: 0 0 2.5mm 2.5mm; }
     .cut { margin-top: 3mm; font-size: 7pt; color: #94a3b8; }
 </style>
@@ -227,7 +231,7 @@ function member_card_html(array $c): string
         </td>
     </tr>
     {{others_row}}
-    <tr><td class="foot" colspan="2">Confirms membership only, not identity. Ask for photo ID if unsure.</td></tr>
+    <tr><td class="foot" colspan="2">Identify &middot; Learn &middot; Think &middot; Mentor</td></tr>
 </table>
         </td>
         <td></td>
@@ -238,7 +242,7 @@ function member_card_html(array $c): string
         <td style="border-left: 0.2mm solid #cccccc; border-top: 0.2mm solid #cccccc;"></td>
     </tr>
 </table>
-<div class="cut">Print at 100% (no scaling) and cut at the corner marks.</div>';
+<div class="cut">Confirms membership only, not identity. Ask for photo ID if unsure.<br />Print at 100% (no scaling) and cut at the corner marks.</div>';
 
     return strtr($tpl, [
         '{{accent}}'     => $t['accent'],
