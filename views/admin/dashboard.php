@@ -16,6 +16,7 @@ Auth::requireLogin();
 //   finance/queue.php        -> requireRole(['finance', 'owner'])   (combined: reimbursements + internet support)
 //   finance/closed.php       -> requireRole(['finance', 'owner'])
 //   membership_review.php    -> requireRole(['membership_coordinator', 'membership_reviewer', 'owner'])   (organizers: forms only)
+//   membership_card.php      -> requireRole(['membership_reviewer', 'owner'])   (card PDFs; opened from the review page)
 //   team.php                 -> Auth::requireOwner()   (invites, roles and coordinator chapters)
 //   member_support.php       -> requireRole(['member_support', 'owner'])   (shown as "DCW Support")
 //   tech-issues.php, tech-diagnostics.php -> tech_require_staff()   (technical_manager, owner)
@@ -27,6 +28,7 @@ $canReviewReimbursements = Auth::hasAnyRole(['support_reviewer', 'owner']);
 $canReviewInternet       = Auth::hasAnyRole(['support_reviewer', 'owner']);
 $canProcessFinance       = Auth::hasAnyRole(['finance', 'owner']);
 $canReviewMembership     = Auth::hasAnyRole(['membership_coordinator', 'membership_reviewer', 'owner']);
+$canPrintCards           = Auth::hasAnyRole(['membership_reviewer', 'owner']);
 $canManageTeam           = Auth::isOwner();
 $canWorkMemberSupport    = Auth::hasAnyRole(['member_support', 'owner']);
 $canWorkTech             = Auth::hasAnyRole(TechIssueModel::STAFF_ROLES);
@@ -308,6 +310,11 @@ function form_tile(array $icons, array $form): void
                         review_card($icons, 'var(--accent)', 'people', 'Membership review',
                             'New applications and renewals. Approve, reject, or ask for more information.',
                             '/admin/membership-review', $membershipWaiting, 'Open the queue');
+                    }
+                    if ($canPrintCards) {
+                        review_card($icons, 'var(--primary-dark)', 'card', 'Member cards',
+                            'Find an accepted member and download their membership card as a PDF to print.',
+                            '/admin/membership-review?status=Accepted#acceptedSect', null, 'Find a member');
                     }
                     if ($canManageTeam) {
                         review_card($icons, 'var(--leaf-dark, #3E7A53)', 'key', 'Team',

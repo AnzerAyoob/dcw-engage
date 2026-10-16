@@ -7,6 +7,7 @@ require_once __DIR__ . '/../../includes/cert_rows.php';          // .d-btn butto
 require_once __DIR__ . '/../../includes/qr.php';
 require_once __DIR__ . '/../../includes/member_card_template.php'; // member_card_accent()
 require_once __DIR__ . '/../../models/MemberCardModel.php';
+require_once __DIR__ . '/../../models/MemberProfileModel.php';
 
 /**
  * DCW Engage - the member's own membership card (/member/card).
@@ -55,6 +56,15 @@ try {
     if ($error === '') {
         $error = 'We could not load your card just now. Please try again in a moment.';
     }
+}
+
+// A title set on the profile (for example a founder or chair) is shown in place of the Member ID, as on the PDF.
+$cardTitle = '';
+try {
+    $profileRow = (new MemberProfileModel())->get($memberId);
+    $cardTitle = trim((string) ($profileRow['card_title'] ?? ''));
+} catch (Throwable $e) {
+    error_log('Engage card title read failed: ' . $e->getMessage());
 }
 
 $saved = (string) ($_GET['saved'] ?? '');
@@ -109,6 +119,7 @@ cert_rows_css();
     .mc-lb { margin: 0 0 2px; font-size: 12px; color: var(--muted); }
     .mc-name { margin: 0 0 14px; font-size: 20px; font-weight: 800; letter-spacing: -.01em; overflow-wrap: anywhere; }
     .mc-id { margin: 0; font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-size: 18px; font-weight: 700; letter-spacing: .04em; }
+    .mc-title { margin: 0; padding-left: 10px; border-left: 4px solid var(--accent); font-size: 15px; font-weight: 800; line-height: 1.4; overflow-wrap: anywhere; }
     .mc-also { margin: 14px 0 0; padding: 0; list-style: none; font-size: 14px; line-height: 1.5; }
     .mc-qr svg { display: block; width: 100%; height: auto; border: 1px solid var(--border); border-radius: 10px; }
     .mc-scan { margin: 6px 0 0; text-align: center; color: var(--muted); font-size: 12.5px; }
@@ -160,8 +171,12 @@ cert_rows_css();
                     <p class="mc-lb">Wikimedia username</p>
                     <p class="mc-name"><?= $h($data['username']) ?></p>
                 <?php endif; ?>
-                <p class="mc-lb">Member ID</p>
-                <p class="mc-id"><?= $h($memberId) ?></p>
+                <?php if ($cardTitle !== ''): ?>
+                    <p class="mc-title"><?= $h($cardTitle) ?></p>
+                <?php else: ?>
+                    <p class="mc-lb">Member ID</p>
+                    <p class="mc-id"><?= $h($memberId) ?></p>
+                <?php endif; ?>
                 <?php if ($others): ?>
                     <p class="mc-lb" style="margin-top: 14px;">Also a member of</p>
                     <ul class="mc-also">

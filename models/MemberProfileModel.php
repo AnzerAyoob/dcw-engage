@@ -83,6 +83,32 @@ class MemberProfileModel
         app_log('Member profile ' . ($verified ? 'verified' : 'unverified') . ": $memberId username '{$p['wikimedia_username']}' by $by");
     }
 
+    public const CARD_TITLE_MAX = 120;
+
+    /**
+     * Staff only: the title printed on the card instead of the Member ID (for example for a founder or chair).
+     * An empty title removes it, and the card shows the Member ID again. Creates the profile row if there is none.
+     */
+    public function setCardTitle(string $memberId, string $title, string $by): void
+    {
+        $memberId = trim($memberId);
+        if ($memberId === '') throw new InvalidArgumentException('Missing Member ID.');
+
+        $title = strip_tags(preg_replace('/[\x00-\x1F]/u', ' ', $title));
+        $title = trim(preg_replace('/\s+/u', ' ', $title));
+        if (mb_strlen($title) > self::CARD_TITLE_MAX) {
+            throw new InvalidArgumentException('Please keep the card title to ' . self::CARD_TITLE_MAX . ' characters or fewer.');
+        }
+
+        $old = $this->get($memberId);
+        $st = $this->db->prepare(
+            'INSERT INTO member_profile (member_id, card_title, updated_by) VALUES (?, ?, ?)
+             ON DUPLICATE KEY UPDATE card_title = VALUES(card_title), updated_by = VALUES(updated_by)'
+        );
+        $st->execute([$memberId, $title !== '' ? $title : null, $by]);
+        app_log("Member profile card title: $memberId '" . ($old['card_title'] ?? '') . "' -> '$title' by $by");
+    }
+
     private function store(string $memberId, string $raw, string $by, bool $verify): void
     {
         $memberId = trim($memberId);

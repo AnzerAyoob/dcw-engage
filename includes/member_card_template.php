@@ -102,6 +102,33 @@ function member_card_key_for_name(string $name): string
     return 'generic';
 }
 
+/**
+ * Exceptions: members whose card shows a title instead of the Member ID.
+ *
+ * The list is NOT kept in this file. It is read from a private PHP file that returns an array
+ * [ 'MEMBER_ID' => 'Title' ]. Set MEMBER_CARD_TITLES_FILE to its path (for example in your config),
+ * or leave it unset to use config/card_titles.php next to this file's parent folder. Keep that file
+ * outside the web root and out of version control. If it is missing the cards simply show Member IDs.
+ * See card_titles.example.php.
+ *
+ * A caller (for example a database column) can also pass 'title' in $c, which wins over this list.
+ */
+function member_card_titles(): array
+{
+    static $titles = null;
+    if ($titles === null) {
+        $titles = [];
+        $file = defined('MEMBER_CARD_TITLES_FILE') ? MEMBER_CARD_TITLES_FILE : dirname(__DIR__) . '/config/card_titles.php';
+        if (is_file($file)) {
+            $data = include $file;
+            if (is_array($data)) {
+                $titles = $data;
+            }
+        }
+    }
+    return $titles;
+}
+
 function member_card_html(array $c): string
 {
     $h = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
@@ -141,6 +168,20 @@ function member_card_html(array $c): string
     $who = $username !== ''
         ? '<div class="nm"><b>' . $h($username) . '</b></div>' . $gap(5)
         : '';
+
+    // Member ID chip, or the member's title (the exception) in its place.
+    $title = trim((string) ($c['title'] ?? ''));
+    if ($title === '') {
+        $title = member_card_titles()[(string) ($c['member_id'] ?? '')] ?? '';
+    }
+    if ($title !== '') {
+        // Break after the first comma so a long title sits on two tidy lines.
+        $titleHtml = preg_replace('/,\s+/', ',<br />', $h($title), 1);
+        $idBlock = '<table cellpadding="0" cellspacing="0"><tr><td class="role">' . $titleHtml . '</td></tr></table>';
+    } else {
+        $idBlock = '<div class="lb">Member ID</div>'
+                 . '<table cellpadding="0" cellspacing="0"><tr><td class="chip">' . $h($c['member_id'] ?? '') . '</td></tr></table>';
+    }
 
     // Other current chapters: a coloured dot and the name, one per line, no boxes.
     // At most two names plus a "+N more" line, so the card keeps its size.
@@ -189,6 +230,8 @@ function member_card_html(array $c): string
               font-family: dejavusansmono, monospace; font-size: 10pt; font-weight: normal;
               letter-spacing: 0.3mm; padding: 0.8mm 2.4mm; }
 
+    td.role { border-left: 0.8mm solid {{accent}}; padding: 0.4mm 0 0.4mm 2.6mm; font-size: 8.5pt; font-weight: bold; color: {{ink}}; line-height: 1.4; }
+
     td.qr { background-color: #ffffff; border: 0.5mm solid {{accent}}; padding: 1mm; }
     .scan { font-size: 6pt; font-weight: bold; color: {{accent}}; text-align: center; }
 
@@ -221,8 +264,7 @@ function member_card_html(array $c): string
     <tr>
         <td class="left">
             {{who}}
-            <div class="lb">Member ID</div>
-            <table cellpadding="0" cellspacing="0"><tr><td class="chip">{{member_id}}</td></tr></table>
+            {{id_block}}
             {{others}}
         </td>
         <td class="right">
@@ -256,7 +298,7 @@ function member_card_html(array $c): string
         '{{sub}}'       => $h($sub),
         '{{stripe}}'    => $stripe,
         '{{who}}'       => $who,
-        '{{member_id}}' => $h($c['member_id'] ?? ''),
+        '{{id_block}}'  => $idBlock,
         '{{others}}'    => $others,
         '{{qr}}'        => $h($c['qr_uri'] ?? ''),
         '{{scan_gap}}'  => $gap(2),
