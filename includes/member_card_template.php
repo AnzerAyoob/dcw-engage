@@ -6,15 +6,16 @@
  * member_card_accent() gives the chapter's main colour and is also used by views/member/card.php.
  * member_card_theme() holds the full palette of each chapter, taken from its logo.
  *
- * The card is credit-card size (85.6 x 54 mm) on an A4 page, so it can be printed and cut out.
+ * The card is credit-card size (85.6 mm wide) on an A4 page, so it can be printed and cut out.
+ * Faint corner marks sit outside the card to guide the scissors.
  *
- * Layout, top to bottom:
- *   1. White header: the chapter's logo (it sits on white, as the logos were drawn) and the chapter name
- *      in the chapter's colour.
+ * Layout, top to bottom (identical for every chapter, only the palette changes):
+ *   1. White header: the chapter's logo and the chapter name in the chapter's colour.
  *   2. A stripe in the logo's own colours.
- *   3. Tinted body: Wikimedia username, Member ID on a coloured chip, other current chapters with a
- *      coloured dot each, and the QR code in a framed white box.
- *   4. A solid colour footer with the one-line "membership only" notice.
+ *   3. Tinted body. Left: the Wikimedia username (bold, no label), a gap, then the Member ID.
+ *      Right: the QR code in a framed white box.
+ *   4. Optional full-width row of small pills: the member's other current chapters.
+ *   5. A solid colour footer with the one-line "membership only" notice.
  *
  * The PDF deliberately shows no status or dates: those change, and the QR code always shows the live
  * answer. It shows the Wikimedia username, not the person's real name.
@@ -35,8 +36,8 @@
 
 /**
  * Palette per chapter key. Colours are taken from each chapter's logo.
- *   accent : main colour (header title, labels, ID chip, QR frame, footer). Dark enough for white text.
- *   ink    : dark shade of the accent, used for the card title and the username.
+ *   accent : main colour (header title, labels, ID chip border, QR frame, footer). Dark enough for white text.
+ *   ink    : dark shade of the accent, used for the card title, the username and the Member ID.
  *   tint   : very light shade of the accent, the background of the body.
  *   stripe : the colours of the band under the header, left to right.
  */
@@ -114,8 +115,10 @@ function member_card_html(array $c): string
     }
 
     // For a club the card says whose club it is; for the community itself that would only repeat the title.
-    $isOrg = $chapter === 'generic' || strcasecmp($primary, $org) === 0;
-    $sub   = $isOrg ? 'Membership card' : 'Part of ' . $org;
+    // Only the short "Membership card" line is set in tracked capitals; the longer line would overflow.
+    $isOrg    = $chapter === 'generic' || strcasecmp($primary, $org) === 0;
+    $sub      = $isOrg ? 'Membership card' : 'Part of ' . $org;
+    $subClass = $isOrg ? 's up' : 's';
 
     $logo = !empty($c['logo_uri'])
         ? '<td class="lg"><img src="' . $h($c['logo_uri']) . '" style="height: 9mm;" /></td>'
@@ -128,26 +131,28 @@ function member_card_html(array $c): string
         $stripe .= '<td style="width: ' . $w . '%; background-color: ' . $col . '; height: 1.5mm; font-size: 1pt; line-height: 1pt;">&nbsp;</td>';
     }
 
+    // Username: bold, no label. Without one, the Member ID simply stands alone.
     $username = trim((string) ($c['username'] ?? ''));
-    $who = $username !== ''
-        ? '<div class="lb">Wikimedia username</div><div class="nm">' . $h($username) . '</div>'
-        : '';
+    $who = $username !== '' ? '<div class="nm">' . $h($username) . '</div>' : '';
 
-    // Other current chapters, each with a dot in that chapter's colour. At most three, so the card keeps its size.
-    $others = '';
+    // Other current chapters: small pills in a full-width row under the body.
+    // At most two names plus a "+N more" pill, so the row stays on one line and the card keeps its size.
+    $othersRow = '';
     $list = array_values(array_filter(array_map(
         fn($n) => member_card_display_name((string) $n),
         (array) ($c['other_chapters'] ?? [])
     ), 'strlen'));
     if ($list) {
-        $others = '<div class="lb" style="margin-top: 2.4mm;">Also a member of</div>';
-        foreach (array_slice($list, 0, 3) as $n) {
+        $others = '<div class="lb" style="margin: 0 0 1mm;">Also a member of</div>';
+        foreach (array_slice($list, 0, 2) as $n) {
             $dot = member_card_theme(member_card_key_for_name($n))['accent'];
-            $others .= '<div class="ch"><span style="color: ' . $dot . ';">&#9679;</span>&nbsp;' . $h($n) . '</div>';
+            $others .= '<div class="pill"><span style="color: ' . $dot . ';">&#9679;</span>&nbsp;' . $h($n) . '</div>';
         }
-        if (count($list) > 3) {
-            $others .= '<div class="ch">+' . (count($list) - 3) . ' more</div>';
+        if (count($list) > 2) {
+            $others .= '<div class="pill">+' . (count($list) - 2) . ' more</div>';
         }
+        $others .= '<div style="clear: both;"></div>';
+        $othersRow = '<tr><td class="chapters" colspan="2">' . $others . '</td></tr>';
     }
 
     $tpl = '
@@ -155,36 +160,52 @@ function member_card_html(array $c): string
     body { font-family: dejavusans, sans-serif; color: #0f172a; font-size: 10pt; }
     table.card { width: 85.6mm; border: 0.5mm solid {{accent}}; border-collapse: separate; border-radius: 3mm; }
 
-    td.head { background-color: #ffffff; padding: 2.2mm 4mm; border-radius: 2.5mm 2.5mm 0 0; }
+    td.head { background-color: #ffffff; padding: 1.8mm 4.5mm; border-radius: 2.5mm 2.5mm 0 0; }
     td.lg { padding-right: 3mm; vertical-align: middle; }
     td.bt { vertical-align: middle; }
-    .t { font-size: 10.5pt; font-weight: bold; color: {{ink}}; }
-    .s { font-size: 6.5pt; color: #475569; margin-top: 0.4mm; }
+    .t { font-size: 9.5pt; font-weight: bold; color: {{ink}}; line-height: 1.3; white-space: nowrap; }
+    .s { font-size: 6pt; color: #475569; margin-top: 0.4mm; }
+    .s.up { text-transform: uppercase; letter-spacing: 0.3mm; font-size: 5.5pt; }
 
     td.stripe { padding: 0; }
 
-    td.left { background-color: {{tint}}; padding: 3mm 2mm 2.5mm 4mm; vertical-align: top; width: 51mm; }
-    td.right { background-color: {{tint}}; padding: 3mm 4mm 2.5mm 0; vertical-align: top; text-align: center; width: 30mm; }
-    .lb { font-size: 5.5pt; font-weight: bold; color: {{accent}}; text-transform: uppercase; letter-spacing: 0.25mm; margin: 0 0 0.6mm; }
-    .nm { font-size: 12pt; font-weight: bold; color: {{ink}}; margin: 0 0 3.5mm; }
-    td.chip { background-color: {{accent}}; color: #ffffff; font-family: dejavusansmono, monospace; font-size: 10pt; font-weight: bold;
-              letter-spacing: 0.3mm; padding: 0.9mm 2.4mm; border-radius: 1.2mm; }
-    .ch { font-size: 7.5pt; color: #334155; margin: 0 0 0.7mm; }
+    td.left  { background-color: {{tint}}; padding: 2.5mm 2mm 2mm 4.5mm; vertical-align: middle; width: 56mm; }
+    td.right { background-color: {{tint}}; padding: 2.5mm 4.5mm 2mm 0; vertical-align: middle; text-align: center; width: 28mm; }
+
+    .lb { font-size: 5.5pt; font-weight: bold; color: {{accent}}; text-transform: uppercase; letter-spacing: 0.35mm; margin: 0 0 0.8mm; }
+    .nm { font-size: 12pt; font-weight: bold; color: {{ink}}; margin: 0 0 4.5mm; }
+
+    td.chip { background-color: #ffffff; border: 0.25mm solid {{accent}}; color: {{ink}};
+              font-family: dejavusansmono, monospace; font-size: 10pt; font-weight: bold;
+              letter-spacing: 0.3mm; padding: 0.8mm 2.4mm; border-radius: 1.2mm; }
 
     td.qr { background-color: #ffffff; border: 0.5mm solid {{accent}}; border-radius: 2mm; padding: 1mm; }
-    .scan { font-size: 6pt; font-weight: bold; color: {{accent}}; margin-top: 0.8mm; }
+    .scan { font-size: 6pt; font-weight: bold; color: {{accent}}; margin-top: 1.2mm; }
+
+    td.chapters { background-color: {{tint}}; padding: 0 4.5mm 2mm 4.5mm; }
+    .pill { float: left; background-color: #ffffff; border: 0.2mm solid #cbd5e1; border-radius: 2mm;
+            padding: 0.5mm 2mm; margin: 0 1.2mm 0 0; font-size: 6pt; color: #334155; }
 
     td.foot { background-color: {{accent}}; color: #ffffff; padding: 1.5mm 4mm; font-size: 5.8pt; text-align: center;
               border-radius: 0 0 2.5mm 2.5mm; }
     .cut { margin-top: 3mm; font-size: 7pt; color: #94a3b8; }
 </style>
 
+<table cellpadding="0" cellspacing="0">
+    <tr>
+        <td style="width: 5mm; height: 5mm; border-right: 0.2mm solid #cccccc; border-bottom: 0.2mm solid #cccccc;"></td>
+        <td></td>
+        <td style="width: 5mm; border-left: 0.2mm solid #cccccc; border-bottom: 0.2mm solid #cccccc;"></td>
+    </tr>
+    <tr>
+        <td></td>
+        <td>
 <table class="card" cellpadding="0" cellspacing="0">
     <tr><td class="head" colspan="2">
         <table cellpadding="0" cellspacing="0"><tr>{{logo}}
             <td class="bt">
                 <div class="t">{{primary}}</div>
-                <div class="s">{{sub}}</div>
+                <div class="{{subclass}}">{{sub}}</div>
             </td>
         </tr></table>
     </td></tr>
@@ -196,30 +217,40 @@ function member_card_html(array $c): string
             {{who}}
             <div class="lb">Member ID</div>
             <table cellpadding="0" cellspacing="0"><tr><td class="chip">{{member_id}}</td></tr></table>
-            {{others}}
         </td>
         <td class="right">
             <table cellpadding="0" cellspacing="0" align="center"><tr><td class="qr">
-                <img src="{{qr}}" style="width: 22mm; height: 22mm;" />
+                <img src="{{qr}}" style="width: 18mm; height: 18mm;" />
             </td></tr></table>
             <div class="scan">Scan to verify</div>
         </td>
     </tr>
+    {{others_row}}
     <tr><td class="foot" colspan="2">Confirms membership only, not identity. Ask for photo ID if unsure.</td></tr>
 </table>
-<div class="cut">Print at 100% (no scaling) and cut along the border.</div>';
+        </td>
+        <td></td>
+    </tr>
+    <tr>
+        <td style="height: 5mm; border-right: 0.2mm solid #cccccc; border-top: 0.2mm solid #cccccc;"></td>
+        <td></td>
+        <td style="border-left: 0.2mm solid #cccccc; border-top: 0.2mm solid #cccccc;"></td>
+    </tr>
+</table>
+<div class="cut">Print at 100% (no scaling) and cut at the corner marks.</div>';
 
     return strtr($tpl, [
-        '{{accent}}'    => $t['accent'],
-        '{{ink}}'       => $t['ink'],
-        '{{tint}}'      => $t['tint'],
-        '{{logo}}'      => $logo,
-        '{{primary}}'   => $h($primary),
-        '{{sub}}'       => $h($sub),
-        '{{stripe}}'    => $stripe,
-        '{{who}}'       => $who,
-        '{{member_id}}' => $h($c['member_id'] ?? ''),
-        '{{others}}'    => $others,
-        '{{qr}}'        => $h($c['qr_uri'] ?? ''),
+        '{{accent}}'     => $t['accent'],
+        '{{ink}}'        => $t['ink'],
+        '{{tint}}'       => $t['tint'],
+        '{{logo}}'       => $logo,
+        '{{primary}}'    => $h($primary),
+        '{{subclass}}'   => $subClass,
+        '{{sub}}'        => $h($sub),
+        '{{stripe}}'     => $stripe,
+        '{{who}}'        => $who,
+        '{{member_id}}'  => $h($c['member_id'] ?? ''),
+        '{{others_row}}' => $othersRow,
+        '{{qr}}'         => $h($c['qr_uri'] ?? ''),
     ]);
 }
