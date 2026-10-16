@@ -149,6 +149,10 @@ if ($route === '/' || $route === '/index.php') {
 } elseif ($route === '/admin/membership-access') {
     require __DIR__ . '/views/admin/membership_access.php';
 
+// Admin view for membership card management.
+} elseif ($route === '/admin/membership-card') {
+    require __DIR__ . '/views/admin/membership_card.php';
+
 // DCW Support queue for member complaints, suggestions and questions.
 // Role check is inside the view: requireRole(['member_support', 'owner']).
 } elseif ($route === '/admin/member-support') {
