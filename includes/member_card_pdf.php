@@ -37,6 +37,33 @@ function trim_logo(string $png): string
 }
 
 /**
+ * Decode a logo data URI into [bytes, width/height ratio]. Returns [null, 0.0] when there is no usable logo.
+ * PNGs are trimmed first, so the ratio describes the artwork and not its empty margin. For an SVG the
+ * ratio comes from its viewBox (or width/height); 0.0 means unknown and the template treats it as square.
+ */
+function member_card_logo_prepare(?string $uri): array
+{
+    if ($uri === null || $uri === '') {
+        return [null, 0.0];
+    }
+    $bytes = base64_decode(substr($uri, strpos($uri, ',') + 1));
+    if ($bytes === false || $bytes === '') {
+        return [null, 0.0];
+    }
+    $ratio = 0.0;
+    if (strncmp($bytes, "\x89PNG", 4) === 0) {
+        $bytes = trim_logo($bytes);
+        $size  = @getimagesizefromstring($bytes);
+        if ($size && $size[1] > 0) {
+            $ratio = $size[0] / $size[1];
+        }
+    } elseif (preg_match('/viewBox\s*=\s*"[-\d.]+[ ,]+[-\d.]+[ ,]+([\d.]+)[ ,]+([\d.]+)"/i', $bytes, $m) && (float) $m[2] > 0) {
+        $ratio = (float) $m[1] / (float) $m[2];
+    }
+    return [$bytes, $ratio];
+}
+
+/**
  * Build one member's card as a PDF and stream it as a download. Used by the member's own page
  * (/member/card/pdf) and by the staff page (/admin/membership-card), so both print the same card.
  *
@@ -55,14 +82,17 @@ function member_card_pdf_send(string $memberId, string $token, array $data): voi
         }
     }
 
-    // A title set on the profile (for example a founder or chair) replaces the Member ID on the card.
+    // Title (replaces the Member ID) and main project both come from the profile.
     // A lookup failure must never stop the card from printing.
-    $title = '';
+    $title   = '';
+    $project = '';
     try {
         $profile = (new MemberProfileModel())->get($memberId);
-        $title = trim((string) ($profile['card_title'] ?? ''));
+        $title   = trim((string) ($profile['card_title'] ?? ''));
+        // TODO: confirm the real profile field for the member's main project.
+        $project = trim((string) ($profile['main_project'] ?? ''));
     } catch (\Throwable $e) {
-        app_log("Card title lookup failed for $memberId: " . $e->getMessage());
+        app_log("Card profile lookup failed for $memberId: " . $e->getMessage());
     }
 
     require_once __DIR__ . '/../vendor/autoload.php';
@@ -75,26 +105,42 @@ function member_card_pdf_send(string $memberId, string $token, array $data): voi
 
     // Hand the images to mPDF as bytes (src="var:name") so they are not part of the HTML string.
     $mpdf->imageVars['qr'] = $png;
-    $logoUri = MemberCardModel::logoDataUri($data['primary']['chapter']);
+
+    $chapter = (string) $data['primary']['chapter'];
+
+    $ownUri = MemberCardModel::logoDataUri($chapter);
+    [$logoBytes, $logoRatio] = member_card_logo_prepare($ownUri);
     $logoRef = '';
-    if ($logoUri !== null) {
-        $bytes = base64_decode(substr($logoUri, strpos($logoUri, ',') + 1));
-        if ($bytes !== false && $bytes !== '') {
-            if (strncmp($bytes, "\x89PNG", 4) === 0) {
-                $bytes = trim_logo($bytes);   // PNG only; an SVG goes in as it is
-            }
-            $mpdf->imageVars['logo'] = $bytes;
-            $logoRef = 'var:logo';
+    if ($logoBytes !== null) {
+        $mpdf->imageVars['logo'] = $logoBytes;
+        $logoRef = 'var:logo';
+    }
+
+    // The DCW logo goes on the right of club cards. If a club has no logo of its own yet, the model falls
+    // back to the DCW logo; then the same logo would appear twice, so the right one is left off.
+    $dcwRef = '';
+    $dcwRatio = 0.0;
+    $dcwUri = MemberCardModel::logoDataUri('generic');
+    if ($chapter !== 'generic' && $dcwUri !== null && $dcwUri !== $ownUri) {
+        [$dcwBytes, $dcwRatio] = member_card_logo_prepare($dcwUri);
+        if ($dcwBytes !== null) {
+            $mpdf->imageVars['dcw'] = $dcwBytes;
+            $dcwRef = 'var:dcw';
         }
     }
+
     $mpdf->WriteHTML(member_card_html([
-        'chapter'        => $data['primary']['chapter'],
+        'chapter'        => $chapter,
         'member_id'      => $memberId,
         'primary_name'   => $data['primary']['name'],
         'other_chapters' => $others,
         'username'       => $data['username'],
         'title'          => $title,
+        'project'        => $project,
         'logo_uri'       => $logoRef,
+        'logo_ratio'     => $logoRatio,
+        'dcw_logo_uri'   => $dcwRef,
+        'dcw_logo_ratio' => $dcwRatio,
         'qr_uri'         => 'var:qr',
     ]));
 
