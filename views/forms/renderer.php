@@ -564,7 +564,8 @@ engage_header([
         <?php endif; ?>
 
         <?php if (!empty($form['deadline_at'])): ?>
-            <p class="verified-line">Applications close on <strong><?= htmlspecialchars(date('j M Y, g:i A', strtotime($form['deadline_at']))) ?></strong>.</p>
+            <?php /* deadline_at is stored in UTC; formatIst() converts to IST and appends " IST", matching the builder and closed.php. */ ?>
+            <p class="verified-line">Applications close on <strong><?= htmlspecialchars(FormModel::formatIst($form['deadline_at'])) ?></strong>.</p>
         <?php endif; ?>
 
         <?php if (!empty($schema['description'])): ?>
