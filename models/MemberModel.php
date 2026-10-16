@@ -9,6 +9,12 @@ class MemberModel {
     const OPEN = ['New', 'Submitted', 'Under Review'];
     const CHAPTERS = ['generic', 'amu', 'jamia', 'photographers'];
 
+    /**
+     * members.status values that must NOT get their Member ID emailed by the "Forgot your Member ID?"
+     * page (e.g. a membership a reviewer has struck off).
+     */
+    const ID_REMINDER_EXCLUDED_STATUSES = ['struck_off'];
+
     /** Chapter key -> club display name (used in emails). Keep in sync with LABELS. */
     const CHAPTER_NAMES = [
         'generic'       => 'DCW Generic Community',
@@ -250,25 +256,41 @@ class MemberModel {
         return $this->db->query("SELECT form_type FROM forms WHERE form_type LIKE 'membership-%' ORDER BY form_type")
             ->fetchAll(PDO::FETCH_COLUMN);
     }
-
-    public function listApplications(string $slug, string $status, ?array $scope): array {
-        $sql = "SELECT a.id, a.applicant_name, a.email, a.status, a.tracking_id, a.created_at, a.form_data, f.form_type,
-                (SELECT d.decided_at FROM membership_decisions d
-                  WHERE d.application_id = a.id AND d.decision = 'approved' ORDER BY d.id DESC LIMIT 1) AS approved_at,
-                (SELECT d.decided_by FROM membership_decisions d
-                  WHERE d.application_id = a.id AND d.decision = 'approved' ORDER BY d.id DESC LIMIT 1) AS approved_by
-                FROM applications a JOIN forms f ON a.form_id = f.id
-                WHERE f.form_type LIKE 'membership-%'
-                AND (a.status <> 'Draft' OR EXISTS (SELECT 1 FROM membership_decisions d
-                     WHERE d.application_id = a.id AND d.decision = 'info_requested'))";
-        $p = [];
-        if ($slug !== '')   { $sql .= ' AND f.form_type = :slug'; $p['slug'] = $slug; }
-        if ($status !== '') { $sql .= ' AND a.status = :st';      $p['st'] = $status; }
-        $st = $this->db->prepare($sql . ' ORDER BY a.created_at DESC LIMIT 500');
-        $st->execute($p);
-        // Chapter comes from the slug, or from the answer on renewals, so filter in PHP.
-        return array_values(array_filter($st->fetchAll(), fn($r) => self::inScope($r, $scope)));
+    
+public function listApplications(string $slug, string $status, ?array $scope, string $q = ''): array {
+    $sql = "SELECT a.id, a.applicant_name, a.email, a.status, a.tracking_id, a.created_at, a.form_data, f.form_type,
+            (SELECT d.decided_at FROM membership_decisions d
+              WHERE d.application_id = a.id AND d.decision = 'approved' ORDER BY d.id DESC LIMIT 1) AS approved_at,
+            (SELECT d.decided_by FROM membership_decisions d
+              WHERE d.application_id = a.id AND d.decision = 'approved' ORDER BY d.id DESC LIMIT 1) AS approved_by
+            FROM applications a JOIN forms f ON a.form_id = f.id
+            WHERE f.form_type LIKE 'membership-%'
+            AND (a.status <> 'Draft' OR EXISTS (SELECT 1 FROM membership_decisions d
+                 WHERE d.application_id = a.id AND d.decision = 'info_requested'))";
+    $p = [];
+    if ($slug !== '') { $sql .= ' AND f.form_type = :slug'; $p['slug'] = $slug; }
+    if ($status === 'todo') {
+        $sql .= " AND a.status IN ('New','Submitted')";
+    } elseif ($status !== '') {
+        $sql .= ' AND a.status = :st'; $p['st'] = $status;
     }
+
+    $q = trim($q);
+    if ($q !== '') {
+        $like = '%' . addcslashes($q, '%_\\') . '%';
+        $sql .= " AND (a.applicant_name LIKE :q1 OR a.email LIKE :q2 OR a.tracking_id LIKE :q3
+                  OR EXISTS (SELECT 1 FROM members m WHERE LOWER(m.email) = LOWER(a.email) AND m.member_id LIKE :q4)
+                  OR EXISTS (SELECT 1 FROM members m2 JOIN member_profile pr ON pr.member_id = m2.member_id
+                              WHERE LOWER(m2.email) = LOWER(a.email) AND pr.username_key LIKE :q5))";
+        $p['q1'] = $p['q2'] = $p['q3'] = $p['q4'] = $like;
+        $p['q5'] = '%' . addcslashes(strtolower(str_replace(' ', '_', $q)), '%_\\') . '%';
+    }
+
+    $st = $this->db->prepare($sql . ' ORDER BY a.created_at DESC LIMIT 500');
+    $st->execute($p);
+    // Chapter comes from the slug, or from the answer on renewals, so filter in PHP.
+    return array_values(array_filter($st->fetchAll(), fn($r) => self::inScope($r, $scope)));
+}
 
     public function getApplication(int $id, ?array $scope) {
         $st = $this->db->prepare("SELECT a.*, f.form_type, f.schema_json
@@ -516,6 +538,24 @@ class MemberModel {
             WHERE email = :e ORDER BY (chapter = 'generic') DESC, id ASC");
         $st->execute(['e' => $email]);
         return $st->fetchAll();
+    }
+
+    public function findForIdReminder(string $usernameKey, string $email): ?array {
+        $excluded = self::ID_REMINDER_EXCLUDED_STATUSES;
+        $sql = 'SELECT m.member_id, m.email, m.full_name
+                  FROM members m
+                  JOIN member_profile p ON p.member_id = m.member_id
+                 WHERE p.username_key = ?
+                   AND p.username_verified_at IS NOT NULL
+                   AND LOWER(m.email) = ?';
+        $params = [$usernameKey, strtolower(trim($email))];
+        if ($excluded) {
+            $sql .= ' AND m.status NOT IN (' . implode(',', array_fill(0, count($excluded), '?')) . ')';
+            array_push($params, ...$excluded);
+        }
+        $st = $this->db->prepare($sql . ' ORDER BY (m.chapter = \'generic\') DESC, m.id ASC LIMIT 1');
+        $st->execute($params);
+        return $st->fetch(PDO::FETCH_ASSOC) ?: null;
     }
 
     /** lower-cased email => memberships (member_id, chapter, status, expires_at), so a queue needs one query, not one per row. */
