@@ -9,6 +9,12 @@ class MemberModel {
     const OPEN = ['New', 'Submitted', 'Under Review'];
     const CHAPTERS = ['generic', 'amu', 'jamia', 'photographers'];
 
+    /**
+     * members.status values that must NOT get their Member ID emailed by the "Forgot your Member ID?"
+     * page (e.g. a membership a reviewer has struck off).
+     */
+    const ID_REMINDER_EXCLUDED_STATUSES = ['struck_off'];
+
     /** Chapter key -> club display name (used in emails). Keep in sync with LABELS. */
     const CHAPTER_NAMES = [
         'generic'       => 'DCW Generic Community',
@@ -516,6 +522,24 @@ class MemberModel {
             WHERE email = :e ORDER BY (chapter = 'generic') DESC, id ASC");
         $st->execute(['e' => $email]);
         return $st->fetchAll();
+    }
+
+    public function findForIdReminder(string $usernameKey, string $email): ?array {
+        $excluded = self::ID_REMINDER_EXCLUDED_STATUSES;
+        $sql = 'SELECT m.member_id, m.email, m.full_name
+                  FROM members m
+                  JOIN member_profile p ON p.member_id = m.member_id
+                 WHERE p.username_key = ?
+                   AND p.username_verified_at IS NOT NULL
+                   AND LOWER(m.email) = ?';
+        $params = [$usernameKey, strtolower(trim($email))];
+        if ($excluded) {
+            $sql .= ' AND m.status NOT IN (' . implode(',', array_fill(0, count($excluded), '?')) . ')';
+            array_push($params, ...$excluded);
+        }
+        $st = $this->db->prepare($sql . ' ORDER BY (m.chapter = \'generic\') DESC, m.id ASC LIMIT 1');
+        $st->execute($params);
+        return $st->fetch(PDO::FETCH_ASSOC) ?: null;
     }
 
     /** lower-cased email => memberships (member_id, chapter, status, expires_at), so a queue needs one query, not one per row. */
