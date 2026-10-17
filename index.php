@@ -142,19 +142,19 @@ if ($route === '/' || $route === '/index.php') {
 
 // Coordinator / reviewer queue for membership applications. Role check is
 // inside the view: requireRole(['membership_coordinator', 'membership_reviewer',
-// 'owner']); coordinators only ever see their assigned chapters.
+// 'organizer', 'owner']); coordinators only ever see their assigned chapters.
 // Under /admin so Auth::isSafeNext() lets the login redirect bring people back.
 } elseif ($route === '/admin/membership-review') {
     require __DIR__ . '/views/admin/membership_review.php';
 
+// Conversation Hour attendance + technical contributors. Role check is inside the view:
+// requireRole(['membership_reviewer', 'owner']).
+} elseif ($route === '/admin/community-records') {
+    require __DIR__ . '/views/admin/community_records.php';
+
 // Owner-only: which chapters each membership coordinator may see.
 } elseif ($route === '/admin/membership-access') {
     require __DIR__ . '/views/admin/membership_access.php';
-
-// CH: Conversation Hour attendance + technical contributors list. Role check is inside the view:
-// requireRole(['membership_reviewer', 'owner']). Under /admin so the login redirect brings people back.
-} elseif ($route === '/admin/community-records') {
-    require __DIR__ . '/views/admin/community_records.php';
 
 // Admin view for membership card management.
 } elseif ($route === '/admin/membership-card') {
