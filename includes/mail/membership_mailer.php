@@ -20,6 +20,8 @@
 // The approval email also tells the member what they can do in DCW Engage (dashboard, profile,
 // membership card, support): see dashboardBlock().
 //
+// "Forgot your Member ID?": sendMemberIdReminder() emails the ID to the address on file.
+//
 // Sign-off examples:
 //   Best regards,                       Best regards,
 //   Core Organising Team                Membership Coordinators
@@ -330,6 +332,39 @@ class MembershipMailer {
         $alt = "Hello $name,\n\n$introText\n$url\n\nThis single-use link is meant exclusively for you and will expire shortly. $ignore\n\n" . self::signText($chapter);
 
         return self::send($email, $name, $subject, $inner, $alt, $chapter);
+    }
+
+    /**
+     * "Forgot your Member ID?": emails the Member ID to the address on file.
+     * Called from views/member/forgot-id.php only after the username and email both matched
+     * one member, so the ID is never shown on a web page. DCW itself is the sender and signer
+     * because one ID covers every chapter the person holds.
+     * Returns true only when a message really went out (false in dev mode).
+     */
+    public static function sendMemberIdReminder($email, $memberId, $name = '') {
+        $e      = fn($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
+        $login  = CoreMail::appUrl() . '/member/login';
+        $forgot = CoreMail::appUrl() . '/member/forgot';
+        $hello  = trim((string) $name) !== '' ? (string) $name : 'there';
+
+        $subject = 'Your DCW Engage Member ID';
+        $inner = "
+            <p>Hello <strong>" . $e($hello) . "</strong>,</p>
+            <p>We received a request to remind you of your Member ID. Here it is:</p>
+            <div style='background:#f1f7fb; border-left:4px solid #106b9a; padding:14px 18px; margin:0 0 20px; line-height:1.7;'>
+                <strong>Member ID:</strong> <span style='font-family:Menlo,Consolas,monospace; letter-spacing:1px;'>" . $e($memberId) . "</span>
+            </div>
+            <p>Use it together with your password to sign in. If you have forgotten your password too, you can <a href='" . $e($forgot) . "' style='color:#106b9a;'>reset it here</a>.</p>
+            <div class='btn-wrapper'><a href='" . $e($login) . "' class='btn'>Go to sign in</a></div>
+            <p style='font-size:14px; color:#64748b;'>If you did not request this, you can safely ignore this email. Your account has not been changed.</p>"
+            . self::signHtml(null);
+
+        $alt = "Hello $hello,\n\nWe received a request to remind you of your Member ID:\n\nMember ID: $memberId\n\n"
+             . "Sign in here: $login\nForgot your password too? $forgot\n\n"
+             . "If you did not request this, you can safely ignore this email. Your account has not been changed.\n\n"
+             . self::signText(null);
+
+        return self::send($email, $hello, $subject, $inner, $alt, null);
     }
 
     /**
