@@ -16,7 +16,7 @@ Auth::requireLogin();
 //   finance/queue.php        -> requireRole(['finance', 'owner'])   (combined: reimbursements + internet support)
 //   finance/closed.php       -> requireRole(['finance', 'owner'])
 //   membership_review.php    -> requireRole(['membership_coordinator', 'membership_reviewer', 'owner'])   (organizers: forms only)
-//   membership_card.php      -> requireRole(['membership_reviewer', 'owner'])   (card PDFs; opened from the review page)
+//                               Member card PDFs are reached from there (Members tab, or inside an application).
 //   team.php                 -> Auth::requireOwner()   (invites, roles and coordinator chapters)
 //   member_support.php       -> requireRole(['member_support', 'owner'])   (shown as "DCW Support")
 //   tech-issues.php, tech-diagnostics.php -> tech_require_staff()   (technical_manager, owner)
@@ -28,7 +28,6 @@ $canReviewReimbursements = Auth::hasAnyRole(['support_reviewer', 'owner']);
 $canReviewInternet       = Auth::hasAnyRole(['support_reviewer', 'owner']);
 $canProcessFinance       = Auth::hasAnyRole(['finance', 'owner']);
 $canReviewMembership     = Auth::hasAnyRole(['membership_coordinator', 'membership_reviewer', 'owner']);
-$canPrintCards           = Auth::hasAnyRole(['membership_reviewer', 'owner']);
 $canManageTeam           = Auth::isOwner();
 $canWorkMemberSupport    = Auth::hasAnyRole(['member_support', 'owner']);
 $canWorkTech             = Auth::hasAnyRole(TechIssueModel::STAFF_ROLES);
@@ -50,7 +49,7 @@ try {
 $canManageForms        = Auth::hasAnyRole(['organizer', 'owner']);
 $isCoordinator         = Auth::hasAnyRole(['membership_coordinator']);
 $canSeeMembershipForms = Auth::hasAnyRole(['membership_reviewer', 'owner']) || $isCoordinator;
-$canCreateForms        = $canManageForms || $isCoordinator;   // gates "Create a blank form"; the builder limits a coordinator to their chapters
+$canCreateForms        = $canManageForms || $isCoordinator;   // gates "New form"; the builder limits a coordinator to their chapters
 $showFormsGrid         = $canCreateForms || $canSeeMembershipForms;
 
 // Only a pure coordinator is limited to chapters; a reviewer sees them all.
@@ -87,8 +86,8 @@ if (!function_exists('review_hidden_form')) {
 
 // Applications waiting for a first decision (New or Submitted), across the program forms this person can open
 // (closed and test forms are left out, the same as in the review queue).
-// Shown as a badge on the "Application review" tile. Uses ApplicationModel::countAwaitingByForm();
-// if that method is not added yet, or the query fails, the badge is simply left out.
+// Shown as a count on the "Application review" card. Uses ApplicationModel::countAwaitingByForm();
+// if that method is not added yet, or the query fails, the count is simply left out.
 $appsWaiting = 0;
 if ($canReviewApplications) {
     try {
@@ -103,7 +102,7 @@ if ($canReviewApplications) {
 }
 
 // Membership applications waiting for a first decision (New or Submitted), limited to the chapters this person
-// may see (a coordinator sees only their own). Same idea as the badge above; left out if the query fails.
+// may see (a coordinator sees only their own). Same idea as the count above; left out if the query fails.
 $membershipWaiting = 0;
 if ($canReviewMembership) {
     try {
@@ -115,7 +114,7 @@ if ($canReviewMembership) {
     } catch (Throwable $e) { $membershipWaiting = null; }
 }
 
-// The "Review" panel holds the review queues for applications and for membership.
+// The "Review" panel holds the two review queues. Everything else on the page is a smaller tile.
 $showReviewPanel = $canReviewApplications || $canReviewMembership;
 $reviewIntro = ($canReviewApplications && $canReviewMembership)
     ? 'Decide on applications to our programs and on membership requests' . ($chapterLimited ? ' for your chapters' : '') . '.'
@@ -123,12 +122,13 @@ $reviewIntro = ($canReviewApplications && $canReviewMembership)
         ? 'Decide on applications to our programs, across every form in one list.'
         : 'Review new applications and renewals' . ($chapterLimited ? ' for your chapters' : '') . '.');
 
+// One panel for member conversations and the technical tools, so they are not three separate sections.
+$showSupportTech = $canWorkMemberSupport || $canWorkTech;
+
 // Inner SVG markup for the card icons (24x24 viewBox, stroke icons).
 $icons = [
     'doc'    => '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>',
-    'plus'   => '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
     'people' => '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
-    'key'    => '<circle cx="8" cy="15" r="4"/><line x1="10.85" y1="12.15" x2="19" y2="4"/><line x1="18" y1="5" x2="20" y2="7"/><line x1="15" y1="8" x2="17" y2="10"/>',
     'check'  => '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>',
     'inbox'  => '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
     'wifi'   => '<path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/>',
@@ -141,7 +141,7 @@ $icons = [
 
 /**
  * Renders one compact tool tile. $badge (optional) replaces the arrow with a small pill, for a count that
- * should catch the eye, e.g. "5 waiting".
+ * should catch the eye, e.g. "5 open".
  */
 function workspace_tile(array $icons, string $tone, string $icon, string $title, string $desc, string $href, string $badge = ''): void
 {
@@ -160,7 +160,7 @@ function workspace_tile(array $icons, string $tone, string $icon, string $title,
 
 /**
  * Renders one large review card (the "Review" panel). $count: a number shows as a big figure
- * ("7 waiting"), 0 shows "All clear", null shows nothing (e.g. the Team card, or a count that could not be read).
+ * ("7 waiting"), 0 shows "All clear", null shows nothing (e.g. a count that could not be read).
  */
 function review_card(array $icons, string $tone, string $icon, string $title, string $desc, string $href, ?int $count = null, string $cta = 'Open'): void
 {
@@ -258,6 +258,10 @@ function form_tile(array $icons, array $form): void
         .closed-forms .tiles { margin-top: 12px; }
         /* Count badge on a tile: crimson from the logo, the one color that should catch the eye */
         .pill.badge-attn { color: #fff; background: var(--accent); padding: 3px 12px; font-size: 12px; }
+        /* "New form" button in a panel heading */
+        .panel-head .head-act { margin-left: auto; text-decoration: none; white-space: nowrap; }
+        /* Quiet links at the bottom */
+        .foot-links a { color: var(--muted); }
     </style>
 </head>
 <body>
@@ -269,7 +273,9 @@ function form_tile(array $icons, array $form): void
             </a>
             <div class="tools">
                 <span class="who"><?= htmlspecialchars(Auth::email()) ?></span>
-                <?php if (Auth::isOwner()): ?>
+                <?php /* Owner-only housekeeping lives up here, out of the way of the day-to-day work. */ ?>
+                <?php if ($canManageTeam): ?>
+                    <a href="/admin/team" class="chip-btn">Team</a>
                     <a href="/admin/audit" class="chip-btn">Audit log</a>
                 <?php endif; ?>
                 <form method="POST" action="/admin/logout">
@@ -308,51 +314,12 @@ function form_tile(array $icons, array $form): void
                     }
                     if ($canReviewMembership) {
                         review_card($icons, 'var(--accent)', 'people', 'Membership review',
-                            'New applications and renewals. Approve, reject, or ask for more information.',
+                            'New applications and renewals, the member list and membership cards.',
                             '/admin/membership-review', $membershipWaiting, 'Open the queue');
-                    }
-                    if ($canPrintCards) {
-                        review_card($icons, 'var(--primary-dark)', 'card', 'Member cards',
-                            'Find an accepted member and download their membership card as a PDF to print.',
-                            '/admin/membership-review?status=Accepted#acceptedSect', null, 'Find a member');
-                    }
-                    if ($canManageTeam) {
-                        review_card($icons, 'var(--leaf-dark, #3E7A53)', 'key', 'Team',
-                            'Invite people, change roles, and choose which chapters each coordinator sees.',
-                            '/admin/team', null, 'Manage team');
                     }
                     ?>
                 </div>
             </section>
-        <?php endif; ?>
-
-        <?php if ($showFormsGrid): ?>
-        <section class="panel">
-            <div class="panel-head">
-                <h2>Application forms</h2>
-                <p><?= $canCreateForms
-                    ? 'Create, open and close the forms volunteers apply through, and review responses.'
-                    : 'Review responses to membership forms.' ?></p>
-            </div>
-            <div class="tiles">
-                <?php if ($canCreateForms): ?>
-                <a href="/admin/builder" class="tile new" style="--tone: var(--primary);">
-                    <span class="tick"><svg viewBox="0 0 24 24" aria-hidden="true"><?= $icons['plus'] ?></svg></span>
-                    <span><h3>Create a blank form</h3></span>
-                </a>
-                <?php endif; ?>
-                <?php foreach ($activeForms as $form) form_tile($icons, $form); ?>
-            </div>
-
-            <?php if ($closedForms): ?>
-                <details class="closed-forms">
-                    <summary>Closed forms (<?= count($closedForms) ?>)</summary>
-                    <div class="tiles">
-                        <?php foreach ($closedForms as $form) form_tile($icons, $form); ?>
-                    </div>
-                </details>
-            <?php endif; ?>
-        </section>
         <?php endif; ?>
 
         <?php if ($canSeeSupport): ?>
@@ -386,51 +353,59 @@ function form_tile(array $icons, array $form): void
             </section>
         <?php endif; ?>
 
-        <?php if ($canWorkMemberSupport): ?>
-            <section class="panel">
-                <div class="panel-head">
-                    <h2>Member conversations</h2>
-                    <p>Complaints, suggestions and questions that members send from their dashboard.</p>
-                </div>
-                <div class="tiles">
-                    <?php
-                    workspace_tile($icons, 'var(--primary)', 'chat', 'DCW Support',
-                        'Read and answer member conversations. Replies are emailed as a notification only.', '/admin/member-support');
-                    ?>
-                </div>
-            </section>
-        <?php endif; ?>
-
-        <?php if ($canWorkTech): ?>
-            <section class="panel">
-                <div class="panel-head">
-                    <h2>Technical</h2>
-                    <p>Problems reported by members and team people, and portal health checks.</p>
-                </div>
-                <div class="tiles">
-                    <?php
-                    workspace_tile($icons, 'var(--primary-dark)', 'alert', 'Reported problems',
-                        $techOpen > 0 ? $techOpen . ' open. Reporters show only as "Member" or by team email.' : 'Nothing open right now.',
-                        '/admin/tech-issues');
-                    workspace_tile($icons, 'var(--primary-dark)', 'pulse', 'Diagnostics',
-                        'Read-only health checks: server, database, security and storage.', '/admin/tech-diagnostics');
-                    ?>
-                </div>
-            </section>
-        <?php endif; ?>
-
+        <?php if ($showFormsGrid): ?>
         <section class="panel">
             <div class="panel-head">
-                <h2>Something not working?</h2>
-                <p>Tell the technical team about a problem with this workspace.</p>
+                <h2>Application forms</h2>
+                <p><?= $canCreateForms
+                    ? 'Open and close the forms volunteers apply through, and review responses.'
+                    : 'Review responses to membership forms.' ?></p>
+                <?php if ($canCreateForms): ?>
+                    <a class="btn-ghost head-act" href="/admin/builder">+ New form</a>
+                <?php endif; ?>
             </div>
-            <div class="tiles">
-                <?php
-                workspace_tile($icons, 'var(--primary-dark)', 'alert', 'Report a problem',
-                    'Send a report and follow the replies here.', '/admin/report-problem');
-                ?>
-            </div>
+            <?php if ($activeForms): ?>
+                <div class="tiles">
+                    <?php foreach ($activeForms as $form) form_tile($icons, $form); ?>
+                </div>
+            <?php else: ?>
+                <div class="empty-note">No forms are open right now.</div>
+            <?php endif; ?>
+
+            <?php if ($closedForms): ?>
+                <details class="closed-forms">
+                    <summary>Closed forms (<?= count($closedForms) ?>)</summary>
+                    <div class="tiles">
+                        <?php foreach ($closedForms as $form) form_tile($icons, $form); ?>
+                    </div>
+                </details>
+            <?php endif; ?>
         </section>
+        <?php endif; ?>
+
+        <?php if ($showSupportTech): ?>
+            <section class="panel">
+                <div class="panel-head">
+                    <h2>Member support &amp; technical</h2>
+                    <p>Conversations from members, reported problems and health checks.</p>
+                </div>
+                <div class="tiles">
+                    <?php
+                    if ($canWorkMemberSupport) {
+                        workspace_tile($icons, 'var(--primary)', 'chat', 'DCW Support',
+                            'Read and answer member conversations. Replies are emailed as a notification only.', '/admin/member-support');
+                    }
+                    if ($canWorkTech) {
+                        workspace_tile($icons, 'var(--primary-dark)', 'alert', 'Reported problems',
+                            'Problems from members and the team. Reporters show only as "Member" or by team email.',
+                            '/admin/tech-issues', $techOpen > 0 ? $techOpen . ' open' : '');
+                        workspace_tile($icons, 'var(--primary-dark)', 'pulse', 'Diagnostics',
+                            'Read-only health checks: server, database, security and storage.', '/admin/tech-diagnostics');
+                    }
+                    ?>
+                </div>
+            </section>
+        <?php endif; ?>
 
     </main>
 
@@ -439,7 +414,7 @@ function form_tile(array $icons, array $form): void
             <img src="https://dcwwiki.org/dcwwiki/images/5/56/DCW_logo.png" alt="">
             <span>Deoband Community Wikimedia</span>
         </div>
-        <div>&copy; <?= date('Y') ?> · <a href="/">Public home page</a></div>
+        <div class="foot-links">&copy; <?= date('Y') ?> · <a href="/">Public home page</a> · <a href="/admin/report-problem">Report a problem</a></div>
     </footer>
 </body>
 </html>
