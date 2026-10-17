@@ -10,6 +10,7 @@ require_once __DIR__ . '/../../models/InternetSupportModel.php';
 require_once __DIR__ . '/../../models/ReimbursementSettingsModel.php';
 require_once __DIR__ . '/../../models/ReimbursementModel.php';
 require_once __DIR__ . '/../../models/MemberProfileModel.php';
+require_once __DIR__ . '/../../models/CommunityRecordsModel.php';
 
 /**
  * DCW Engage - unified support entry point (/member/support).
@@ -74,6 +75,18 @@ if ($memberActive) {
     }
 }
 
+// Conversation Hour attendance and the technical list are checked on the server.
+$elig = null;
+$chLive = false;
+if ($memberActive && $verifiedUsername !== '') {
+    try {
+        $elig = (new CommunityRecordsModel())->eligibilityFor((string) $member['member_id'], $verifiedUsername);
+        $chLive = !empty($elig['live']);
+    } catch (Throwable $e) {
+        error_log('Engage support eligibility lookup failed: ' . $e->getMessage());
+    }
+}
+
 $typeMeta = [
     'internet' => [
         'title' => 'Internet support',
@@ -132,13 +145,21 @@ if ($action === 'submit_internet_request' && $type === 'internet') {
                 [
                     'wikimedia_username' => $verifiedUsername,   // from the verified profile, not the form
                     'edits_80'           => $_POST['edits_80'] ?? '',
-                    'attended_ch'        => $_POST['attended_ch'] ?? '',
-                    'tech_contributor'   => $_POST['tech_contributor'] ?? '',
+                    'attended_ch'        => $chLive ? ($elig['attended_ch'] ? 'yes' : 'no') : ($_POST['attended_ch'] ?? ''),
+                    'tech_contributor'   => $chLive ? ($elig['tech'] ? 'yes' : 'no') : ($_POST['tech_contributor'] ?? ''),
                     'contributions'      => $_POST['contributions'] ?? '',
                     'plans'              => $_POST['plans'] ?? '',
                     'pack_ends_on'       => $_POST['pack_ends_on'] ?? '',
                 ]
             );
+
+            if ($chLive) {
+                try {
+                    (new CommunityRecordsModel())->saveSnapshot($result['tracking_id'], (string) $member['member_id'], $elig, (string) ($_POST['edits_80'] ?? ''));
+                } catch (Throwable $e) {
+                    app_log('Eligibility snapshot failed for ' . $result['tracking_id'] . ': ' . $e->getMessage());
+                }
+            }
 
             require_once __DIR__ . '/../../includes/mailer.php';
             Mailer::sendInternetReceived($verifiedEmail, $applicantName, $result['tracking_id']);
@@ -299,6 +320,8 @@ $eligibilityQuestions = [
     'attended_ch'      => 'Have you attended the past 3 DCW Conversation Hours?',
     'tech_contributor' => 'Are you actively contributing to DCW technical projects?',
 ];
+// When the check is live, members only answer the edits question. The other two come from staff records.
+$askQuestions = $chLive ? ['edits_80' => $eligibilityQuestions['edits_80']] : $eligibilityQuestions;
 
 // Internet support: the date picker for "when does your current pack end" uses the same window the
 // model enforces (InternetSupportModel::cleanPackEndDate), in India time.
@@ -411,7 +434,7 @@ engage_header([
 
                 <fieldset class="group">
                     <legend>Eligibility</legend>
-                    <?php foreach ($eligibilityQuestions as $name => $label): ?>
+                    <?php foreach ($askQuestions as $name => $label): ?>
                         <div class="field">
                             <label><?= htmlspecialchars($label) ?> <span class="req-star">*</span></label>
                             <div class="choices">
@@ -420,6 +443,27 @@ engage_header([
                             </div>
                         </div>
                     <?php endforeach; ?>
+                    <?php if ($chLive): ?>
+                        <div class="field">
+                            <label>Conversation Hours (checked by us)</label>
+                            <ul style="list-style:none; margin:6px 0 0; padding:0;">
+                            <?php foreach ($elig['sessions'] as $s): ?>
+                                <li style="margin:4px 0;">
+                                    <?= $s['status'] === 'present' ? '&#10003;' : ($s['status'] === 'excused' ? '&#9675;' : '&#10007;') ?>
+                                    <strong><?= htmlspecialchars($s['title']) ?></strong>
+                                    <span style="color:var(--muted);">(<?= htmlspecialchars(date('j M Y', strtotime($s['held_on']))) ?>)
+                                        <?= $s['status'] === 'present' ? '' : ($s['status'] === 'excused' ? ' Excused' : ' Not recorded') ?></span>
+                                </li>
+                            <?php endforeach; ?>
+                            </ul>
+                            <span class="hint">Based on the 3 most recent Conversation Hours, matched to your Member ID and verified username.
+                                If this looks wrong, ask a reviewer to check the attendance record.</span>
+                        </div>
+                        <div class="field">
+                            <label>Technical contributor (checked by us)</label>
+                            <span><?= $elig['tech'] ? '&#10003; You are on the technical contributors list.' : 'You are not on the technical contributors list.' ?></span>
+                        </div>
+                    <?php endif; ?>
                     <div id="ineligible-note" class="alert error" style="display:none;">
                         Based on your answers, you're not eligible for support right now. You need 80+ manual edits
                         in the past month and attendance at the last 3 Conversation Hours, or active contribution
@@ -513,8 +557,11 @@ engage_header([
                     var note = document.getElementById('ineligible-note');
                     var submit = form.querySelector('button[type="submit"]');
                     function val(n) { var el = form.querySelector('input[name="' + n + '"]:checked'); return el ? el.value : ''; }
+                    var CH = <?= json_encode($chLive ? ['attended' => (bool) $elig['attended_ch'], 'tech' => (bool) $elig['tech']] : null) ?>;
                     function update() {
-                        var e = val('edits_80'), a = val('attended_ch'), t = val('tech_contributor');
+                        var e = val('edits_80');
+                        var a = CH ? (CH.attended ? 'yes' : 'no') : val('attended_ch');
+                        var t = CH ? (CH.tech ? 'yes' : 'no') : val('tech_contributor');
                         var blocked = e && a && t && !(t === 'yes' || (e === 'yes' && a === 'yes'));
                         note.style.display = blocked ? 'block' : 'none';
                         submit.disabled = !!blocked;
