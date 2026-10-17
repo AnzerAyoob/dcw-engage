@@ -330,6 +330,13 @@ function member_card_signature_file(string $file): string
     }
 
     if (in_array($ext, ['png', 'jpg', 'jpeg', 'gif', 'webp'], true)) {
+        // A PNG that already has an alpha channel is transparent as it is; leave it alone.
+        if ($ext === 'png') {
+            $head = (string) @file_get_contents($file, false, null, 0, 33);
+            if (strlen($head) >= 26 && in_array(ord($head[25]), [4, 6], true)) {
+                return $file;
+            }
+        }
         $out = $dir . '/dcw_sig_' . $key . '.png';
         if (!is_file($out)) {
             $png = member_card_raster_to_transparent_png((string) file_get_contents($file));
@@ -352,7 +359,8 @@ function member_card_signature_file(string $file): string
  *       'signer_username'  => 'Aafi',                         // optional; defaults to signer_name
  *   ],
  *
- * Without signature_file the card looks for assets/chapters/aafi.svg (app root, then public/).
+ * Without signature_file the card looks for board_signature.png, then aafi.svg, in config/, assets/chapters/
+ * and public/assets/chapters/ (under the app root). A PNG or JPG signature is cleaned of its white background.
  * With no signature file at all the card still shows the "Issued by" block and the signer line, just no image.
  * 'file' is a cleaned copy of the signature with the white background removed.
  */
@@ -366,8 +374,11 @@ function member_card_issuer_info(): array
     if ($configured !== '') {
         $candidates[] = $configured[0] === '/' ? $configured : $root . '/' . $configured;
     }
-    $candidates[] = $root . '/assets/chapters/aafi.svg';
-    $candidates[] = $root . '/public/assets/chapters/aafi.svg';
+    foreach (['board_signature.png', 'aafi.svg'] as $name) {
+        $candidates[] = $root . '/config/' . $name;
+        $candidates[] = $root . '/assets/chapters/' . $name;
+        $candidates[] = $root . '/public/assets/chapters/' . $name;
+    }
 
     $found = '';
     foreach ($candidates as $candidate) {
