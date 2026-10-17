@@ -17,6 +17,10 @@ require_once __DIR__ . '/../models/MemberCardModel.php';
  * replaced when the member replaced their card, or the member was struck off) gets the same plain "not valid"
  * page, so nothing can be learned by guessing.
  *
+ * Office-bearers (MemberCardModel::OFFICE_BEARERS) get a role statement instead of the routine membership
+ * check: no chapter list, no Active/Expired pills. The model decides who is an office-bearer; this page only
+ * displays what lookup() returns in 'office'.
+ *
  * Not indexed and not cached, so an old answer is never shown and search engines never keep one.
  * $cardToken comes from the router (the /card/{token} route in index.php).
  */
@@ -30,8 +34,9 @@ header('Referrer-Policy: no-referrer');
 
 $h = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
 
-$state   = 'unknown';    // valid | expired | inactive | unknown | busy | error
+$state   = 'unknown';    // office | valid | expired | inactive | unknown | busy | error
 $card    = null;
+$office  = null;         // ['title', 'detail'] when the card belongs to an office-bearer
 
 if (!MemberCardModel::allow()) {
     http_response_code(429);
@@ -43,17 +48,21 @@ if (!MemberCardModel::allow()) {
         if ($card === null) {
             http_response_code(404);
         } else {
-            $state = $card['overall'];
+            $office = $card['office'] ?? null;
+            $state  = $office !== null ? 'office' : $card['overall'];
         }
     } catch (Throwable $e) {
         app_log('Card check failed: ' . $e->getMessage());
         http_response_code(500);
         $state = 'error';
+        $card  = null;
+        $office = null;
     }
 }
 
 // state => [accent color, headline, one line under it]
 $look = [
+    'office'   => ['#1d4ed8', 'DCW office bearer',      'This is an office bearer of Deoband Community Wikimedia.'],
     'valid'    => ['#047857', 'Valid DCW member',       'This membership is active.'],
     'expired'  => ['#b45309', 'Membership expired',     'This member’s tenure has lapsed.'],
     'inactive' => ['#b91c1c', 'Not an active member',   'This membership is currently inactive.'],
@@ -62,6 +71,12 @@ $look = [
     'error'    => ['#b45309', 'Unable to verify',        'Something went wrong. Kindly try again in a short while.'],
 ];
 [$accent, $headline, $subline] = $look[$state];
+
+// An office-bearer's own title and role replace the generic headline.
+if ($office !== null) {
+    $headline = $office['title'];
+    $subline  = $office['detail'];
+}
 
 $checkedAt = MemberAuthModel::formatIst(gmdate('Y-m-d H:i:s'), 'j M Y, g:i A');
 
@@ -94,7 +109,15 @@ engage_header([
         <h2 class="cc-head"><?= $h($headline) ?></h2>
         <p class="cc-sub"><?= $h($subline) ?></p>
 
-        <?php if ($card !== null): ?>
+        <?php if ($card !== null && $office !== null): ?>
+            <?php if ($card['name'] !== ''): ?>
+                <p class="cc-name"><?= $h($card['name']) ?></p>
+            <?php endif; ?>
+            <p class="cc-note">This confirms the office held in Deoband Community Wikimedia.
+                To verify identity, kindly request a valid photo ID proof.
+                Checked on <?= $h($checkedAt) ?>.</p>
+
+        <?php elseif ($card !== null): ?>
             <?php if ($card['name'] !== ''): ?>
                 <p class="cc-name"><?= $h($card['name']) ?></p>
             <?php endif; ?>
