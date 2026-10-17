@@ -129,6 +129,21 @@ function member_card_pdf_send(string $memberId, string $token, array $data): voi
         }
     }
 
+    // "Issued by" block: the Board's signature (optional image) and the signer's name and role.
+    $issuer = member_card_issuer_info();
+    $sigRef = '';
+    $sigRatio = 0.0;
+    if ($issuer['file'] !== '') {
+        $raw = @file_get_contents($issuer['file']);
+        if ($raw !== false && $raw !== '') {
+            [$sigBytes, $sigRatio] = member_card_logo_prepare('data:;base64,' . base64_encode($raw));
+            if ($sigBytes !== null) {
+                $mpdf->imageVars['sig'] = $sigBytes;
+                $sigRef = 'var:sig';
+            }
+        }
+    }
+
     $mpdf->WriteHTML(member_card_html([
         'chapter'        => $chapter,
         'member_id'      => $memberId,
@@ -142,6 +157,12 @@ function member_card_pdf_send(string $memberId, string $token, array $data): voi
         'dcw_logo_uri'   => $dcwRef,
         'dcw_logo_ratio' => $dcwRatio,
         'qr_uri'         => 'var:qr',
+        'issuer'         => [
+            'signature_uri'   => $sigRef,
+            'signature_ratio' => $sigRatio,
+            'name'            => $issuer['name'],
+            'title'           => $issuer['title'],
+        ],
     ]));
 
     $filename = 'DCW-Membership-Card-' . preg_replace('/[^A-Za-z0-9_-]/', '_', $memberId) . '.pdf';

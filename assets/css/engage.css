@@ -897,3 +897,60 @@ a.help-item:hover { transform: translateY(-3px); box-shadow: 0 12px 26px rgba(15
     .gallery figure { scroll-snap-align: start; }
     .rq { transform: none; }
 }
+
+/* ======================================================================
+   Membership review (staff): fixes for content that landed on the blue band.
+   APPEND THIS BLOCK TO THE END OF assets/css/engage.css.
+
+   Why it was broken: .cards-wrap overlaps the bottom 62px of the hero. Cards are white, so they look fine
+   there, but the review page started with bare text (the tabs, the "Back to the queue" link, the name),
+   which ended up on the gradient. The search row also had no border or font rules of its own, so the
+   browser's thick default border showed.
+
+   These selectors start with .cards-wrap, so they outrank the page's own <style> block (one class)
+   without needing !important or any change to the PHP.
+   ====================================================================== */
+
+/* ---- Queue page: the tabs become one white card, like every other first item on the overlap ---- */
+.cards-wrap .rv-tabs {
+    gap: 4px; margin: 0 0 18px; padding: 6px 14px 0;
+    background: var(--card); border: 1px solid var(--border); border-radius: 16px;
+    box-shadow: 0 6px 18px rgba(15,23,42,.06);
+}
+.cards-wrap .rv-tab { margin-bottom: 0; padding: 12px 16px 10px; }
+.cards-wrap .rv-tab:focus-visible { outline-offset: -3px; border-radius: 10px; }
+
+/* ---- Search row: same look as the other form fields on the site ---- */
+.cards-wrap .rv-search select,
+.cards-wrap .rv-search input[type=search] {
+    -webkit-appearance: none; appearance: none;
+    border: 1px solid var(--border); border-radius: 10px; box-shadow: none;
+    background-color: #fff; color: var(--ink); font: inherit; font-size: 15px;
+}
+.cards-wrap .rv-search select {
+    padding: 10px 34px 10px 14px; cursor: pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none' stroke='%235B6B7C' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 1.5l5 5 5-5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 12px center;
+}
+.cards-wrap .rv-search input[type=search]::-webkit-search-cancel-button { -webkit-appearance: none; }
+.cards-wrap .rv-search select:focus,
+.cards-wrap .rv-search input[type=search]:focus { outline: 2px solid var(--primary); outline-offset: -1px; border-color: transparent; }
+.cards-wrap .rv-search .btn-solid { width: auto; padding: 11px 24px; }
+
+/* ---- Application page: it starts with plain text (back link, name, email), so it must not sit on the band.
+        The content starts below the hero instead of overlapping it, and the band is trimmed to match.
+        (Needs :has(), supported by all current browsers.) ---- */
+.cards-wrap:has(> .rv-back) { margin-top: 0; padding-top: 24px; }
+.hero:has(+ .cards-wrap > .rv-back) { padding-bottom: 40px; }
+.cards-wrap .rv-back { margin-bottom: 12px; }
+
+/* If the page is ever wrapped in a white card (<section class="sect rv-top">), this keeps it tidy */
+.rv-top .rv-meta { margin: 0; }
+.rv-top .idbad { margin: 14px 0 0; }
+
+/* ---- Small screens ---- */
+@media (max-width: 560px) {
+    .cards-wrap .rv-tabs { padding: 4px 8px 0; }
+    .cards-wrap .rv-tab { padding: 10px 10px 8px; font-size: 14px; }
+    .cards-wrap .rv-search select { flex: 1 1 100%; }
+}
