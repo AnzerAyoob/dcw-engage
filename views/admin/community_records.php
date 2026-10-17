@@ -160,8 +160,8 @@ engage_header([
         <?php if ($preview === null): ?>
             <form method="POST"><?= CSRF::getInputField() ?>
                 <input type="hidden" name="session_id" value="<?= (int) $session['id'] ?>">
-                <textarea name="list" rows="8" required placeholder="One person per line: a Member ID or a Wikimedia username"><?= $h($previewText) ?></textarea>
-                <p class="hint">To mark someone excused, write <code>Name | excused | reason</code>. A reason is required. You see a preview before anything is saved.</p>
+                <textarea name="list" rows="8" required placeholder="Member IDs or Wikimedia usernames, one per line or separated by commas"><?= $h($previewText) ?></textarea>
+<p class="hint">To mark someone excused, put them on their own line: <code>Name | excused | reason</code>. A reason is required. You see a preview before anything is saved.</p>
                 <div class="idform"><button name="action" value="attendance_preview" class="btn-solid">Preview</button></div>
             </form>
         <?php else:
