@@ -121,10 +121,13 @@ class CommunityRecordsModel
     }
 
     /**
-     * Turn pasted text into a preview. One line per person:
+     * Turn pasted text into a preview. One person per line, or several on a line
+     * separated by commas:
      *     D48213977
      *     SomeUser
+     *     SomeUser, OtherUser, D48213977
      *     SomeUser | excused | exam that day
+     * A line containing "|" is kept whole, because the reason after "excused" can contain commas.
      * Each result: kind (member | username | bad), member_id, username, status, note, label, key.
      * Duplicates inside the paste are merged and counted in $dupes.
      */
@@ -133,8 +136,7 @@ class CommunityRecordsModel
         $dupes = 0;
         $out = [];
         $seen = [];
-        fo        // One person per line, or several on a line separated by commas. A line with "|" stays whole,
-        // because the reason after "excused" can contain commas.
+
         $entries = [];
         foreach (preg_split('/\R/u', $text) as $line) {
             if (strpos($line, '|') !== false) {
@@ -145,7 +147,8 @@ class CommunityRecordsModel
                 $entries[] = $part;
             }
         }
-        foreach ($entries as $raw) {reach (preg_split('/\R/u', $text) as $raw) {
+
+        foreach ($entries as $raw) {
             $raw = trim($raw);
             if ($raw === '') continue;
             $row = ['raw' => $raw, 'kind' => 'bad', 'member_id' => null, 'username' => '', 'status' => 'present', 'note' => '', 'label' => '', 'key' => ''];
@@ -252,6 +255,7 @@ class CommunityRecordsModel
     private function withUsernames(array $rows): array
     {
         foreach ($rows as &$r) $r['username'] = $this->verifiedUsernameOf((string) $r['member_id']);
+        unset($r);
         return $rows;
     }
 
