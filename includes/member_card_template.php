@@ -17,6 +17,8 @@
  *   3. Tinted body. Left: username, Member ID (or title), "Works on" (main project, optional),
  *      "Also a member of". Right: the QR code on plain white, no coloured frame.
  *   4. "Issued by Deoband Community Wikimedia, Executive Board" with the Board's signature, signer and role.
+ *      The signature sits directly on the card tint (its white background is removed), and the whole block is
+ *      left out on the signer's own card.
  *   5. Footer: the motto in the accent colour under a hairline. No solid colour block.
  *
  * $c = [
@@ -32,7 +34,7 @@
  *   'qr_uri'         => 'var:qr',
  *   'issuer'         => optional "Issued by" block with the Board's signature:
  *                       ['signature_uri' => 'var:sig', 'signature_ratio' => w/h, 'name' => 'Signer', 'title' => 'Role'],
- *                       left out of the card when not passed.
+ *                       left out of the card when not passed, and also when the card belongs to the signer.
  * ]
  */
 
@@ -132,19 +134,8 @@ function member_card_titles(): array
     return $titles;
 }
 
-/**
- * Who signs the cards, read from the 'card' section of includes/config.php:
- *
- *   'card' => [
- *       'signer_name'    => 'Aafi',
- *       'signer_title'   => 'Founder and Chair',
- *       'signature_file' => 'config/board_signature.svg',   // optional; relative to the app root, or absolute
- *   ],
- *
- * Without signature_file the card looks for assets/chapters/aafi.svg (app root, then public/).
- * With no signature file at all the card still shows the "Issued by" block and the signer line, just no image.
- */
-function member_card_issuer_info(): array
+/** The 'card' section of includes/config.php (empty array when missing). */
+function member_card_config(): array
 {
     static $cfg = null;
     if ($cfg === null) {
@@ -157,6 +148,217 @@ function member_card_issuer_info(): array
             }
         }
     }
+    return $cfg;
+}
+
+/**
+ * True when the card belongs to the person who signs the cards, so it carries no signature of their own.
+ * Matched by Member ID(s) and/or Wikimedia username from the 'card' config section:
+ *
+ *   'signer_member_id' => 'D12345678',          // string or array of strings
+ *   'signer_username'  => 'Aafi',               // optional; falls back to signer_name
+ */
+function member_card_is_signer(array $c): bool
+{
+    $cfg = member_card_config();
+
+    $ids = array_filter(array_map('trim', array_map('strval', (array) ($cfg['signer_member_id'] ?? []))), 'strlen');
+    $mid = trim((string) ($c['member_id'] ?? ''));
+    if ($mid !== '' && in_array($mid, $ids, true)) {
+        return true;
+    }
+
+    $user = trim((string) ($c['username'] ?? ''));
+    if ($user !== '') {
+        $names = array_filter(array_map('trim', array_map('strval', (array) ($cfg['signer_username'] ?? []))), 'strlen');
+        if (!$names) {
+            $fallback = trim((string) ($cfg['signer_name'] ?? ''));
+            $names = $fallback !== '' ? [$fallback] : [];
+        }
+        foreach ($names as $n) {
+            if (strcasecmp($user, $n) === 0) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Signature without its white background.
+ * The signature file is cleaned once (cached in the temp folder) so the ink sits straight on the
+ * card's tint: SVG files lose their white background shapes, raster images (PNG/JPG/GIF/WebP, also
+ * the ones embedded inside an SVG) get their white turned into transparency.
+ * ---------------------------------------------------------------------------------------------- */
+
+/** PNG bytes of a raster image with white made transparent (ink colours un-blended from white). Null on failure. */
+function member_card_raster_to_transparent_png(string $binary): ?string
+{
+    if (!function_exists('imagecreatefromstring')) {
+        return null;
+    }
+    $src = @imagecreatefromstring($binary);
+    if (!$src) {
+        return null;
+    }
+    $w = imagesx($src);
+    $h = imagesy($src);
+
+    // Keep the work small; a signature never needs more than this.
+    $maxW = 1200;
+    if ($w > $maxW) {
+        $nh = (int) round($h * $maxW / $w);
+        $dst = imagecreatetruecolor($maxW, $nh);
+        imagecopyresampled($dst, $src, 0, 0, 0, 0, $maxW, $nh, $w, $h);
+        imagedestroy($src);
+        $src = $dst;
+        $w = $maxW;
+        $h = $nh;
+    }
+
+    $out = imagecreatetruecolor($w, $h);
+    imagealphablending($out, false);
+    imagesavealpha($out, true);
+    $clear = imagecolorallocatealpha($out, 255, 255, 255, 127);
+    imagefill($out, 0, 0, $clear);
+
+    for ($y = 0; $y < $h; $y++) {
+        for ($x = 0; $x < $w; $x++) {
+            $rgba = imagecolorat($src, $x, $y);
+            $srcA = ($rgba >> 24) & 0x7F;               // 0 opaque .. 127 transparent
+            if ($srcA >= 120) {
+                continue;                               // already transparent
+            }
+            $r = ($rgba >> 16) & 0xFF;
+            $g = ($rgba >> 8) & 0xFF;
+            $b = $rgba & 0xFF;
+
+            // Treat the pixel as ink laid over white: alpha from the darkest channel, then un-blend.
+            $alpha = 255 - min($r, $g, $b);
+            if ($alpha < 10) {
+                continue;                               // white or almost white: stays transparent
+            }
+            $f = $alpha / 255;
+            $r = (int) max(0, min(255, round(($r - 255 * (1 - $f)) / $f)));
+            $g = (int) max(0, min(255, round(($g - 255 * (1 - $f)) / $f)));
+            $b = (int) max(0, min(255, round(($b - 255 * (1 - $f)) / $f)));
+            $a127 = 127 - (int) round($alpha * 127 / 255);
+            imagesetpixel($out, $x, $y, imagecolorallocatealpha($out, $r, $g, $b, $a127));
+        }
+    }
+
+    ob_start();
+    imagepng($out);
+    $png = (string) ob_get_clean();
+    imagedestroy($src);
+    imagedestroy($out);
+    return $png !== '' ? $png : null;
+}
+
+/** True for CSS/SVG colour values that mean white. */
+function member_card_is_white_value(string $v): bool
+{
+    $v = strtolower(trim($v));
+    if ($v === 'white' || $v === '#fff' || $v === '#ffffff' || $v === '#fffffe') {
+        return true;
+    }
+    return (bool) preg_match('/^rgb\(\s*255\s*,\s*255\s*,\s*255\s*\)$/', $v);
+}
+
+/** SVG markup without white background shapes (rects/paths filled white) and with embedded rasters made transparent. */
+function member_card_svg_strip_white(string $svg): string
+{
+    // White rectangles and white-filled, stroke-less paths are the "paper"; drop them.
+    $svg = preg_replace_callback('/<(rect|path|polygon)\b[^>]*?\/?>(\s*<\/\1>)?/is', function ($m) {
+        $tag = $m[0];
+        $fill = null;
+        if (preg_match('/\bfill\s*=\s*["\']([^"\']+)["\']/i', $tag, $f)) {
+            $fill = $f[1];
+        } elseif (preg_match('/style\s*=\s*["\'][^"\']*\bfill\s*:\s*([^;"\']+)/i', $tag, $f)) {
+            $fill = $f[1];
+        }
+        if ($fill === null || !member_card_is_white_value($fill)) {
+            return $tag;
+        }
+        $hasStroke = preg_match('/\bstroke\s*=\s*["\'](?!none)[^"\']+["\']/i', $tag)
+                  || preg_match('/\bstroke\s*:\s*(?!none)[^;"\']+/i', $tag);
+        return $hasStroke ? $tag : '';
+    }, $svg) ?? $svg;
+
+    // Background set on the root element.
+    $svg = preg_replace('/(<svg\b[^>]*?)\s+style\s*=\s*"([^"]*)"/i', '$1 style="$2"', $svg) ?? $svg;
+    $svg = preg_replace('/background(-color)?\s*:\s*(white|#fff(fff)?)\s*;?/i', '', $svg) ?? $svg;
+
+    // Embedded raster images (data: URIs): make the white transparent.
+    $svg = preg_replace_callback(
+        '/(href\s*=\s*["\'])data:image\/(png|jpe?g|gif|webp);base64,([A-Za-z0-9+\/=\s]+)(["\'])/i',
+        function ($m) {
+            $bin = base64_decode(preg_replace('/\s+/', '', $m[3]), true);
+            if ($bin === false) {
+                return $m[0];
+            }
+            $png = member_card_raster_to_transparent_png($bin);
+            return $png === null ? $m[0] : $m[1] . 'data:image/png;base64,' . base64_encode($png) . $m[4];
+        },
+        $svg
+    ) ?? $svg;
+
+    return $svg;
+}
+
+/**
+ * Path of a cleaned copy of the signature file (white background removed). Cached; the original file is never
+ * touched. Returns the original path when it cannot be cleaned.
+ */
+function member_card_signature_file(string $file): string
+{
+    if ($file === '' || !is_file($file)) {
+        return $file;
+    }
+    $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+    $key = md5($file . '|' . filemtime($file) . '|' . filesize($file) . '|sig2');
+    $dir = sys_get_temp_dir();
+
+    if ($ext === 'svg') {
+        $out = $dir . '/dcw_sig_' . $key . '.svg';
+        if (!is_file($out)) {
+            $svg = (string) file_get_contents($file);
+            if ($svg === '') return $file;
+            if (@file_put_contents($out, member_card_svg_strip_white($svg)) === false) return $file;
+        }
+        return $out;
+    }
+
+    if (in_array($ext, ['png', 'jpg', 'jpeg', 'gif', 'webp'], true)) {
+        $out = $dir . '/dcw_sig_' . $key . '.png';
+        if (!is_file($out)) {
+            $png = member_card_raster_to_transparent_png((string) file_get_contents($file));
+            if ($png === null || @file_put_contents($out, $png) === false) return $file;
+        }
+        return $out;
+    }
+
+    return $file;
+}
+
+/**
+ * Who signs the cards, read from the 'card' section of includes/config.php:
+ *
+ *   'card' => [
+ *       'signer_name'      => 'Aafi',
+ *       'signer_title'     => 'Founder and Chair',
+ *       'signature_file'   => 'config/board_signature.svg',   // optional; relative to the app root, or absolute
+ *       'signer_member_id' => 'D12345678',                    // optional; the signer's own card has no signature block
+ *       'signer_username'  => 'Aafi',                         // optional; defaults to signer_name
+ *   ],
+ *
+ * Without signature_file the card looks for assets/chapters/aafi.svg (app root, then public/).
+ * With no signature file at all the card still shows the "Issued by" block and the signer line, just no image.
+ * 'file' is a cleaned copy of the signature with the white background removed.
+ */
+function member_card_issuer_info(): array
+{
+    $cfg = member_card_config();
 
     $root = dirname(__DIR__);
     $candidates = [];
@@ -174,7 +376,7 @@ function member_card_issuer_info(): array
     return [
         'name'  => trim((string) ($cfg['signer_name'] ?? '')),
         'title' => trim((string) ($cfg['signer_title'] ?? '')),
-        'file'  => $found,
+        'file'  => $found !== '' ? member_card_signature_file($found) : '',
     ];
 }
 
@@ -272,10 +474,12 @@ function member_card_html(array $c): string
     }
 
     // "Issued by" block: the community's name on the left, the Board's signature on the right.
+    // The signer's own card does not carry it. Fixed column widths and a no-wrap name keep it on one line,
+    // so the card is the same height for every chapter.
     $issuerRow = '';
     $iss = (array) ($c['issuer'] ?? []);
-    if ($iss) {
-        $sig     = $fit((string) ($iss['signature_uri'] ?? ''), (float) ($iss['signature_ratio'] ?? 0), 26, 9);
+    if ($iss && !member_card_is_signer($c)) {
+        $sig     = $fit((string) ($iss['signature_uri'] ?? ''), (float) ($iss['signature_ratio'] ?? 0), 24, 9);
         $sigImg  = $sig !== '' ? '<div style="text-align: center;">' . $sig . '</div>' : '';
         $signer  = trim((string) ($iss['name'] ?? ''));
         $role    = trim((string) ($iss['title'] ?? ''));
@@ -285,7 +489,7 @@ function member_card_html(array $c): string
         $issuerRow = '<tr><td class="issue" colspan="2"><table cellpadding="0" cellspacing="0" style="width: 100%;"><tr>'
             . '<td class="isl"><div class="lb">Issued by</div><div class="isn">' . $h($org) . '</div><div class="iss">Executive Board</div></td>'
             . '<td class="isr">' . $sigImg
-            . '<table cellpadding="0" cellspacing="0" align="center" style="width: 26mm;"><tr><td class="sigline">&nbsp;</td></tr></table>'
+            . '<table cellpadding="0" cellspacing="0" align="center" style="width: 24mm;"><tr><td class="sigline">&nbsp;</td></tr></table>'
             . $signHtml . '</td>'
             . '</tr></table></td></tr>';
     }
@@ -329,10 +533,10 @@ function member_card_html(array $c): string
     .scan { font-size: 6pt; font-weight: bold; color: {{accent}}; text-align: center; }
 
     td.issue { background-color: {{tint}}; border-top: 0.2mm solid #d6dbe1; }
-    td.isl { width: 50mm; padding: 3mm 2mm 3mm 5mm; vertical-align: bottom; }
-    td.isr { width: 34mm; padding: 3mm 5mm 3mm 0; vertical-align: bottom; text-align: center; }
-    .isn { font-size: 8pt; font-weight: bold; color: {{ink}}; line-height: 1.3; }
-    .iss { font-size: 6.5pt; color: #475569; }
+    td.isl { width: 52mm; padding: 3mm 1mm 3mm 5mm; vertical-align: bottom; white-space: nowrap; }
+    td.isr { width: 30mm; padding: 3mm 3mm 3mm 0; vertical-align: bottom; text-align: center; }
+    .isn { font-size: 7.5pt; font-weight: bold; color: {{ink}}; line-height: 1.3; white-space: nowrap; }
+    .iss { font-size: 6.5pt; color: #475569; white-space: nowrap; }
     td.sigline { border-top: 0.25mm solid {{ink}}; font-size: 1pt; line-height: 1pt; }
     .sgn { font-size: 6.5pt; font-weight: bold; color: {{ink}}; text-align: center; margin-top: 0.6mm; }
     .sgt { font-size: 5.5pt; color: #475569; text-align: center; }
