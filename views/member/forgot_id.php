@@ -64,11 +64,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $member = (new MemberModel())->findForIdReminder($username, $email);
             if ($member) {
                 // Always to the address on file (which equals the typed one, since it had to match).
-                MembershipMailer::sendMemberIdReminder($member['email'], $member['member_id'], $member['name'] ?? '');
+                // The lookup selects full_name, not "name".
+                $ok = MembershipMailer::sendMemberIdReminder(
+                    $member['email'],
+                    $member['member_id'],
+                    $member['full_name'] ?? ''
+                );
+                // Log only: the screen below must stay identical whatever happens.
+                if (!$ok) {
+                    app_log('Member ID reminder: mail was not sent for member ' . $member['member_id']
+                        . ' (CoreMail returned false; expected in dev mode)');
+                }
             }
         } catch (Throwable $e) {
             // Log it, but show the same screen: the page must not reveal the outcome.
-            app_log('Member ID reminder failed: ' . $e->getMessage());
+            app_log('Member ID reminder failed: ' . get_class($e) . ': ' . $e->getMessage()
+                . ' @ ' . $e->getFile() . ':' . $e->getLine());
         }
         $sent = true;
     }
@@ -76,7 +87,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $pageTitle = 'Forgot your Member ID?';
 $heading = 'Forgot your Member ID?';
-$sub = 'Enter your Wikimedia username and the email address you joined with. We will email your Member ID to that address.';
+// Hide the instructions once the form has been submitted.
+$sub = $sent ? '' : 'Enter your Wikimedia username and the email address you joined with. We will email your Member ID to that address.';
 require __DIR__ . '/_head.php';
 ?>
 <?php if ($sent): ?>
