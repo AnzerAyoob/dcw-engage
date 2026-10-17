@@ -147,6 +147,11 @@ if ($route === '/' || $route === '/index.php') {
 } elseif ($route === '/admin/membership-review') {
     require __DIR__ . '/views/admin/membership_review.php';
 
+// Conversation Hour attendance + technical contributors. Role check is inside the view:
+// requireRole(['membership_reviewer', 'owner']).
+} elseif ($route === '/admin/community-records') {
+    require __DIR__ . '/views/admin/community_records.php';
+
 // Owner-only: which chapters each membership coordinator may see.
 } elseif ($route === '/admin/membership-access') {
     require __DIR__ . '/views/admin/membership_access.php';

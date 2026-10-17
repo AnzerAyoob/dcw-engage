@@ -10,6 +10,8 @@ require_once __DIR__ . '/../../includes/amount_helpers.php';
 require_once __DIR__ . '/../../includes/internal_notes_ui.php';
 require_once __DIR__ . '/../../models/InternetSupportModel.php';
 require_once __DIR__ . '/../../models/InternalNoteModel.php';
+require_once __DIR__ . '/../../models/CommunityRecordsModel.php';
+require_once __DIR__ . '/../../models/MemberProfileModel.php';
 
 // Support reviewers decide whether a request is reasonable. Owners are
 // trusted to do the same. This page never selects the phone number (see
@@ -140,6 +142,12 @@ function internet_review_card(array $req, InternetSupportModel $model, InternalN
         && ((int) $req['edits_80'] !== 1 || (int) $req['attended_ch'] !== 1);
     $wikiUser = (string) ($req['wikimedia_username'] ?? '');
     $thread = $model->getMessagesForReview((int) $req['id']);
+    $snap = null;
+    try {
+        $snap = (new CommunityRecordsModel())->getSnapshot((string) $req['tracking_id']);
+    } catch (Throwable $e) {
+        error_log('Internet review: snapshot lookup failed for ' . $req['tracking_id'] . ': ' . $e->getMessage());
+    }
     $internalNotes = $noteModel->forRequest('internet', (int) $req['id']);
     // The amount box starts at the earlier approval (a re-approval after a failed recharge), else the request.
     $requestedPaise = (int) $req['package_price_paise'];
@@ -162,7 +170,7 @@ function internet_review_card(array $req, InternetSupportModel $model, InternalN
                 <span>Wikimedia username</span>
                 <strong>
                     <?php if ($wikiUser !== ''): ?>
-                        <a href="https://meta.wikimedia.org/wiki/Special:CentralAuth/<?= rawurlencode($wikiUser) ?>" target="_blank" rel="noopener" style="color:var(--primary);"><?= htmlspecialchars($wikiUser) ?></a>
+                        <a href="https://meta.wikimedia.org/wiki/Special:CentralAuth/<?= rawurlencode($wikiUser) ?>" target="_blank" rel="noopener" style="color:var(--primary);"><?= htmlspecialchars($wikiUser) ?></a> &middot; <a href="<?= htmlspecialchars(MemberProfileModel::contribsUrl($wikiUser)) ?>" target="_blank" rel="noopener" style="color:var(--primary);">Contributions</a>
                     <?php else: ?>
                         —
                     <?php endif; ?>
@@ -212,10 +220,41 @@ function internet_review_card(array $req, InternetSupportModel $model, InternalN
                 <strong<?= $req['prior_recharges'] > 0 ? ' style="color:#b45309;"' : '' ?>><?= (int) $req['prior_recharges'] ?></strong>
             </div>
         </div>
-        <p class="qmeta">
-            Eligibility answers are self-declared: spot-check against XTools or attendance sheets.
-            The pack and price are what the applicant typed, not checked against the operator.
-        </p>
+        <?php if ($snap): ?>
+            <div class="qtext" style="margin-top:12px;">
+                <strong>Checked by the system when this was submitted</strong>
+                <span style="color:var(--muted);">(<?= htmlspecialchars((new DateTimeImmutable((string) $snap['checked_at']))->setTimezone(new DateTimeZone('Asia/Kolkata'))->format('j M Y, g:i a')) ?> IST)</span><br>
+                <?php if (($snap['route'] ?? '') === 'technical' && !empty($snap['tech'])): ?>
+                    On the technical contributors list. Added by <?= htmlspecialchars((string) $snap['tech']['added_by']) ?>
+                    on <?= htmlspecialchars(date('j M Y', strtotime((string) $snap['tech']['added_at']))) ?>:
+                    &ldquo;<?= htmlspecialchars((string) $snap['tech']['reason']) ?>&rdquo;<?= !empty($snap['tech']['confirmed_until'])
+                        ? ', confirmed until ' . htmlspecialchars(date('j M Y', strtotime((string) $snap['tech']['confirmed_until']))) : '' ?>.
+                <?php elseif (($snap['route'] ?? '') === 'attendance'): ?>
+                    Qualified by attendance, plus the applicant's own answer on 80+ edits.
+                <?php endif; ?>
+                <?php if (!empty($snap['sessions'])): ?>
+                    <ul style="list-style:none; margin:6px 0 0; padding:0;">
+                    <?php foreach ($snap['sessions'] as $s): ?>
+                        <li>
+                            <?= $s['status'] === 'present' ? '&#10003;' : ($s['status'] === 'excused' ? '&#9675; Excused' : '&#10007; Not recorded') ?>
+                            <?= htmlspecialchars($s['title']) ?>
+                            <span style="color:var(--muted);">(<?= htmlspecialchars(date('j M Y', strtotime((string) $s['held_on']))) ?>)</span>
+                        </li>
+                    <?php endforeach; ?>
+                    </ul>
+                <?php endif; ?>
+            </div>
+            <p class="qmeta">
+                Conversation Hours and the technical list come from staff records. Only the 80+ edits answer is self-declared:
+                check it on the contributions link.
+                The pack and price are what the applicant typed, not checked against the operator.
+            </p>
+        <?php else: ?>
+            <p class="qmeta">
+                Eligibility answers are self-declared: spot-check against XTools or attendance sheets.
+                The pack and price are what the applicant typed, not checked against the operator.
+            </p>
+        <?php endif; ?>
 
         <?php if ($techOnly): ?>
             <div class="action-banner">
