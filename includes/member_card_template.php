@@ -437,7 +437,7 @@ function member_card_html(array $c): string
     $username = trim((string) ($c['username'] ?? ''));
     $who = $username !== '' ? '<div class="nm"><b>' . $h($username) . '</b></div>' . $gap(4) : '';
 
-    // Member ID as plain text over a thin rule (no box), or the member's title in its place.
+    // Member ID as plain text under its label (no rule, no box), or the member's title in its place.
     $title = trim((string) ($c['title'] ?? ''));
     if ($title === '') {
         $title = member_card_titles()[(string) ($c['member_id'] ?? '')] ?? '';
@@ -447,7 +447,7 @@ function member_card_html(array $c): string
         $idBlock = '<table cellpadding="0" cellspacing="0"><tr><td class="role">' . $titleHtml . '</td></tr></table>';
     } else {
         $idBlock = '<div class="lb">Member ID</div>'
-                 . '<table cellpadding="0" cellspacing="0"><tr><td class="idv">' . $h($c['member_id'] ?? '') . '</td></tr></table>';
+                 . '<div class="idv">' . $h($c['member_id'] ?? '') . '</div>';
     }
 
     // Main project: one short line, left out entirely when empty so there is no blank row.
@@ -523,16 +523,14 @@ function member_card_html(array $c): string
     .ch { font-size: 7pt; color: #334155; }
     .pj { font-size: 7.5pt; font-weight: bold; color: {{ink}}; white-space: nowrap; }
 
-    td.idv { border-bottom: 0.3mm solid {{accent}}; color: {{ink}};
-             font-family: dejavusansmono, monospace; font-size: 10pt;
-             letter-spacing: 0.3mm; padding: 0 3mm 0.6mm 0; }
+    .idv { color: {{ink}}; font-family: dejavusansmono, monospace; font-size: 10pt; letter-spacing: 0.3mm; }
 
     td.role { border-left: 0.8mm solid {{accent}}; padding: 0.4mm 0 0.4mm 2.6mm; font-size: 8.5pt; font-weight: bold; color: {{ink}}; line-height: 1.4; }
 
     td.qr { background-color: #ffffff; padding: 1.2mm; }
     .scan { font-size: 6pt; font-weight: bold; color: {{accent}}; text-align: center; }
 
-    td.issue { background-color: {{tint}}; border-top: 0.2mm solid #d6dbe1; }
+    td.issue { background-color: {{tint}}; }
     td.isl { width: 52mm; padding: 3mm 1mm 3mm 5mm; vertical-align: bottom; white-space: nowrap; }
     td.isr { width: 30mm; padding: 3mm 3mm 3mm 0; vertical-align: bottom; text-align: center; }
     .isn { font-size: 7.5pt; font-weight: bold; color: {{ink}}; line-height: 1.3; white-space: nowrap; }
