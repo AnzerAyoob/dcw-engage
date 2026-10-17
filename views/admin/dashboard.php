@@ -17,6 +17,7 @@ Auth::requireLogin();
 //   finance/closed.php       -> requireRole(['finance', 'owner'])
 //   membership_review.php    -> requireRole(['membership_coordinator', 'membership_reviewer', 'owner'])   (organizers: forms only)
 //                               Member card PDFs are reached from there (Members tab, or inside an application).
+//   community_records.php    -> requireRole(['membership_reviewer', 'owner'])   (Conversation Hours + technical list)
 //   team.php                 -> Auth::requireOwner()   (invites, roles and coordinator chapters)
 //   member_support.php       -> requireRole(['member_support', 'owner'])   (shown as "DCW Support")
 //   tech-issues.php, tech-diagnostics.php -> tech_require_staff()   (technical_manager, owner)
@@ -28,6 +29,7 @@ $canReviewReimbursements = Auth::hasAnyRole(['support_reviewer', 'owner']);
 $canReviewInternet       = Auth::hasAnyRole(['support_reviewer', 'owner']);
 $canProcessFinance       = Auth::hasAnyRole(['finance', 'owner']);
 $canReviewMembership     = Auth::hasAnyRole(['membership_coordinator', 'membership_reviewer', 'owner']);
+$canManageRecords        = Auth::hasAnyRole(['membership_reviewer', 'owner']);   // CH: mirrors community_records.php
 $canManageTeam           = Auth::isOwner();
 $canWorkMemberSupport    = Auth::hasAnyRole(['member_support', 'owner']);
 $canWorkTech             = Auth::hasAnyRole(TechIssueModel::STAFF_ROLES);
@@ -114,8 +116,8 @@ if ($canReviewMembership) {
     } catch (Throwable $e) { $membershipWaiting = null; }
 }
 
-// The "Review" panel holds the two review queues. Everything else on the page is a smaller tile.
-$showReviewPanel = $canReviewApplications || $canReviewMembership;
+// The "Review" panel holds the review queues. Everything else on the page is a smaller tile.
+$showReviewPanel = $canReviewApplications || $canReviewMembership || $canManageRecords;   // CH: records card lives here too
 $reviewIntro = ($canReviewApplications && $canReviewMembership)
     ? 'Decide on applications to our programs and on membership requests' . ($chapterLimited ? ' for your chapters' : '') . '.'
     : ($canReviewApplications
@@ -316,6 +318,12 @@ function form_tile(array $icons, array $form): void
                         review_card($icons, 'var(--accent)', 'people', 'Membership review',
                             'New applications and renewals, the member list and membership cards.',
                             '/admin/membership-review', $membershipWaiting, 'Open the queue');
+                    }
+                    // CH: Conversation Hour attendance and the technical contributors list.
+                    if ($canManageRecords) {
+                        review_card($icons, 'var(--leaf-dark, #3E7A53)', 'check', 'Community records',
+                            'Log Conversation Hour attendance and keep the technical contributors list. Internet support reads from these.',
+                            '/admin/community-records', null, 'Open records');
                     }
                     ?>
                 </div>
