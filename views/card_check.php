@@ -54,20 +54,20 @@ if (!MemberCardModel::allow()) {
 
 // state => [accent color, headline, one line under it]
 $look = [
-    'valid'    => ['#047857', 'Valid DCW member',       'This membership is current.'],
-    'expired'  => ['#b45309', 'Membership expired',     'This person was a member, but the membership has lapsed.'],
-    'inactive' => ['#b91c1c', 'Not an active member',   'This membership is not active.'],
-    'unknown'  => ['#b91c1c', 'Card not valid',         'This code is not recognised. The card may have been replaced or cancelled. Please ask the person for their current card.'],
-    'busy'     => ['#b45309', 'Please wait a moment',   'Too many checks from this connection. Try again in a minute.'],
-    'error'    => ['#b45309', 'Could not check',        'Something went wrong. Please try again in a moment.'],
+    'valid'    => ['#047857', 'Valid DCW member',       'This membership is active.'],
+    'expired'  => ['#b45309', 'Membership expired',     'This member’s tenure has lapsed.'],
+    'inactive' => ['#b91c1c', 'Not an active member',   'This membership is currently inactive.'],
+    'unknown'  => ['#b91c1c', 'Invalid card',           'This code is not recognised. The card may have been reissued or cancelled. Kindly ask the person for their latest card.'],
+    'busy'     => ['#b45309', 'Please wait a moment',   'Too many verification attempts from this network. Kindly try again after a minute.'],
+    'error'    => ['#b45309', 'Unable to verify',        'Something went wrong. Kindly try again in a short while.'],
 ];
 [$accent, $headline, $subline] = $look[$state];
 
 $checkedAt = MemberAuthModel::formatIst(gmdate('Y-m-d H:i:s'), 'j M Y, g:i A');
 
 engage_header([
-    'title'   => 'Membership check',
-    'heading' => 'Membership check',
+    'title'   => 'Membership verification',
+    'heading' => 'Membership verification',
     'lead'    => 'Deoband Community Wikimedia',
     'compact' => true,
 ]);
@@ -108,17 +108,17 @@ engage_header([
                         </span>
                         <span class="st">
                             <?php if ($m['state'] === 'active'): ?>
-                                <span class="cc-pill">Current</span><?= $m['date'] !== '' ? 'valid until ' . $h($m['date']) : '' ?>
+                                <span class="cc-pill">Active</span><?= $m['date'] !== '' ? 'valid up to ' . $h($m['date']) : '' ?>
                             <?php elseif ($m['state'] === 'expired'): ?>
                                 <span class="cc-pill">Expired</span><?= $m['date'] !== '' ? 'on ' . $h($m['date']) : '' ?>
                             <?php else: ?>
-                                <span class="cc-pill">Not active</span>
+                                <span class="cc-pill">Inactive</span>
                             <?php endif; ?>
                         </span>
                     </li>
                 <?php endforeach; ?>
             </ul>
-            <p class="cc-note">This confirms membership only. If you need to be sure who is presenting the card, ask to see photo ID.
+            <p class="cc-note">This confirms membership status only. To verify identity, kindly request a valid photo ID proof.
                 Checked on <?= $h($checkedAt) ?>.</p>
         <?php endif; ?>
     </section>
