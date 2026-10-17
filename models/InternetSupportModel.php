@@ -633,6 +633,31 @@ class InternetSupportModel {
     // ------------------------------------------------------------------
 
     /**
+     * Once the Conversation Hour / technical-list check is live, an applicant cannot change the
+     * attended_ch or tech_contributor answers when resubmitting. They stay as stored on the request,
+     * whatever the form posts. (edits_80 stays editable: reviewers check it on the contributions link.)
+     */
+    private function withLockedEligibility($trackingId, $email, array $answers) {
+        require_once __DIR__ . '/CommunityRecordsModel.php';
+        if (!(new CommunityRecordsModel())->isLive()) {
+            return $answers;
+        }
+        $stmt = $this->db->prepare(
+            "SELECT attended_ch, tech_contributor FROM internet_requests
+             WHERE tracking_id = :t AND email = :email AND status = 'Info Requested'"
+        );
+        $stmt->execute(['t' => $trackingId, 'email' => strtolower(trim($email))]);
+        $row = $stmt->fetch();
+        if (!$row) {
+            return $answers;   // resubmitDraft() will return false for this pair
+        }
+        // NULL = a request from before the eligibility questions existed: leave as posted.
+        if ($row['attended_ch'] !== null)      $answers['attended_ch']      = (int) $row['attended_ch'] === 1 ? 'yes' : 'no';
+        if ($row['tech_contributor'] !== null) $answers['tech_contributor'] = (int) $row['tech_contributor'] === 1 ? 'yes' : 'no';
+        return $answers;
+    }
+
+    /**
      * Same rules as createRequest() for the answers an applicant may edit.
      * Phone, pack, price, operator and the Wikimedia username are NOT editable here.
      *
@@ -720,6 +745,7 @@ class InternetSupportModel {
      * @throws \InvalidArgumentException on any validation failure
      */
     public function resubmitDraft($trackingId, $email, array $answers, $note) {
+        $answers = $this->withLockedEligibility($trackingId, $email, $answers);
         $note = $this->cleanMessage($note);
         $new  = $this->cleanEditableAnswers($answers);
 
