@@ -6,6 +6,7 @@ require_once __DIR__ . '/../../includes/member_session.php';
 require_once __DIR__ . '/../../includes/member_requests.php';
 require_once __DIR__ . '/../../models/ReimbursementModel.php';
 require_once __DIR__ . '/../../models/InternetSupportModel.php';
+require_once __DIR__ . '/../../models/CommunityRecordsModel.php';
 
 /**
  * DCW Engage - one internet support or reimbursement request (/member/request?id=IS-... / RB-...).
@@ -22,6 +23,9 @@ require_once __DIR__ . '/../../models/InternetSupportModel.php';
  * Wikimedia username: on an internet support request it comes from the member's verified profile
  * when the request is made. It is shown here read-only and is NOT part of what can be resubmitted,
  * so a member cannot swap in an unverified account by answering a reviewer.
+ *
+ * Conversation Hours / technical projects: once the staff-record check is live (CommunityRecordsModel::isLive),
+ * those two answers are shown read-only and InternetSupportModel::resubmitDraft() keeps them as stored.
  */
 MemberSession::requireLogin();
 $member = MemberSession::current();
@@ -46,6 +50,7 @@ $reimbursement = $reimbursementModel = $reimbDraft = $postedReimb = null;
 $internet = $internetModel = $internetDraft = $postedDraft = null;
 $reimbursementThread = $internetThread = [];
 $error = $uploadMessage = '';
+$chLocked = false;   // true once the staff-record check is live: attended_ch / tech_contributor are read-only
 $action = $_POST['action'] ?? '';
 $isPost = $_SERVER['REQUEST_METHOD'] === 'POST';
 
@@ -193,7 +198,16 @@ if ($isRb) {
             foreach (['wikimedia_username', 'contributions', 'plans'] as $k) {
                 $internetDraft[$k] = (string) ($internetDraft[$k] ?? '');
             }
-            if ($postedDraft) $internetDraft = array_merge($internetDraft, $postedDraft);
+            // Once the staff-record check is live these two answers are fixed (the model enforces it too).
+            // The form shows them as read-only text, so keep them on screen if the form comes back with an error.
+            $chLocked = (new CommunityRecordsModel())->isLive();
+            $keep = [];
+            if ($chLocked) {
+                foreach (['attended_ch', 'tech_contributor'] as $k) {
+                    if ($internetDraft[$k] !== '') $keep[$k] = $internetDraft[$k];
+                }
+            }
+            if ($postedDraft) $internetDraft = array_merge($internetDraft, $postedDraft, $keep);
         }
     }
 }
@@ -223,6 +237,15 @@ $yesNoSelect = function ($name, $val) use ($e) {
         $h .= '<option value="' . $k . '"' . ((string) $val === (string) $k ? ' selected' : '') . '>' . $e($label) . '</option>';
     }
     return $h . '</select>';
+};
+// Same as $yesNoSelect, but shows the stored answer as read-only text when it is locked.
+// A request from before the eligibility questions existed has no stored answer, so it stays a select.
+$yesNoOrLocked = function ($name, $val, $locked) use ($e, $yesNoSelect) {
+    if ($locked && $val !== '') {
+        return '<input type="text" value="' . ($val === 'yes' ? 'Yes' : 'No') . '" readonly>'
+             . '<span class="hint">Fixed when you made the request. It can&rsquo;t be changed here.</span>';
+    }
+    return $yesNoSelect($name, $val);
 };
 $todayIst = (new DateTimeImmutable('now', new DateTimeZone('Asia/Kolkata')))->format('Y-m-d');
 
@@ -388,11 +411,11 @@ engage_header([
                     </div>
                     <div class="field">
                         <label>Attended last 3 Conversation Hours <span class="req-star">*</span></label>
-                        <?= $yesNoSelect('attended_ch', $d['attended_ch']) ?>
+                        <?= $yesNoOrLocked('attended_ch', $d['attended_ch'], $chLocked) ?>
                     </div>
                     <div class="field">
                         <label>Active on DCW technical projects <span class="req-star">*</span></label>
-                        <?= $yesNoSelect('tech_contributor', $d['tech_contributor']) ?>
+                        <?= $yesNoOrLocked('tech_contributor', $d['tech_contributor'], $chLocked) ?>
                     </div>
                     <div class="field">
                         <label>Why you need support <span class="req-star">*</span></label>
