@@ -11,11 +11,13 @@
  * Layout, top to bottom:
  *   1. White header.
  *        Community card ("generic"): the DCW logo on the left, then the name. No right logo.
- *        Club card: the club's logo on the left, the club name in the middle, the DCW logo on the right.
+ *        Club card: the club's logo on the left, the club name and "Part of Deoband Community Wikimedia" in the
+ *        middle, the DCW logo on the right.
  *   2. A thin rule in the chapter's logo colours (about 0.8 mm, no longer a heavy band).
  *   3. Tinted body. Left: username, Member ID (or title), "Works on" (main project, optional),
  *      "Also a member of". Right: the QR code on plain white, no coloured frame.
- *   4. Footer: the motto in the accent colour under a hairline. No solid colour block.
+ *   4. "Issued by Deoband Community Wikimedia, Executive Board" with the Board's signature, signer and role.
+ *   5. Footer: the motto in the accent colour under a hairline. No solid colour block.
  *
  * $c = [
  *   'chapter'        => 'generic' | 'amu' | 'jamia' | 'photographers',
@@ -28,6 +30,9 @@
  *   'logo_uri'       => 'var:logo' or '',   'logo_ratio'     => width/height of that logo (float, 0 = unknown),
  *   'dcw_logo_uri'   => 'var:dcw' or '',    'dcw_logo_ratio' => width/height of the DCW logo,
  *   'qr_uri'         => 'var:qr',
+ *   'issuer'         => optional "Issued by" block with the Board's signature:
+ *                       ['signature_uri' => 'var:sig', 'signature_ratio' => w/h, 'name' => 'Signer', 'title' => 'Role'],
+ *                       left out of the card when not passed.
  * ]
  */
 
@@ -127,6 +132,52 @@ function member_card_titles(): array
     return $titles;
 }
 
+/**
+ * Who signs the cards, read from the 'card' section of includes/config.php:
+ *
+ *   'card' => [
+ *       'signer_name'    => 'Aafi',
+ *       'signer_title'   => 'Founder and Chair',
+ *       'signature_file' => 'config/board_signature.svg',   // optional; relative to the app root, or absolute
+ *   ],
+ *
+ * Without signature_file the card looks for assets/chapters/aafi.svg (app root, then public/).
+ * With no signature file at all the card still shows the "Issued by" block and the signer line, just no image.
+ */
+function member_card_issuer_info(): array
+{
+    static $cfg = null;
+    if ($cfg === null) {
+        $cfg = [];
+        $file = __DIR__ . '/config.php';
+        if (is_file($file)) {
+            $all = include $file;
+            if (is_array($all) && is_array($all['card'] ?? null)) {
+                $cfg = $all['card'];
+            }
+        }
+    }
+
+    $root = dirname(__DIR__);
+    $candidates = [];
+    $configured = trim((string) ($cfg['signature_file'] ?? ''));
+    if ($configured !== '') {
+        $candidates[] = $configured[0] === '/' ? $configured : $root . '/' . $configured;
+    }
+    $candidates[] = $root . '/assets/chapters/aafi.svg';
+    $candidates[] = $root . '/public/assets/chapters/aafi.svg';
+
+    $found = '';
+    foreach ($candidates as $candidate) {
+        if (is_file($candidate)) { $found = $candidate; break; }
+    }
+    return [
+        'name'  => trim((string) ($cfg['signer_name'] ?? '')),
+        'title' => trim((string) ($cfg['signer_title'] ?? '')),
+        'file'  => $found,
+    ];
+}
+
 function member_card_html(array $c): string
 {
     $h = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
@@ -155,6 +206,11 @@ function member_card_html(array $c): string
         $primary = $org;
     }
     $isOrg = $chapter === 'generic' || strcasecmp($primary, $org) === 0;
+
+    // For a club the card says whose club it is; for the community itself that would only repeat the title.
+    // Only the short "Membership card" line is set in tracked capitals; the longer line would overflow.
+    $sub      = $isOrg ? 'Membership card' : 'Part of ' . $org;
+    $subClass = $isOrg ? 's up' : 's';
 
     // Header. Both logos sit in fixed-width cells, centred, so the text never shifts with logo shape.
     $leftLogo = $fit((string) ($c['logo_uri'] ?? ''), (float) ($c['logo_ratio'] ?? 0), 15, 11);
@@ -215,6 +271,25 @@ function member_card_html(array $c): string
         }
     }
 
+    // "Issued by" block: the community's name on the left, the Board's signature on the right.
+    $issuerRow = '';
+    $iss = (array) ($c['issuer'] ?? []);
+    if ($iss) {
+        $sig     = $fit((string) ($iss['signature_uri'] ?? ''), (float) ($iss['signature_ratio'] ?? 0), 26, 9);
+        $sigImg  = $sig !== '' ? '<div style="text-align: center;">' . $sig . '</div>' : '';
+        $signer  = trim((string) ($iss['name'] ?? ''));
+        $role    = trim((string) ($iss['title'] ?? ''));
+        $signHtml = $signer !== ''
+            ? '<div class="sgn">' . $h($signer) . '</div>' . ($role !== '' ? '<div class="sgt">' . $h($role) . '</div>' : '')
+            : '<div class="sgn">' . $h($role !== '' ? $role : 'Authorised signatory') . '</div>';
+        $issuerRow = '<tr><td class="issue" colspan="2"><table cellpadding="0" cellspacing="0" style="width: 100%;"><tr>'
+            . '<td class="isl"><div class="lb">Issued by</div><div class="isn">' . $h($org) . '</div><div class="iss">Executive Board</div></td>'
+            . '<td class="isr">' . $sigImg
+            . '<table cellpadding="0" cellspacing="0" align="center" style="width: 26mm;"><tr><td class="sigline">&nbsp;</td></tr></table>'
+            . $signHtml . '</td>'
+            . '</tr></table></td></tr>';
+    }
+
     // Motto in the accent colour, diamonds in the second logo colour.
     $diamond = $t['stripe'][1] ?? $t['accent'];
     $sep   = '&nbsp;&nbsp;<span style="color: ' . $diamond . '; font-size: 6pt;">&#9670;</span>&nbsp;&nbsp;';
@@ -231,7 +306,8 @@ function member_card_html(array $c): string
     td.bt { vertical-align: middle; padding: 0 1mm; }
     .t { font-size: 9.5pt; font-weight: bold; color: {{ink}}; line-height: 1.3; }
     .t.nw { white-space: nowrap; }
-    .s { font-size: 5.5pt; color: #475569; margin-top: 0.4mm; text-transform: uppercase; letter-spacing: 0.3mm; }
+    .s { font-size: 6pt; color: #475569; margin-top: 0.4mm; }
+    .s.up { text-transform: uppercase; letter-spacing: 0.3mm; font-size: 5.5pt; }
 
     td.stripe { padding: 0; }
 
@@ -252,6 +328,15 @@ function member_card_html(array $c): string
     td.qr { background-color: #ffffff; padding: 1.2mm; }
     .scan { font-size: 6pt; font-weight: bold; color: {{accent}}; text-align: center; }
 
+    td.issue { background-color: {{tint}}; border-top: 0.2mm solid #d6dbe1; }
+    td.isl { width: 50mm; padding: 3mm 2mm 3mm 5mm; vertical-align: bottom; }
+    td.isr { width: 34mm; padding: 3mm 5mm 3mm 0; vertical-align: bottom; text-align: center; }
+    .isn { font-size: 8pt; font-weight: bold; color: {{ink}}; line-height: 1.3; }
+    .iss { font-size: 6.5pt; color: #475569; }
+    td.sigline { border-top: 0.25mm solid {{ink}}; font-size: 1pt; line-height: 1pt; }
+    .sgn { font-size: 6.5pt; font-weight: bold; color: {{ink}}; text-align: center; margin-top: 0.6mm; }
+    .sgt { font-size: 5.5pt; color: #475569; text-align: center; }
+
     td.foot { background-color: #ffffff; border-top: 0.2mm solid #d6dbe1; color: {{accent}}; padding: 2.4mm 4mm; font-size: 7pt; font-weight: bold;
               letter-spacing: 0.3mm; text-align: center; }
     .cut { margin-top: 3mm; font-size: 7pt; color: #94a3b8; }
@@ -271,7 +356,7 @@ function member_card_html(array $c): string
         <table cellpadding="0" cellspacing="0" style="width: 100%;"><tr>{{leftcell}}
             <td class="bt" style="{{textalign}}">
                 <div class="{{titleclass}}">{{primary}}</div>
-                <div class="s">Membership card</div>
+                <div class="{{subclass}}">{{sub}}</div>
             </td>{{rightcell}}
         </tr></table>
     </td></tr>
@@ -293,6 +378,7 @@ function member_card_html(array $c): string
             <div class="scan">Scan to verify</div>
         </td>
     </tr>
+    {{issuer_row}}
     <tr><td class="foot" colspan="2">{{motto}}</td></tr>
 </table>
         </td>
@@ -314,6 +400,8 @@ function member_card_html(array $c): string
         '{{rightcell}}'  => $rightCell,
         '{{textalign}}'  => $textAlign,
         '{{titleclass}}' => $titleClass,
+        '{{subclass}}'   => $subClass,
+        '{{sub}}'        => $h($sub),
         '{{primary}}'    => $h($primary),
         '{{stripe}}'     => $stripe,
         '{{who}}'        => $who,
@@ -322,6 +410,7 @@ function member_card_html(array $c): string
         '{{others}}'     => $others,
         '{{qr}}'         => $h($c['qr_uri'] ?? ''),
         '{{scan_gap}}'   => $gap(2),
+        '{{issuer_row}}' => $issuerRow,
         '{{motto}}'      => $motto,
     ]);
 }
