@@ -83,6 +83,8 @@ if ($route === '/' || $route === '/index.php') {
     require __DIR__ . '/views/member/logout.php';
 } elseif ($route === '/member/forgot') {
     require __DIR__ . '/views/member/forgot.php';
+} elseif ($route === '/member/forgot-id') {
+    require __DIR__ . '/views/member/forgot_id.php';
 } elseif ($route === '/member/dashboard') {
     // Signed-in members only: the view calls MemberSession::requireLogin() itself.
     require __DIR__ . '/views/member/dashboard.php';
