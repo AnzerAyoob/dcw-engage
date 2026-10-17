@@ -17,6 +17,11 @@ require_once __DIR__ . '/MemberStrikeModel.php';
  * real name), each chapter (with its logo) and whether it is current. Nothing else leaves this class for the
  * public page. A member with no verified username is shown without a name line.
  *
+ * Office-bearers: a person listed in OFFICE_BEARERS (matched on the VERIFIED Wikimedia username only) gets an
+ * 'office' entry from lookup()/summary(). The public page then shows their role instead of a routine
+ * membership check. The role is a statement about the person, so it does not depend on chapter expiry dates.
+ * A struck-off member is still refused, office or not.
+ *
  * "Current" uses MemberAuthModel::isActive(), the same rule the rest of the app uses: members.status is
  * 'active' and expires_at (a UTC datetime) is in the future. Status 'active' with a past date is "expired".
  *
@@ -33,6 +38,19 @@ class MemberCardModel
 
     /** Where chapter logos live, under the project root (also the public path). */
     private const LOGO_DIR = '/assets/chapters/';
+
+    /**
+     * Office-bearers shown with a role statement instead of a routine membership check.
+     * Key: verified Wikimedia username, lower-case, spaces as underscores (Wikimedia treats them as the same).
+     * Value: 'title' (the headline) and 'detail' (the line under it).
+     * To add someone, add a line. Remove a line to return that person to the routine check.
+     */
+    public const OFFICE_BEARERS = [
+        'aafi' => [
+            'title'  => 'Founder, Deoband Community Wikimedia',
+            'detail' => 'Holds a Permanent voting seat on the DCW Executive Board.',
+        ],
+    ];
 
     private PDO $db;
     private MemberStrikeModel $strikes;
@@ -97,6 +115,27 @@ class MemberCardModel
         return 'data:' . $mime . ';base64,' . base64_encode($bytes);
     }
 
+    // ---- Office-bearers --------------------------------------------------------------------------
+
+    /** A username reduced to the form used as an OFFICE_BEARERS key: lower-case, spaces as underscores. */
+    private static function usernameKey(string $username): string
+    {
+        return mb_strtolower(str_replace(' ', '_', trim($username)), 'UTF-8');
+    }
+
+    /**
+     * The office held by a person, ['title' => ..., 'detail' => ...], or null for an ordinary member.
+     * Pass only a VERIFIED username (summary() does); an empty username never matches.
+     */
+    public static function officeFor(string $username): ?array
+    {
+        $key = self::usernameKey($username);
+        if ($key === '') {
+            return null;
+        }
+        return self::OFFICE_BEARERS[$key] ?? null;
+    }
+
     // ---- Public page helpers ---------------------------------------------------------------------
 
     /**
@@ -132,6 +171,7 @@ class MemberCardModel
      * What /card/<token> shows, or null if the token is unknown, was replaced, or the member is struck off
      * (all three look the same to the visitor). Shape: ['overall' => valid|expired|inactive,
      * 'name' => 'Aafi' (the verified Wikimedia username, or '' if there is none),
+     * 'office' => ['title', 'detail'] for an office-bearer, or null,
      * 'memberships' => [['name', 'state' => active|expired|inactive, 'date', 'logo']]]
      */
     public function lookup(string $token): ?array
@@ -152,7 +192,12 @@ class MemberCardModel
         if ($s === null) {
             return null;
         }
-        return ['overall' => $s['overall'], 'name' => $s['username'], 'memberships' => $s['memberships']];
+        return [
+            'overall'     => $s['overall'],
+            'name'        => $s['username'],
+            'office'      => $s['office'],
+            'memberships' => $s['memberships'],
+        ];
     }
 
     /** The full link a QR code should carry. Set ENGAGE_BASE_URL in config to override the default. */
@@ -202,6 +247,7 @@ class MemberCardModel
      * Everything the member's own card page and PDF need, or null if the Member ID has no usable membership:
      *   member_id, full_name, short_name, overall (valid|expired|inactive),
      *   username (the VERIFIED Wikimedia username, or ''),
+     *   office (['title', 'detail'] if the verified username is in OFFICE_BEARERS, else null),
      *   primary     => ['chapter', 'name', 'logo', 'state']   the chapter shown on the card header
      *   memberships => [['chapter', 'name', 'state', 'date', 'logo']]   primary first, then current, expired, other
      *
@@ -269,6 +315,7 @@ class MemberCardModel
             'short_name'  => self::shortName($full),
             'overall'     => $overall,
             'username'    => $username,
+            'office'      => self::officeFor($username),
             'primary'     => ['chapter' => $primary['chapter'], 'name' => $primary['name'], 'logo' => $primary['logo'], 'state' => $primary['state']],
             'memberships' => $ordered,
         ];
