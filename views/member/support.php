@@ -322,6 +322,10 @@ $eligibilityQuestions = [
 ];
 // When the check is live, members only answer the edits question. The other two come from staff records.
 $askQuestions = $chLive ? ['edits_80' => $eligibilityQuestions['edits_80']] : $eligibilityQuestions;
+// Check is live and they can't qualify by either route (not on the technical list, and not at all
+// of the last sessions): ask nothing and block the form straight away. The server still re-checks.
+$chBlocked = $chLive && empty($elig['tech']) && empty($elig['attended_ch']);
+if ($chBlocked) $askQuestions = [];
 
 // Internet support: the date picker for "when does your current pack end" uses the same window the
 // model enforces (InternetSupportModel::cleanPackEndDate), in India time.
@@ -464,7 +468,7 @@ engage_header([
                             <span><?= $elig['tech'] ? '&#10003; You are on the technical contributors list.' : 'You are not on the technical contributors list.' ?></span>
                         </div>
                     <?php endif; ?>
-                    <div id="ineligible-note" class="alert error" style="display:none;">
+                    <div id="ineligible-note" class="alert error" style="display:<?= $chBlocked ? 'block' : 'none' ?>;">
                         Based on your answers, you're not eligible for support right now. You need 80+ manual edits
                         in the past month and attendance at the last 3 Conversation Hours, or active contribution
                         to DCW technical projects.
@@ -545,14 +549,14 @@ engage_header([
                     <textarea name="plans" required minlength="<?= (int) InternetSupportModel::MIN_NARRATIVE_LENGTH ?>" maxlength="<?= (int) InternetSupportModel::MAX_NARRATIVE_LENGTH ?>" rows="5"><?= $old('plans') ?></textarea>
                 </div>
 
-                <button type="submit">Submit request</button>
+                <button type="submit"<?= $chBlocked ? ' disabled' : '' ?>>Submit request</button>
             </form>
 
             <script>
                 // Convenience only: the server (InternetSupportModel::createRequest) is the real gate.
                 (function () {
                     var first = document.querySelector('input[name="edits_80"]');
-                    if (!first) return;
+                    if (!first) return;   // no edits question on the page (blocked by the staff-record check)
                     var form = first.form;
                     var note = document.getElementById('ineligible-note');
                     var submit = form.querySelector('button[type="submit"]');
