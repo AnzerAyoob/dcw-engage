@@ -257,24 +257,16 @@ engage_header([
 ]);
 ?>
 <style>
-    /* Application review only. Everything else comes from /assets/css/engage.css */
-    .sect { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 22px 24px; margin: 0 0 22px; box-shadow: 0 16px 34px rgba(15,23,42,.12); }
-    .sect select, .sect input[type=text] {
-        padding: 8px 12px; background: #fff; color: var(--ink);
-        border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 14px;
-    }
-    .sect select:focus, .sect input[type=text]:focus { outline: 2px solid var(--primary); outline-offset: -1px; border-color: transparent; }
-    .btn-ghost.sm, .btn-solid.sm { width: auto; padding: 7px 16px; font-size: 13.5px; }
-
+    /* Application review only. Shared pieces (.sect, .btn-*.sm, tokens) come from engage.css and staff.css */
     .pill.st-new { --tone: var(--primary); }
-    .pill.st-review { --tone: #6d28d9; }
-    .pill.st-wait { --tone: #b45309; }
+    .pill.st-review { --tone: var(--violet); }
+    .pill.st-wait { --tone: var(--amber); }
     .pill.st-ok { --tone: var(--leaf-dark); }
     .pill.st-bad { --tone: var(--accent); }
-    .pill.st-off { --tone: #64748b; }
+    .pill.st-off { --tone: var(--slate); }
 
     .action-banner ul { flex-basis: 100%; margin: 6px 0 0; padding-left: 18px; }
-    .flash-link { display: block; flex-basis: 100%; margin-top: 8px; padding: 10px; background: rgba(0,0,0,.06); border-radius: 6px; font-size: 12px; word-break: break-all; }
+    .flash-link { display: block; flex-basis: 100%; margin-top: 8px; padding: 10px; background: rgba(6,26,30,.07); border-radius: 8px; font-size: 12px; word-break: break-all; }
 
     dl.answers { margin: 14px 0 0; }
     dl.answers dt { margin-top: 14px; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
@@ -283,12 +275,13 @@ engage_header([
     .actrow { display: flex; flex-wrap: wrap; gap: 10px; }
     .actform { margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--border); }
     .actform .field { margin-bottom: 12px; }
-    .actform textarea { width: 100%; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; font: inherit; }
+    .actform textarea { width: 100%; padding: 12px 14px; border: 1.5px solid #BFD3D1; border-radius: 10px; font: inherit; }
+    .actform textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 20%, transparent); }
 
     .filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 0 0 16px; }
     .filters .total { margin-left: auto; font-size: 13.5px; font-weight: 600; color: var(--muted); }
-    .bulkbar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 0 0 14px; padding: 12px 14px; background: #fff; border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 4px 12px rgba(15,23,42,.08); }
-    .bulkbar .count { min-width: 90px; font-size: 14px; font-weight: 700; color: var(--muted); }
+    .bulkbar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 0 0 14px; padding: 12px 14px; background: #fff; border: 1.5px solid var(--primary); border-radius: 14px; box-shadow: 0 3px 0 var(--primary-dark), 0 10px 22px rgba(6,26,30,.14); }
+    .bulkbar .count { min-width: 90px; font-size: 14px; font-weight: 800; color: var(--primary-dark); }
     .bulkbar input[type=text] { flex: 1 1 240px; min-width: 200px; }
     .rowform { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 0; }
     .rowform input[type=text] { width: 170px; padding: 6px 10px; font-size: 13px; }
@@ -296,11 +289,10 @@ engage_header([
     .tbl th.pick, .tbl td.pick { width: 36px; padding-right: 0; }
     .tbl td.pick input, .tbl th.pick input { width: 16px; height: 16px; cursor: pointer; accent-color: var(--primary); }
     .tbl td.pick input:disabled { cursor: not-allowed; }
-
-    .pill.badge-attn { color: #fff; background: var(--accent); padding: 3px 12px; font-size: 12px; }
+    .dash { color: var(--muted); }
 
     /* One collapsible block per program */
-    details.prog-group { padding: 0; overflow: hidden; border-left: 5px solid var(--primary); }
+    details.prog-group { padding: 0; overflow: hidden; border-left: 6px solid var(--primary); }
     details.prog-group > summary {
         display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 16px 22px;
         cursor: pointer; list-style: none; background: linear-gradient(90deg, var(--primary-tint), #fff 70%);
@@ -308,7 +300,7 @@ engage_header([
     details.prog-group > summary::-webkit-details-marker { display: none; }
     details.prog-group > summary::before { content: '\25B8'; color: var(--primary); font-size: 15px; }
     details.prog-group[open] > summary::before { content: '\25BE'; }
-    details.prog-group > summary:focus-visible { outline: 3px solid #f59e0b; outline-offset: -3px; }
+    details.prog-group > summary:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; }
     details.prog-group .pg-title { font-size: 17px; font-weight: 800; letter-spacing: -.01em; }
     details.prog-group .pg-slug { font-size: 12.5px; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
     details.prog-group .pg-stats { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 13px; font-weight: 600; color: var(--muted); }
@@ -557,7 +549,7 @@ engage_header([
                         <input type="hidden" name="ids[]" value="<?= (int) $r['id'] ?>">
                         <button type="submit" class="btn-ghost sm">Restore</button>
                     </form>
-                <?php else: ?><span style="color:#94a3b8">&mdash;</span><?php endif; ?>
+                <?php else: ?><span class="dash">&mdash;</span><?php endif; ?>
                 </td></tr>
         <?php endforeach; ?>
         </tbody></table>

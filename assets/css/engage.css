@@ -1,4 +1,6 @@
 /* DCW Engage: shared design system. Every page, including the public home page, uses this file.
+   Staff pages (/admin, /finance) and the staff sign-in pages also load assets/css/staff.css after this one:
+   that file holds the whole staff scheme (tokens, header band, vertical tabs, list rows, queue forms).
  */
 :root {
     /* Brand, from the logo */
@@ -939,6 +941,8 @@ a.help-item:hover { transform: translateY(-2px); box-shadow: 0 4px 0 var(--edge)
 
    These selectors start with .cards-wrap, so they outrank the page's own <style> block (one class)
    without needing !important or any change to the PHP.
+
+   (The staff scheme itself, "Midnight Teal & Gold", lives in assets/css/staff.css.)
    ====================================================================== */
 
 /* ---- Queue page: the tabs become one white card, like every other first item on the overlap ---- */
@@ -986,148 +990,131 @@ a.help-item:hover { transform: translateY(-2px); box-shadow: 0 4px 0 var(--edge)
 }
 
 /* ======================================================================
-   STAFF SCHEME ("Ink & Teal"): everything below applies only inside body.admin,
-   i.e. /admin/* and /finance/*. The public and member site is untouched.
+   Member support (.ms-*).
 
-   Palette:  Ink #132A2E (header band)   Teal #1F7A74 (main)   Mist #EDF3F2 (page)
-             Amber #C96A12 (money)       Coral #D4452B (needs attention)
-
-   Layout:   vertical tabs on the left (.vtabs), the chosen section listed as rows beneath the
-             heading on the right (.lrows). Only the forms grid stays horizontal (.tiles).
+   These rules used to be printed inline by ms_styles() in member_support_helpers.php, with fixed colours.
+   They now use the shared tokens, so the same markup is blue on member pages and teal on staff pages
+   (staff.css redefines the tokens under body.admin).
    ====================================================================== */
-body.admin {
-    --primary: #1F7A74;  --primary-dark: #14524E;  --primary-light: #3A9A93;  --primary-tint: #E3F1EF;
-    --accent: #D4452B;   --accent-dark: #A82F18;   --accent-light: #E2583D;   --accent-tint: #FCECE8;
-    --leaf: #5A9E6F;     --leaf-dark: #357A4C;     --leaf-tint: #E8F4EC;
-    --page: #EDF3F2; --bg: var(--page);
-    --ink: #132A2E; --muted: #55696C; --border: #D3E0DE;
-    --edge: rgba(19,42,46,.12);
-    background: var(--page); color: var(--ink);
+.ms-form label { display: block; font-weight: 600; margin: 16px 0 6px; }
+.ms-form input[type=text], .ms-form textarea, .ms-form select {
+    width: 100%; padding: 11px 12px; background: #fff; color: var(--ink); font: inherit; box-sizing: border-box;
+    border: 1.5px solid color-mix(in srgb, var(--border) 55%, var(--muted)); border-radius: 10px;
 }
+.ms-form input:focus, .ms-form textarea:focus, .ms-form select:focus {
+    outline: none; border-color: var(--primary); box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 20%, transparent);
+}
+.ms-form textarea { min-height: 160px; resize: vertical; }
+.ms-form .hint { color: var(--muted); font-size: 13px; margin: 6px 0 0; font-weight: 400; }
 
-/* ---- Header: a solid ink band, left-aligned, no gradient, no pill; content starts right below it ---- */
-body.admin .hero, body.admin .hero.slim {
-    text-align: left; padding: 14px 0 28px; border-bottom: 0; overflow: visible;
-    background: linear-gradient(180deg, #132A2E 0%, #173A3D 100%);
+.ms-types { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+.ms-types label {
+    margin: 0; padding: 12px 14px; font-weight: 600; cursor: pointer; background: #fff;
+    border: 1.5px solid color-mix(in srgb, var(--border) 55%, var(--muted)); border-radius: 12px;
 }
-body.admin .hero .kicker { display: none; }
-body.admin .hero .topbar {
-    max-width: 1180px; margin: 0 auto 22px; padding: 0 22px 14px;
-    border-bottom: 1px solid rgba(255,255,255,.12);
+.ms-types label span { display: block; font-weight: 400; font-size: 13px; color: var(--muted); margin-top: 4px; }
+/* Selected and keyboard-focus states for the type picker */
+.ms-types label:has(input:checked) {
+    border-color: var(--primary); background: var(--primary-tint);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent);
 }
-body.admin .hero .hero-copy, body.admin .hero > h1, body.admin .hero > .lead {
-    max-width: 1180px; margin-left: auto; margin-right: auto; padding-left: 22px; padding-right: 22px;
-}
-body.admin .hero h1 { font-size: clamp(26px, 3.6vw, 34px); letter-spacing: -.02em; margin-bottom: 4px; }
-body.admin .hero .lead { max-width: none; margin: 0; color: rgba(255,255,255,.72); font-size: 15.5px; }
-body.admin .hero > .lead { margin: 0 auto; }
-body.admin .hero .crumbs { max-width: 1180px; padding: 0 22px; justify-content: flex-start; }
-body.admin .hero .who { font-size: 13.5px; color: rgba(255,255,255,.7); }
-body.admin .chip-btn { background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.28); }
-body.admin .chip-btn:hover { background: #fff; color: #132A2E; }
-body.admin .wrap.cards-wrap { margin-top: 0; padding-top: 26px; }
+.ms-types label:focus-within { outline: 3px solid var(--focus); outline-offset: 2px; }
 
-/* ---- Shell: vertical tabs + content ---- */
-.adm-shell { display: grid; grid-template-columns: 252px minmax(0, 1fr); gap: 28px; align-items: start; }
-.adm-main { min-width: 0; }
-.vtabs {
-    position: sticky; top: 18px; display: flex; flex-direction: column; gap: 4px; padding: 10px;
-    background: var(--card); border: 1.5px solid var(--border); border-radius: 18px;
-    box-shadow: 0 3px 0 var(--edge), var(--lift);
-}
-.vtab {
-    display: flex; align-items: center; gap: 12px; width: 100%; padding: 11px 12px;
-    border: 0; border-radius: 12px; background: transparent; cursor: pointer; text-align: left; text-decoration: none;
-    font: inherit; font-size: 14.5px; font-weight: 700; line-height: 1.25; color: var(--muted);
-    transition: background .12s, color .12s;
-}
-.vtab svg { flex: none; width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.vtab:hover { background: var(--primary-tint); color: var(--primary-dark); }
-.vtab[aria-selected="true"], .vtab.on { background: var(--primary); color: #fff; box-shadow: 0 3px 0 var(--primary-dark); }
-.vtab .vcount {
-    margin-left: auto; min-width: 24px; padding: 1px 8px; border-radius: 999px; text-align: center;
-    font-size: 12px; font-weight: 800; background: var(--accent); color: #fff;
-}
-.vtab .vcount.zero { background: color-mix(in srgb, currentColor 14%, transparent); color: inherit; }
-.vsub {
-    display: flex; justify-content: space-between; gap: 8px; margin: 0 0 0 44px; padding: 6px 10px; border-radius: 8px;
-    font-size: 13.5px; font-weight: 600; color: var(--muted); text-decoration: none;
-}
-.vsub:hover { background: var(--primary-tint); color: var(--primary-dark); }
-.vsep { height: 1px; margin: 6px 6px; background: var(--border); }
+/* Prefixed with .ms-form so it outranks ".ms-form label" when the checkbox row is a <label> */
+.ms-form .ms-check { display: flex; gap: 10px; align-items: flex-start; margin: 14px 0 0; font-weight: 500; }
+.ms-form .ms-check input { margin-top: 4px; }
+.ms-actions { margin-top: 20px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 
-.vpanel[hidden] { display: none; }
-body.admin .panel-head { border-bottom: 0; padding: 0 0 4px 16px; margin-bottom: 14px; position: relative; }
-body.admin .panel-head::before { content: ''; position: absolute; left: 0; top: 4px; bottom: 6px; width: 5px; border-radius: 4px; background: var(--primary); }
-body.admin .panel-head h2 { font-size: 21px; }
-body.admin .panel-head .head-act { margin-left: auto; text-decoration: none; white-space: nowrap; background: var(--primary); color: #fff; border: 1px solid var(--primary-dark); box-shadow: 0 3px 0 var(--primary-dark); }
-body.admin .panel-head .head-act:hover { background: var(--primary-light); }
-body.admin .panel-head .head-act:active { transform: translateY(3px); box-shadow: none; }
-
-/* ---- List rows: one per line, tone stripe on the left, status chip + arrow on the right ---- */
-.lrows { display: grid; gap: 12px; }
-.lrow {
-    --tone: var(--primary);
-    display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; align-items: center; gap: 16px;
-    padding: 16px 20px 16px 18px; color: inherit; text-decoration: none;
-    background: var(--card); border: 1.5px solid var(--border); border-left: 6px solid var(--tone); border-radius: 16px;
-    box-shadow: 0 2px 0 var(--edge);
-    transition: transform .1s, box-shadow .1s, border-color .15s, background .15s;
+.ms-thread { display: grid; gap: 12px; margin-bottom: 8px; }
+.ms-msg {
+    max-width: 760px; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywhere;
+    background: #fff; border: 1.5px solid var(--border); border-radius: 14px;
 }
-.lrow:hover { transform: translateY(-2px); border-color: var(--tone); background: color-mix(in srgb, var(--tone) 4%, #fff); box-shadow: 0 4px 0 color-mix(in srgb, var(--tone) 30%, #fff); }
-.lrow:active { transform: translateY(1px); box-shadow: 0 0 0 var(--edge); }
-.lrow .tick { width: 48px; height: 48px; border-radius: 14px; display: grid; place-items: center; background: color-mix(in srgb, var(--tone) 14%, #fff); }
-.lrow .tick svg { width: 23px; height: 23px; stroke: var(--tone); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.lrow h3 { margin: 0; font-size: 17px; font-weight: 800; letter-spacing: -.01em; line-height: 1.3; }
-.lrow p { margin: 2px 0 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
-.lrow .lside { display: flex; align-items: center; gap: 14px; }
-.lrow .arrow { font-weight: 800; color: var(--tone); transition: transform .15s; }
-.lrow:hover .arrow { transform: translateX(4px); }
-.chip { padding: 4px 12px; border-radius: 999px; font-size: 12.5px; font-weight: 800; white-space: nowrap; }
-.chip.attn { background: var(--accent); color: #fff; box-shadow: 0 2px 0 var(--accent-dark); }
-.chip.clear { background: var(--leaf-tint); color: var(--leaf-dark); }
+.ms-msg.mine { margin-left: auto; background: var(--primary-tint); border-color: color-mix(in srgb, var(--primary) 25%, #fff); }
+.ms-msg.note { background: var(--gold-tint, #fffbeb); border-color: #F1C56B; }
+.ms-msg small { display: block; margin-bottom: 4px; font-size: 12px; font-weight: 600; color: var(--muted); }
 
-/* Forms stay as a horizontal grid of tiles */
-body.admin .tiles { grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 14px; }
-body.admin .pill.badge-attn { color: #fff; background: var(--accent); padding: 3px 12px; font-size: 12px; }
-body.admin .closed-forms { margin-top: 18px; }
-body.admin .closed-forms summary { cursor: pointer; font-weight: 700; color: var(--muted); padding: 7px 16px; border: 1.5px dashed var(--border); border-radius: 999px; display: inline-block; }
-body.admin .closed-forms[open] summary { background: #fff; }
-body.admin .closed-forms .tiles { margin-top: 12px; }
-body.admin .action-banner { background: #FFF6E5; border-color: #F1C56B; box-shadow: 0 2px 0 #F1C56B; }
+.ms-error, .ms-ok { padding: 12px 14px; margin-bottom: 14px; border: 1.5px solid; border-radius: 10px; font-weight: 500; }
+.ms-error { background: var(--accent-tint); border-color: #F3B8AC; color: var(--accent-dark); }
+.ms-ok    { background: var(--leaf-tint);   border-color: #A9DCC1; color: var(--leaf-dark); }
+.ms-meta { color: var(--muted); font-size: 14px; margin: 6px 0 0; }
 
-/* ---- Finance queue and other staff pages ---- */
-body.admin .qcard.pay { --tone: var(--leaf-dark); }
-body.admin .qcard.check { --tone: #C96A12; }
-body.admin .qcard { padding: 22px 24px; }
-body.admin .tab.on { background: var(--primary); }
-body.admin .tbl th { background: #F2F7F6; }
-body.admin .sec-title { scroll-margin-top: 20px; }
-/* Payment form: reference + amount side by side, everything else full width, buttons in one row */
-body.admin .qform { display: grid; grid-template-columns: minmax(0, 1fr) 200px; gap: 10px 12px; align-items: start; }
-body.admin .qform textarea, body.admin .qform .confirm, body.admin .qform .qactions,
-body.admin .qform input[name=amount_note] { grid-column: 1 / -1; }
-body.admin .qform input[type=text], body.admin .qform textarea { flex: none; width: 100%; min-height: 46px; }
-body.admin .qform .qactions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 2px; }
-body.admin .qform .qactions button { min-height: 44px; }
-
-/* Footer */
-body.admin footer { background: transparent; border-top: 1.5px solid var(--border); }
-body.admin footer a { color: var(--primary-dark); }
-
-/* ---- Staff, small screens: tabs become a scrolling strip above the content ---- */
-@media (max-width: 860px) {
-    .adm-shell { grid-template-columns: 1fr; gap: 18px; }
-    .vtabs { position: static; flex-direction: row; overflow-x: auto; gap: 6px; padding: 8px; -webkit-overflow-scrolling: touch; }
-    .vtab { width: auto; flex: none; white-space: nowrap; padding: 10px 14px; }
-    .vtab .vcount { margin-left: 4px; }
-    .vsub, .vsep { display: none; }
+.ms-filters { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; align-items: center; }
+.ms-filters label { margin: 0; }
+.ms-filters select {
+    width: auto; padding: 8px 10px; background: #fff; font: inherit;
+    border: 1.5px solid color-mix(in srgb, var(--border) 55%, var(--muted)); border-radius: 10px;
 }
-@media (max-width: 640px) {
-    body.admin .hero, body.admin .hero.slim { padding: 12px 0 22px; }
-    body.admin .hero .topbar { justify-content: space-between; text-align: left; }
-    .lrow { grid-template-columns: 42px minmax(0, 1fr); gap: 12px; padding: 14px; }
-    .lrow .tick { width: 42px; height: 42px; }
-    .lrow .lside { grid-column: 1 / -1; justify-content: space-between; }
-    body.admin .qform { grid-template-columns: 1fr; }
+.ms-scroll { overflow-x: auto; }
+table.ms-table { width: 100%; border-collapse: collapse; min-width: 720px; }
+.ms-table th, .ms-table td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); font-size: 14px; vertical-align: top; }
+.ms-table tr.wait td:first-child { box-shadow: inset 3px 0 0 var(--amber, #b45309); }
+.ms-tag { display: inline-block; margin-left: 6px; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; background: var(--accent-tint); color: var(--accent-dark); }
+
+/* ======================================================================
+   Member support: white card sections and the "waiting" label.
+   Used by member-support.php (the card wraps each section so nothing sits bare on the blue band).
+   ====================================================================== */
+.ms-card {
+    margin: 0 0 18px; padding: 20px 22px;
+    background: var(--card); border: 1.5px solid var(--border); border-radius: 16px;
+    box-shadow: 0 2px 0 var(--edge), var(--lift);
 }
+.ms-card .panel-head { margin-bottom: 14px; }
+.ms-table .ms-waiting { display: block; font-size: 12.5px; font-weight: 600; color: var(--amber, #b45309); }
+
+/* ======================================================================
+   Technical issues (report forms, reply thread, issue details).
+   These rules used to be printed inline by tech_styles() in includes/tech_issue_ui.php.
+   Labels, inputs and selects come from the shared .field rules; tables from .tbl; filters from .tabs.
+   ====================================================================== */
+.tech-form .field { max-width: 560px; margin-bottom: 14px; }
+.tech-form textarea { min-height: 130px; resize: vertical; }
+.fcard .tech-form .send { width: auto; padding: 12px 30px; }   /* outranks ".fcard button[type=submit]" (full width) */
+.chk { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; font-size: 14px; }
+
+.warn-text, .tbl .sub.warn-text { color: var(--amber, #b45309); font-weight: 600; }
+
+.thread { display: grid; gap: 10px; margin: 14px 0; }
+.msg { padding: 12px 14px; background: #fff; border: 1.5px solid var(--border); border-radius: 12px; }
+.msg.theirs { background: #F6F9FB; }
+.msg.internal { background: var(--gold-tint, #fffbeb); border-color: #F1C56B; }
+.msg .who { margin: 0 0 4px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.msg .txt { font-size: 14px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.issue-meta {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px 22px;
+    margin: 12px 0 16px; padding: 14px 16px; background: #F6F9FB; border-radius: 10px;
+    font-size: 14px; color: var(--ink);
+}
+.issue-meta div { min-width: 0; overflow-wrap: anywhere; }
+.issue-meta b { display: block; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+
+/* ======================================================================
+   Review decision forms (reimbursement review, and any queue card with
+   Approve / Reject buttons under a set of fields).
+   Used with .qcard, .field and .btn-ok / .btn-bad / .btn-neutral above.
+   ====================================================================== */
+.actform { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--border); }
+.actform .field { margin-bottom: 12px; }
+.actrow { display: flex; flex-wrap: wrap; gap: 10px; }
+
+/* ======================================================================
+   Internal notes (the staff-only box under a request card).
+   These rules used to be printed inline by internal_notes_block() in includes/internal_notes_ui.php.
+   The "Add note" button is the shared .btn-neutral.
+   ====================================================================== */
+.inotes {
+    margin: 0 0 14px; padding: 10px 12px; font-size: 14px;
+    background: var(--gold-tint, #fffbeb); border: 1.5px solid #F1C56B; border-radius: 12px;
+}
+.inotes summary { cursor: pointer; font-weight: 700; color: #92400e; }
+.inotes .inote { margin: 10px 0 0; padding: 8px 10px; background: #fff; border: 1px solid #F1C56B; border-radius: 10px; overflow-wrap: anywhere; }
+.inotes .inote-meta { margin: 0 0 2px; font-size: 12px; color: var(--muted); }
+.inotes form { margin-top: 10px; }
+.inotes textarea {
+    display: block; width: 100%; min-height: 60px; padding: 10px 12px; resize: vertical;
+    background: #fff; color: var(--ink); border: 1.5px solid #C5D3DE; border-radius: 10px; font: inherit; font-size: 14.5px;
+}
+.inotes textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 20%, transparent); }
+.inotes form .btn-neutral { margin-top: 8px; }

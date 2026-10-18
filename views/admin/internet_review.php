@@ -153,8 +153,8 @@ function internet_review_card(array $req, InternetSupportModel $model, InternalN
     $requestedPaise = (int) $req['package_price_paise'];
     $prefillPaise = $req['approved_amount_paise'] !== null ? (int) $req['approved_amount_paise'] : $requestedPaise;
     // Left-edge colour of the card: red = recharge failed, blue = waiting on the applicant.
-    $tone = $req['status'] === 'Recharge Failed' ? '#b91c1c'
-        : ($req['status'] === 'Info Requested' ? '#1e40af' : 'var(--primary)');
+    $tone = $req['status'] === 'Recharge Failed' ? 'var(--accent)'
+        : ($req['status'] === 'Info Requested' ? 'var(--violet)' : 'var(--primary)');
     ?>
     <article class="qcard" style="--tone:<?= $tone ?>;">
         <div class="qhead">
@@ -186,7 +186,7 @@ function internet_review_card(array $req, InternetSupportModel $model, InternalN
             ?>
             <div>
                 <span>Current pack ends</span>
-                <strong<?= $shortNotice ? ' style="color:#b45309;"' : '' ?>>
+                <strong<?= $shortNotice ? ' style="color:var(--gold-dark);"' : '' ?>>
                     <?php if ($noticeDays === null): ?>
                         —
                     <?php else: ?>
@@ -217,7 +217,7 @@ function internet_review_card(array $req, InternetSupportModel $model, InternalN
             </div>
             <div>
                 <span>Earlier requests recharged</span>
-                <strong<?= $req['prior_recharges'] > 0 ? ' style="color:#b45309;"' : '' ?>><?= (int) $req['prior_recharges'] ?></strong>
+                <strong<?= $req['prior_recharges'] > 0 ? ' style="color:var(--gold-dark);"' : '' ?>><?= (int) $req['prior_recharges'] ?></strong>
             </div>
         </div>
         <?php if ($snap): ?>
@@ -322,19 +322,21 @@ function internet_review_card(array $req, InternetSupportModel $model, InternalN
             <input type="hidden" name="request_id" value="<?= (int) $req['id'] ?>">
             <?php if ($req['status'] !== 'Info Requested'): ?>
                 <p class="qlabel">Amount to approve (₹): starts as <?= $req['approved_amount_paise'] !== null ? 'the earlier approval' : 'what the applicant asked for' ?></p>
-                <input type="text" name="approved_amount" inputmode="decimal" value="<?= htmlspecialchars(paise_to_rupees($prefillPaise)) ?>" placeholder="Amount to approve (₹)">
-                <input type="text" name="amount_note" maxlength="500" placeholder="Reason, only if this differs from the requested ₹<?= number_format($requestedPaise / 100, 2) ?> (the applicant sees it)">
+                <input type="text" name="approved_amount" inputmode="decimal" value="<?= htmlspecialchars(paise_to_rupees($prefillPaise)) ?>" placeholder="Amount to approve (₹)" aria-label="Amount to approve in rupees">
+                <input type="text" name="amount_note" maxlength="500" placeholder="Reason, only if this differs from the requested ₹<?= number_format($requestedPaise / 100, 2) ?> (the applicant sees it)" aria-label="Reason for a different amount">
             <?php endif; ?>
-            <textarea name="notes" placeholder="Notes. Required to reject or to request info: the applicant sees them (reviewer name hidden). Optional for discard: internal only."></textarea>
-            <?php if ($req['status'] !== 'Info Requested'): ?>
-                <button type="submit" name="decision" value="approve" class="btn-ok">Approve</button>
-            <?php endif; ?>
-            <?php if ($req['status'] === 'Submitted'): ?>
-                <button type="submit" name="decision" value="request_info" class="btn-info">Request info</button>
-            <?php endif; ?>
-            <button type="submit" name="decision" value="reject" class="btn-bad">Reject</button>
-            <button type="submit" name="decision" value="discard" class="btn-mute"
-                    onclick="return confirm('Discard silently? The applicant will NOT be told and the request will vanish from their tracking page.');">Discard</button>
+            <textarea name="notes" placeholder="Notes. Required to reject or to request info: the applicant sees them (reviewer name hidden). Optional for discard: internal only." aria-label="Notes"></textarea>
+            <div class="qactions">
+                <?php if ($req['status'] !== 'Info Requested'): ?>
+                    <button type="submit" name="decision" value="approve" class="btn-ok">Approve</button>
+                <?php endif; ?>
+                <?php if ($req['status'] === 'Submitted'): ?>
+                    <button type="submit" name="decision" value="request_info" class="btn-info">Request info</button>
+                <?php endif; ?>
+                <button type="submit" name="decision" value="reject" class="btn-bad">Reject</button>
+                <button type="submit" name="decision" value="discard" class="btn-mute"
+                        onclick="return confirm('Discard silently? The applicant will NOT be told and the request will vanish from their tracking page.');">Discard</button>
+            </div>
         </form>
     </article>
     <?php
@@ -350,33 +352,14 @@ engage_header([
     'crumbs'  => [['Workspace', '/admin/dashboard'], ['Internet support review']],
 ]);
 ?>
-<style>
-    /* Internet review only. Everything else comes from /assets/css/engage.css */
-    .sect { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 22px 24px 8px; margin: 0 0 26px; box-shadow: 0 16px 34px rgba(15,23,42,.12); }
-    .qlabel { margin: 0 0 4px; font-size: 14px; font-weight: 700; }
-    .qtext { margin: 0 0 14px; padding: 10px 12px; background: #f8fafc; border: 1px solid var(--border); border-radius: 10px; font-size: 14px; }
-    .thread { margin: 0 0 14px; padding: 10px 12px; background: #fff; border: 1px solid var(--border); border-radius: 10px; font-size: 14px; }
-    .thread .msg { margin-bottom: 10px; }
-    .thread .msg:last-child { margin-bottom: 0; }
-    .msg-meta { font-size: 12px; color: var(--muted); }
-    .info-banner { margin: 0 0 14px; padding: 10px 14px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px; color: #1e40af; font-size: 14px; }
-    .qcard .alert { margin: 0 0 14px; }
-    .qcard .action-banner { margin: 0 0 14px; }
-    .btn-info, .btn-mute {
-        padding: 11px 22px; border: none; border-radius: 999px; cursor: pointer; font: inherit; font-size: 14.5px; font-weight: 700; color: #fff;
-        transition: transform .15s, box-shadow .15s;
-    }
-    .btn-info { background: linear-gradient(135deg, var(--primary-dark), var(--primary)); box-shadow: 0 5px 14px rgba(16,107,154,.3); }
-    .btn-mute { background: linear-gradient(135deg, #475569, #64748b); box-shadow: 0 5px 14px rgba(71,85,105,.25); }
-    .btn-info:hover, .btn-mute:hover { transform: translateY(-2px); }
-</style>
+<?php /* Styles for this page (.sect, .qlabel, .qtext, .thread, .info-banner, .btn-info, .btn-mute) live in assets/css/staff.css. */ ?>
 
 <?php if ($message): ?><div class="alert ok"><?= htmlspecialchars($message) ?></div><?php endif; ?>
 <?php if ($error): ?><div class="alert error"><?= htmlspecialchars($error) ?></div><?php endif; ?>
 
 <?php if (!empty($failed)): ?>
     <section class="sect">
-        <h2 class="sec-title" style="color:#b91c1c;">Recharge failed — needs attention</h2>
+        <h2 class="sec-title" style="color:var(--accent-dark);">Recharge failed — needs attention</h2>
         <?php foreach ($failed as $req) { internet_review_card($req, $model, $noteModel); } ?>
     </section>
 <?php endif; ?>
@@ -391,7 +374,7 @@ engage_header([
 
 <?php if (!empty($waiting)): ?>
     <section class="sect">
-        <h2 class="sec-title" style="color:#1e40af;">Waiting for applicant's reply</h2>
+        <h2 class="sec-title" style="color:var(--violet);">Waiting for applicant's reply</h2>
         <?php foreach ($waiting as $req) { internet_review_card($req, $model, $noteModel); } ?>
     </section>
 <?php endif; ?>

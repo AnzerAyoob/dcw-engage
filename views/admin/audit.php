@@ -21,7 +21,7 @@ $labels = [
     'password.reset'         => 'Password reset',
 ];
 
-// Colour of the action pill: grant (blue), revoke (red), change (amber), anything else (grey).
+// Colour of the action pill: grant (teal), revoke (coral), change (gold), anything else (slate).
 $tones = [
     'invite.created'          => 't-grant',
     'invite.accepted'         => 't-grant',
@@ -41,16 +41,17 @@ engage_header([
 ]);
 ?>
 <style>
-    /* Audit page only. Everything else comes from /assets/css/engage.css */
+    /* Audit page only. Everything else comes from engage.css and staff.css */
     .ctitle { margin: 0 0 6px; font-size: 20px; font-weight: 800; letter-spacing: -.02em; }
     .pill.t-grant  { --tone: var(--primary); }
-    .pill.t-revoke { --tone: #b91c1c; }
-    .pill.t-change { --tone: #b45309; }
-    .pill.t-plain  { --tone: #475569; }
+    .pill.t-revoke { --tone: var(--accent); }
+    .pill.t-change { --tone: var(--gold-dark); }
+    .pill.t-plain  { --tone: var(--slate); }
     .tbl td.when { white-space: nowrap; color: var(--muted); }
-    .tbl td.actor { font-weight: 600; }
+    .tbl td.actor { font-weight: 700; }
     .tbl td.detail { color: var(--muted); }
-    .tbl td.ip { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: #94a3b8; }
+    .tbl td.ip { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--muted); }
+    .dash { color: var(--muted); }
 </style>
 
 <section class="fcard wide">
@@ -83,7 +84,7 @@ engage_header([
                         <td class="when"><?= htmlspecialchars(date('j M Y, H:i', strtotime($entry['created_at']))) ?></td>
                         <td class="actor"><?= htmlspecialchars($entry['actor_email']) ?></td>
                         <td><span class="pill <?= $tone ?>"><?= htmlspecialchars($label) ?></span></td>
-                        <td><?= $entry['target'] !== null && $entry['target'] !== '' ? htmlspecialchars($entry['target']) : '<span style="color:#94a3b8">&mdash;</span>' ?></td>
+                        <td><?= $entry['target'] !== null && $entry['target'] !== '' ? htmlspecialchars($entry['target']) : '<span class="dash">&mdash;</span>' ?></td>
                         <td class="detail"><?= $entry['detail'] !== null ? htmlspecialchars($entry['detail']) : '' ?></td>
                         <td class="ip"><?= $entry['ip_address'] !== null ? htmlspecialchars($entry['ip_address']) : '' ?></td>
                     </tr>

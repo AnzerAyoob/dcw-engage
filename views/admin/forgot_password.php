@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../../includes/init.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/mailer.php';
+require_once __DIR__ . '/../../includes/engage_page.php';   // engage_asset(): versioned CSS links
 require_once __DIR__ . '/../../models/PasswordResetModel.php';
 
 /**
@@ -59,51 +60,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <meta charset="UTF-8">
     <link rel="icon" type="image/png" href="https://dcwwiki.org/dcwwiki/images/5/56/DCW_logo.png">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#061A1E">
     <meta name="robots" content="noindex, nofollow">
     <title>Reset password - DCW Engage</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-        :root { --primary-color: #106b9a; }
-        * { box-sizing: border-box; }
-        body {
-            font-family: 'Inter', -apple-system, sans-serif;
-            background: #f8fafc; color: #1e293b; margin: 0;
-            min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px;
-        }
-        .card {
-            background: #fff; width: 100%; max-width: 400px; padding: 40px 32px;
-            border-radius: 10px; border: 1px solid #e2e8f0; box-shadow: 0 4px 16px rgba(0,0,0,0.04);
-        }
-        h1 { font-size: 22px; margin: 0 0 6px; color: var(--primary-color); }
-        .sub { font-size: 14px; color: #64748b; margin: 0 0 28px; line-height: 1.6; }
-        label { display: block; font-size: 14px; font-weight: 600; margin-bottom: 6px; }
-        input[type=email] {
-            width: 100%; padding: 12px; margin-bottom: 18px; border: 1px solid #e2e8f0;
-            border-radius: 6px; font-family: inherit; font-size: 15px;
-        }
-        input:focus { outline: 2px solid var(--primary-color); outline-offset: -1px; border-color: transparent; }
-        button {
-            width: 100%; padding: 13px; background: var(--primary-color); color: #fff;
-            border: none; border-radius: 6px; font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;
-        }
-        button:hover { background: #0d587f; }
-        button:disabled { opacity: 0.6; cursor: default; }
-        .error {
-            background: #fef2f2; border: 1px solid #fecaca; color: #991b1b;
-            padding: 12px 14px; border-radius: 6px; font-size: 14px; margin-bottom: 20px;
-        }
-        .notice {
-            background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534;
-            padding: 14px 16px; border-radius: 6px; font-size: 14px; line-height: 1.6;
-        }
-        .foot { font-size: 13px; margin: 22px 0 0; text-align: center; }
-        .foot a { color: var(--primary-color); }
-    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="<?= htmlspecialchars(engage_asset('/assets/css/engage.css'), ENT_QUOTES) ?>">
+    <link rel="stylesheet" href="<?= htmlspecialchars(engage_asset('/assets/css/staff.css'), ENT_QUOTES) ?>">
 </head>
-<body>
-    <div class="card">
+<body class="admin signin">
+    <main class="signin-shell">
+        <section class="signin-brand">
+            <span class="s-logo"><img src="https://dcwwiki.org/dcwwiki/images/5/56/DCW_logo.png" alt="Deoband Community Wikimedia"></span>
+            <p class="kicker">Organizer workspace</p>
+            <h1>Locked <em>out?</em></h1>
+            <p class="lead">It happens. We will email a link that lets you choose a new password.</p>
+            <div class="stripe" aria-hidden="true"></div>
+        </section>
+
+        <div class="auth-card">
         <?php if ($sent): ?>
-            <h1>Check your email</h1>
+            <h2>Check your email</h2>
             <p class="sub">
                 If that address belongs to an organizer account, a reset link is
                 on its way. It expires in an hour and can be used once.
@@ -113,16 +89,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 your account was created with. Asking again sends a fresh link
                 and cancels the previous one.
             </div>
-            <p class="foot"><a href="/admin/login">Back to sign in</a></p>
+            <p class="alt"><a href="/admin/login">Back to sign in</a></p>
         <?php else: ?>
-            <h1>Reset your password</h1>
+            <h2>Reset your password</h2>
             <p class="sub">
                 Enter the email address on your organizer account and we will
                 send you a link to choose a new password.
             </p>
 
             <?php if ($error): ?>
-                <div class="error"><?= htmlspecialchars($error) ?></div>
+                <div class="alert error" role="alert"><?= htmlspecialchars($error) ?></div>
             <?php endif; ?>
 
             <form method="POST" autocomplete="off">
@@ -133,12 +109,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <input type="email" name="email" id="email" required autofocus
                        autocomplete="email" placeholder="you@dcwwiki.org">
 
-                <button type="submit">Send reset link</button>
+                <button type="submit" class="btn-primary">Send reset link</button>
             </form>
 
-            <p class="foot"><a href="/admin/login">Back to sign in</a></p>
+            <p class="alt"><a href="/admin/login">Back to sign in</a></p>
         <?php endif; ?>
-    </div>
+        </div>
+    </main>
+
+    <footer>
+        <div class="org">
+            <img src="https://dcwwiki.org/dcwwiki/images/5/56/DCW_logo.png" alt="">
+            <span>Deoband Community Wikimedia</span>
+        </div>
+        <div><a href="/">Back to DCW Engage</a></div>
+    </footer>
 
     <script>
         // Stops the obvious double click. The single-use submit token on the

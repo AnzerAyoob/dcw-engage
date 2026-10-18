@@ -296,6 +296,21 @@ $ico = [
     'archive' => '<polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/>',
 ];
 
+// The top-bar buttons, the same as on the workspace dashboard: who is signed in, owner shortcuts, sign out.
+// Sign out is a POST with a CSRF token (logout.php ignores anything else).
+ob_start(); ?>
+<span class="who"><?= $e(Auth::email()) ?></span>
+<?php if (Auth::isOwner()): ?>
+    <a href="/admin/team" class="chip-btn">Team</a>
+    <a href="/admin/audit" class="chip-btn">Audit log</a>
+<?php endif; ?>
+<form method="POST" action="/admin/logout">
+    <?= CSRF::getInputField() ?>
+    <button type="submit" class="chip-btn">Sign out</button>
+</form>
+<?php
+$topTools = ob_get_clean();
+
 engage_header([
     'title'   => 'Finance queue',
     'heading' => 'Finance queue',
@@ -304,7 +319,7 @@ engage_header([
     'slim'    => true,
     'crumbs'  => [],
     'back'    => ['Workspace', '/admin/dashboard'],
-    'tools'   => '<span class="who">' . $e(Auth::email()) . '</span>',
+    'tools'   => $topTools,
 ]);
 ?>
 <div class="adm-shell">
@@ -462,7 +477,7 @@ engage_header([
                         <?php if (empty($req['current_pack_ends_on'])): ?>
                             <strong style="color:var(--muted);">Not given</strong>
                         <?php else: ?>
-                            <strong<?= $req['current_pack_ends_on'] <= $todayIst ? ' style="color:#b91c1c;"' : '' ?>>
+                            <strong<?= $req['current_pack_ends_on'] <= $todayIst ? ' style="color:var(--accent);"' : '' ?>>
                                 <?= $e(date('j M Y', strtotime((string) $req['current_pack_ends_on']))) ?>
                                 <?= $req['current_pack_ends_on'] < $todayIst ? ' (already ended)' : ($req['current_pack_ends_on'] === $todayIst ? ' (ends today)' : '') ?>
                             </strong>

@@ -329,71 +329,8 @@ engage_header([
     'crumbs'  => [['Workspace', '/admin/dashboard'], [$form['title']]],
 ]);
 ?>
-<style>
-    /* Form manager only. Everything else comes from /assets/css/engage.css */
-    .sect { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 22px 24px; margin: 0 0 22px; box-shadow: 0 16px 34px rgba(15,23,42,.12); }
-    .sect select, .sect input[type=text], .sect input[type=datetime-local] {
-        padding: 8px 12px; background: #fff; color: var(--ink);
-        border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 14px;
-    }
-    .sect select:focus, .sect input[type=text]:focus, .sect input[type=datetime-local]:focus, .modal textarea:focus { outline: 2px solid var(--primary); outline-offset: -1px; border-color: transparent; }
-    .btn-ghost.sm, .btn-solid.sm { width: auto; padding: 7px 16px; font-size: 13.5px; }
-    a.btn-ghost { display: inline-block; text-decoration: none; }
-
-    .head-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px 24px; }
-    .head-row .meta { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; font-size: 14px; color: var(--muted); }
-    .head-row .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-    .head-row .controls form { margin: 0; }
-    .copy-btn {
-        display: inline-flex; align-items: center; gap: 6px; padding: 3px 12px; border-radius: 999px; cursor: pointer;
-        font: inherit; font-size: 12.5px; font-weight: 700; color: var(--primary); background: transparent; border: 1px solid var(--primary);
-    }
-    .copy-btn svg { width: 13px; height: 13px; }
-    .link-only-tag { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 700; color: #6d28d9; background: #f5f3ff; border: 1px solid #c4b5fd; }
-
-    /* Deadline */
-    .deadline-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px 24px; }
-    .deadline-row .state { margin: 0; font-size: 14.5px; color: var(--muted); }
-    .deadline-row .state strong { color: var(--ink); }
-    .deadline-row .state .closed-tag { display: inline-block; margin-right: 8px; padding: 2px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 700; color: #991b1b; background: #fef2f2; border: 1px solid #f87171; }
-    .deadline-row .state .open-tag { display: inline-block; margin-right: 8px; padding: 2px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 700; color: var(--leaf-dark); background: var(--leaf-tint); border: 1px solid var(--leaf); }
-    .deadline-row .dl-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-    .deadline-row .dl-controls form { margin: 0; display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-    .deadline-note { margin: 10px 0 0; font-size: 13px; color: var(--muted); }
-
-    .filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 0 0 16px; }
-    .bulkbar { display: none; flex-wrap: wrap; gap: 10px; align-items: center; margin: 0 0 14px; padding: 12px 14px; background: #fff; border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 4px 12px rgba(15,23,42,.08); }
-    .bulkbar #bulkCount { font-size: 14px; font-weight: 700; color: var(--muted); }
-    .bulkbar input[type=text] { width: 280px; max-width: 100%; }
-    .rowform { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 0 0 0 10px; }
-    .rowform select { padding: 6px 8px; font-size: 13px; }
-    .rowform input[type=text] { width: 170px; padding: 6px 10px; font-size: 13px; }
-    .tbl td.id { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 700; }
-    .tbl td.when { color: var(--muted); white-space: nowrap; }
-    .tbl td input[type=checkbox], .tbl th input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--primary); cursor: pointer; }
-    .tbl td input[type=checkbox]:disabled { cursor: not-allowed; }
-    .tbl td.act { white-space: nowrap; }
-    .draft-note { margin-left: 10px; font-size: 13px; color: var(--muted); }
-
-    .pill.status-New { --tone: var(--primary); }
-    .pill.status-Under-Review { --tone: #6d28d9; }
-    .pill.status-Draft { --tone: #b45309; }
-    .pill.status-Accepted { --tone: var(--leaf-dark); }
-    .pill.status-Rejected { --tone: var(--accent); }
-
-    /* Applicant data modal */
-    .modal { display: none; position: fixed; inset: 0; z-index: 50; padding: 40px 16px; overflow: auto; background: rgba(15,23,42,.55); }
-    .modal-content { position: relative; max-width: 720px; margin: 0 auto; padding: 28px; background: #fff; border-radius: 16px; box-shadow: 0 24px 60px rgba(15,23,42,.35); }
-    .close-btn { position: absolute; top: 10px; right: 18px; font-size: 30px; line-height: 1; color: var(--muted); cursor: pointer; }
-    .close-btn:hover { color: var(--ink); }
-    .modal h2 { margin: 0 0 18px; color: var(--primary); font-size: 22px; font-weight: 800; }
-    .modal h3 { margin: 0 0 12px; color: var(--primary); font-size: 17px; font-weight: 800; }
-    .modal hr { margin: 24px 0; border: none; border-top: 1px solid var(--border); }
-    .data-row { padding: 10px 0; border-bottom: 1px solid var(--border); }
-    .data-label { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
-    .data-value { margin-top: 2px; white-space: pre-wrap; word-break: break-word; }
-    .modal textarea { width: 100%; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 14.5px; }
-</style>
+<?php /* Styles for this page (.sect, .head-row, .deadline-row, .filters, .bulkbar, .rowform, the status pills and the
+         applicant data window) live in assets/css/staff.css. */ ?>
 
 <?php if ($success): ?><div class="alert ok"><?= htmlspecialchars($success) ?></div><?php endif; ?>
 <?php if ($deadlineError): ?><div class="alert error"><?= htmlspecialchars($deadlineError) ?></div><?php endif; ?>
@@ -539,7 +476,7 @@ engage_header([
         <table class="tbl">
             <thead>
                 <tr>
-                    <th><input type="checkbox" id="selectAll" onchange="toggleSelectAll(this)"></th>
+                    <th><input type="checkbox" id="selectAll" onchange="toggleSelectAll(this)" aria-label="Select all"></th>
                     <th>Tracking ID</th>
                     <th>Applicant name</th>
                     <th>Status</th>
@@ -570,7 +507,7 @@ engage_header([
                     ?>
                     <tr>
                         <td><input type="checkbox" class="row-checkbox" value="<?= (int) $app['id'] ?>"
-                                onchange="updateBulkBar()"
+                                onchange="updateBulkBar()" aria-label="Select this application"
                                 <?= $isDraft ? 'disabled title="The applicant is still working on this"' : '' ?>></td>
                         <td class="id"><?= htmlspecialchars($app['tracking_id'] ?? 'N/A') ?></td>
                         <td style="font-weight: 600;"><?= htmlspecialchars($app['applicant_name']) ?></td>
@@ -612,9 +549,9 @@ engage_header([
 </section>
 
 <!-- Data Viewer Modal -->
-<div id="dataModal" class="modal">
+<div id="dataModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
     <div class="modal-content">
-        <span class="close-btn" onclick="closeModal()">&times;</span>
+        <button type="button" class="close-btn" aria-label="Close" onclick="closeModal()">&times;</button>
         <h2 id="modalTitle">Applicant data</h2>
         <div id="jsonViewer" class="data-grid"></div>
 
@@ -732,6 +669,11 @@ engage_header([
         }
     }
 
+    // Esc closes the applicant window
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') closeModal();
+    });
+
     function copyToClipboard(text, btn) {
         navigator.clipboard.writeText(text).then(() => {
             // Only the label changes, so the icon stays.
@@ -744,7 +686,7 @@ engage_header([
             setTimeout(() => {
                 label.innerText = originalText;
                 btn.style.background = "transparent";
-                btn.style.color = "var(--primary)";
+                btn.style.color = "var(--primary-dark)";
                 btn.style.borderColor = "var(--primary)";
             }, 2000);
         }).catch(err => {

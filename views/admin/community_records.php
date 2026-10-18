@@ -112,28 +112,10 @@ engage_header([
 ]);
 ?>
 <style>
-    .sect { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 20px 22px; margin: 0 0 18px; box-shadow: 0 6px 18px rgba(15,23,42,.06); }
-    .sect > h3:first-child { margin: 0 0 12px; font-size: 15px; font-weight: 800; }
-    .sect select, .sect input[type=text], .sect input[type=date], .sect textarea { padding: 8px 12px; background: #fff; color: var(--ink); border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 14px; }
-    .sect textarea { width: 100%; box-sizing: border-box; }
-    .rv-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 18px; border-bottom: 2px solid var(--border); }
-    .rv-tab { margin-bottom: -2px; padding: 10px 18px; border-bottom: 3px solid transparent; font-size: 15px; font-weight: 700; color: var(--muted); text-decoration: none; }
-    .rv-tab.on { color: var(--primary-dark); border-bottom-color: var(--primary); }
-    .rv-back { display: inline-block; margin: 0 0 14px; font-size: 14px; font-weight: 600; color: var(--primary); text-decoration: none; }
-    .idform { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 12px; }
-    .idform input[type=text] { flex: 1 1 200px; min-width: 0; }
-    .idform form, form.inline { display: inline; margin: 0; }
+    /* Community records only. Shared pieces (.sect, .tag, .fields, .idform, .hint, tabs) live in staff.css */
     .tbl .btn-ghost, .tbl .btn-ok, .tbl .btn-bad { width: auto; padding: 4px 13px; font-size: 12.5px; }
     .tbl td.act { white-space: nowrap; text-align: right; }
     .tbl td .sub { display: block; color: var(--muted); font-size: 12.5px; }
-    .hint { color: var(--muted); font-size: 13px; margin: 6px 0 0; }
-    .tag { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; border: 1px solid var(--border); }
-    .tag.ok { color: #047857; background: #ecfdf5; border-color: #a7f3d0; }
-    .tag.warn { color: #92400e; background: #fffbeb; border-color: #fcd34d; }
-    .tag.bad { color: #991b1b; background: #fef2f2; border-color: #fca5a5; }
-    .fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
-    .fields label { display: block; font-size: 13px; font-weight: 700; color: var(--muted); margin-bottom: 4px; }
-    .fields input { width: 100%; box-sizing: border-box; }
 </style>
 
 <?php if ($flash): ?><div class="alert ok"><?= $h($flash) ?></div><?php endif; ?>
@@ -161,7 +143,7 @@ engage_header([
             <form method="POST"><?= CSRF::getInputField() ?>
                 <input type="hidden" name="session_id" value="<?= (int) $session['id'] ?>">
                 <textarea name="list" rows="8" required placeholder="Member IDs or Wikimedia usernames, one per line or separated by commas"><?= $h($previewText) ?></textarea>
-<p class="hint">To mark someone excused, put them on their own line: <code>Name | excused | reason</code>. A reason is required. You see a preview before anything is saved.</p>
+                <p class="hint">To mark someone excused, put them on their own line: <code>Name | excused | reason</code>. A reason is required. You see a preview before anything is saved.</p>
                 <div class="idform"><button name="action" value="attendance_preview" class="btn-solid">Preview</button></div>
             </form>
         <?php else:

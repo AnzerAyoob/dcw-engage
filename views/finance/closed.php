@@ -19,15 +19,29 @@ $closed = (new InternetSupportModel())->listClosedForFinance();
 
 $e = fn($s) => htmlspecialchars((string) $s);
 
+// The top-bar buttons, the same as on the workspace dashboard: who is signed in, owner shortcuts, sign out.
+// Sign out is a POST with a CSRF token (logout.php ignores anything else).
+ob_start(); ?>
+<span class="who"><?= $e(Auth::email()) ?></span>
+<?php if (Auth::isOwner()): ?>
+    <a href="/admin/team" class="chip-btn">Team</a>
+    <a href="/admin/audit" class="chip-btn">Audit log</a>
+<?php endif; ?>
+<form method="POST" action="/admin/logout">
+    <?= CSRF::getInputField() ?>
+    <button type="submit" class="chip-btn">Sign out</button>
+</form>
+<?php
+$topTools = ob_get_clean();
+
 engage_header([
     'title'   => 'Closed requests',
     'heading' => 'Closed requests',
-    'kicker'  => 'Finance',
     'lead'    => 'Paid reimbursements and closed internet support requests.',
+    'slim'    => true,
     'wide'    => true,
-    'crumbs'  => [['Home', '/'], ['Finance queue', '/finance?tab=' . $tab], ['Closed requests']],
-    'tools'   => '<span class="who">' . $e(Auth::email()) . '</span>'
-               . '<a class="chip-btn" href="/finance?tab=' . $e($tab) . '">&larr; Finance queue</a>',
+    'crumbs'  => [['Workspace', '/admin/dashboard'], ['Finance queue', '/finance?tab=' . $tab], ['Closed requests']],
+    'tools'   => $topTools,
 ]);
 ?>
 <div class="fcard wide">
