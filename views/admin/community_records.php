@@ -221,8 +221,8 @@ engage_header([
 
     <?php if ($tab === 'sessions'): ?>
         <?php if (!$live): ?>
-            <div class="alert error"><strong>Not live yet.</strong> <?= count($sessions) ?> of <?= CommunityRecordsModel::WINDOW ?> sessions logged.
-                Until <?= CommunityRecordsModel::WINDOW ?> are in, the internet support form still asks members the old self-declared questions.</div>
+            <div class="alert error"><strong>Only <?= count($sessions) ?> of <?= CommunityRecordsModel::WINDOW ?> sessions logged.</strong>
+                Attendance is always checked. Until <?= CommunityRecordsModel::WINDOW ?> sessions are in, no member qualifies through Conversation Hour attendance (technical contributors still qualify).</div>
         <?php else: ?>
             <p class="hint" style="margin:0 0 14px;">Internet support checks the <strong><?= CommunityRecordsModel::WINDOW ?> most recent</strong> sessions below (by date held).</p>
         <?php endif; ?>
@@ -245,7 +245,7 @@ engage_header([
             <?php foreach ($sessions as $i => $s): ?>
                 <tr>
                     <td><a class="dl" href="?session=<?= (int) $s['id'] ?>"><?= $h($s['title']) ?></a>
-                        <?php if ($live && $i < CommunityRecordsModel::WINDOW): ?><span class="tag ok">Counts for eligibility</span><?php endif; ?></td>
+                        <?php if ($i < CommunityRecordsModel::WINDOW): ?><span class="tag ok">Counts for eligibility</span><?php endif; ?></td>
                     <td><?= $h($fmt($s['held_on'])) ?></td>
                     <td><?= (int) $s['attendees'] ?><?= (int) $s['excused'] ? '<span class="sub">' . (int) $s['excused'] . ' excused</span>' : '' ?></td>
                     <td class="act"><a class="btn-ghost" href="?session=<?= (int) $s['id'] ?>">Open</a></td>
