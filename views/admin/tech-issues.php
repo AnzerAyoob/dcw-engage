@@ -62,25 +62,42 @@ $issue = $id !== '' ? $model->getByTracking($id) : false;
 $filter = in_array($_GET['show'] ?? '', ['resolved', 'all'], true) ? $_GET['show'] : 'open';
 $rows   = $issue ? [] : $model->listForStaff($filter);
 
+// The top-bar buttons, the same as on the workspace dashboard: who is signed in, owner shortcuts, sign out.
+// Sign out is a POST with a CSRF token (logout.php ignores anything else).
+ob_start(); ?>
+<span class="who"><?= htmlspecialchars((string) Auth::email()) ?></span>
+<?php if (Auth::isOwner()): ?>
+    <a href="/admin/team" class="chip-btn">Team</a>
+    <a href="/admin/audit" class="chip-btn">Audit log</a>
+<?php endif; ?>
+<form method="POST" action="/admin/logout">
+    <?= CSRF::getInputField() ?>
+    <button type="submit" class="chip-btn">Sign out</button>
+</form>
+<?php
+$topTools = ob_get_clean();
+
 engage_header([
     'title'   => 'Reported problems',
     'heading' => 'Reported problems',
-    'kicker'  => 'Technical',
     'lead'    => 'Problems reported by members and team people. Reporters are shown only as "Member" or by team email.',
+    'slim'    => true,
     'wide'    => true,
     'crumbs'  => $issue
         ? [['Workspace', '/admin/dashboard'], ['Reported problems', '/admin/tech-issues'], [$issue['tracking_id']]]
         : [['Workspace', '/admin/dashboard'], ['Reported problems']],
+    'tools'   => $topTools,
 ]);
-tech_styles();
 tech_flash_html();
 ?>
 
 <?php if ($issue): ?>
     <?php $messages = $model->messages((int) $issue['id'], true); ?>
     <section class="fcard wide">
-        <h2 class="ctitle" style="margin:0 0 6px;font-size:20px;font-weight:800;"><?= htmlspecialchars($issue['title']) ?></h2>
-        <span class="pill" style="--tone: <?= htmlspecialchars(tech_status_tone($issue['status'])) ?>;"><?= htmlspecialchars($issue['status']) ?></span>
+        <div class="qhead">
+            <h3><?= htmlspecialchars($issue['title']) ?></h3>
+            <span class="pill" style="--tone: <?= htmlspecialchars(tech_status_tone($issue['status'])) ?>;"><?= htmlspecialchars($issue['status']) ?></span>
+        </div>
         <div class="issue-meta">
             <div><b>Reference</b><?= htmlspecialchars($issue['tracking_id']) ?></div>
             <div><b>Reported by</b><?= htmlspecialchars($issue['reporter_label']) ?><?= $issue['reporter_type'] === 'team' ? ' (team)' : '' ?></div>
@@ -96,10 +113,10 @@ tech_flash_html();
 
 <?php else: ?>
     <section class="fcard wide">
-        <div class="filters">
-            <a href="/admin/tech-issues" class="<?= $filter === 'open' ? 'on' : '' ?>">Open</a>
-            <a href="/admin/tech-issues?show=resolved" class="<?= $filter === 'resolved' ? 'on' : '' ?>">Resolved</a>
-            <a href="/admin/tech-issues?show=all" class="<?= $filter === 'all' ? 'on' : '' ?>">All</a>
+        <div class="tabs">
+            <a href="/admin/tech-issues" class="tab<?= $filter === 'open' ? ' on' : '' ?>">Open</a>
+            <a href="/admin/tech-issues?show=resolved" class="tab<?= $filter === 'resolved' ? ' on' : '' ?>">Resolved</a>
+            <a href="/admin/tech-issues?show=all" class="tab<?= $filter === 'all' ? ' on' : '' ?>">All</a>
         </div>
         <?php if (!$rows): ?>
             <div class="empty-note"><?= $filter === 'open' ? 'No open problems. Nothing needs you right now.' : 'Nothing to show here.' ?></div>
@@ -110,7 +127,7 @@ tech_flash_html();
                     <tbody>
                     <?php foreach ($rows as $r): ?>
                         <tr>
-                            <td><a class="ref" href="/admin/tech-issues?id=<?= htmlspecialchars(rawurlencode($r['tracking_id'])) ?>"><?= htmlspecialchars($r['tracking_id']) ?></a></td>
+                            <td><a class="dl" href="/admin/tech-issues?id=<?= htmlspecialchars(rawurlencode($r['tracking_id'])) ?>"><?= htmlspecialchars($r['tracking_id']) ?></a></td>
                             <td><?= htmlspecialchars($r['title']) ?><?= $r['last_sender'] === 'reporter' && $r['status'] !== 'Resolved' ? ' <span class="sub warn-text">New message</span>' : '' ?></td>
                             <td><?= htmlspecialchars($r['reporter_label']) ?></td>
                             <td><?= htmlspecialchars(TechIssueModel::CATEGORIES[$r['category']] ?? $r['category']) ?></td>
