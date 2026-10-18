@@ -125,7 +125,11 @@ $requests = array_merge($pending, $underReview);
 
 $h = fn($v) => htmlspecialchars((string) $v);
 
-/** One claim card: header, line items, and the decision form. */
+/**
+ * One claim card: header, line items, and the decision form.
+ * Uses the shared queue-card look (.qcard, .qhead, .qmeta, .tbl, .field, .btn-ok/.btn-bad/.btn-neutral) from
+ * assets/css/engage.css. A failed payment turns the card's edge crimson via --tone.
+ */
 function reimbursement_card(array $req, bool $failed, callable $h, InternalNoteModel $noteModel): void
 {
     // The amount box starts at the earlier approval (a re-approval after a failed payment), else the full claim.
@@ -133,12 +137,15 @@ function reimbursement_card(array $req, bool $failed, callable $h, InternalNoteM
     $prefillPaise = $req['approved_amount_paise'] !== null ? (int) $req['approved_amount_paise'] : $claimedPaise;
     $internalNotes = $noteModel->forRequest('reimbursement', (int) $req['id']);
     ?>
-    <section class="sect<?= $failed ? ' sect-failed' : '' ?>">
+    <section class="qcard"<?= $failed ? ' style="--tone: var(--accent);"' : '' ?>>
         <div class="qhead">
             <h3><?= $h($req['applicant_name']) ?></h3>
-            <span class="pill <?= $failed ? 'st-bad' : 'st-new' ?>"><?= $failed ? 'Payment failed' : 'Awaiting review' ?></span>
+            <span class="qamount">Claimed ₹<?= number_format($claimedPaise / 100, 2) ?></span>
+        </div>
+        <div class="qlinks">
+            <span class="pill" style="--tone: <?= $failed ? 'var(--accent)' : 'var(--primary)' ?>;"><?= $failed ? 'Payment failed' : 'Awaiting review' ?></span>
             <?php if (!$failed && empty($req['previously_eligible'])): ?>
-                <span class="pill st-wait">No prior acceptance or allowlist match</span>
+                <span class="pill" style="--tone: var(--amber, #b45309);">No prior acceptance or allowlist match</span>
             <?php endif; ?>
         </div>
         <p class="qmeta">
@@ -161,19 +168,19 @@ function reimbursement_card(array $req, bool $failed, callable $h, InternalNoteM
         <div class="tbl-wrap">
             <table class="tbl">
                 <thead>
-                    <tr><th>Category</th><th>Description</th><th class="r">Amount</th><th>Receipt</th></tr>
+                    <tr><th>Category</th><th>Description</th><th class="num">Amount</th><th>Receipt</th></tr>
                 </thead>
                 <tbody>
                 <?php foreach ($req['line_items'] as $item): ?>
                     <tr>
                         <td><?= $h($item['category']) ?></td>
                         <td><?= $h($item['description']) ?></td>
-                        <td class="r">₹<?= number_format($item['amount_paise'] / 100, 2) ?></td>
+                        <td class="num">₹<?= number_format($item['amount_paise'] / 100, 2) ?></td>
                         <td>
                             <?php if (!empty($item['receipt_path'])): ?>
                                 <a class="dl" href="/<?= $h($item['receipt_path']) ?>" target="_blank" rel="noopener">View</a>
                             <?php else: ?>
-                                <span style="color:#94a3b8;">None attached</span>
+                                <span class="sub">None attached</span>
                             <?php endif; ?>
                         </td>
                     </tr>
@@ -182,8 +189,6 @@ function reimbursement_card(array $req, bool $failed, callable $h, InternalNoteM
             </table>
         </div>
         <?php endif; ?>
-
-        <p class="total">Claimed <strong>₹<?= number_format($claimedPaise / 100, 2) ?></strong></p>
 
         <?php internal_notes_block('reimbursement', (int) $req['id'], $internalNotes, 'decision'); ?>
 
@@ -206,7 +211,7 @@ function reimbursement_card(array $req, bool $failed, callable $h, InternalNoteM
             <div class="actrow">
                 <button type="submit" name="decision" value="approve" class="btn-ok"><?= $failed ? 'Re-approve for payment' : 'Approve for payment' ?></button>
                 <button type="submit" name="decision" value="reject" class="btn-bad">Reject</button>
-                <button type="submit" name="decision" value="discard" class="btn-ghost"
+                <button type="submit" name="decision" value="discard" class="btn-neutral"
                         onclick="return confirm('Discard this request? No email will be sent to the applicant.');">Discard</button>
             </div>
         </form>
@@ -214,40 +219,31 @@ function reimbursement_card(array $req, bool $failed, callable $h, InternalNoteM
     <?php
 }
 
+// The top-bar buttons, the same as on the workspace dashboard: who is signed in, owner shortcuts, sign out.
+// Sign out is a POST with a CSRF token (logout.php ignores anything else).
+ob_start(); ?>
+<span class="who"><?= $h(Auth::email()) ?></span>
+<?php if (Auth::isOwner()): ?>
+    <a href="/admin/team" class="chip-btn">Team</a>
+    <a href="/admin/audit" class="chip-btn">Audit log</a>
+<?php endif; ?>
+<form method="POST" action="/admin/logout">
+    <?= CSRF::getInputField() ?>
+    <button type="submit" class="chip-btn">Sign out</button>
+</form>
+<?php
+$topTools = ob_get_clean();
+
 engage_header([
     'title'   => 'Reimbursement review',
     'heading' => 'Reimbursement review',
-    'kicker'  => 'Organizer workspace',
     'lead'    => 'Approve or reject claims, and for how much. Line items and receipts only, no payment details.',
-    'tools'   => '',
+    'slim'    => true,
     'wide'    => true,
     'crumbs'  => [['Workspace', '/admin/dashboard'], ['Reimbursement review']],
+    'tools'   => $topTools,
 ]);
 ?>
-<style>
-    /* Reimbursement review only. Everything else comes from /assets/css/engage.css */
-    .sect { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 22px 24px; margin: 0 0 22px; box-shadow: 0 16px 34px rgba(15,23,42,.12); }
-    .sect.sect-failed { border-color: #fecaca; background: #fffafa; }
-    .sect textarea { width: 100%; box-sizing: border-box; }
-    .qhead { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
-    .qhead h3 { margin: 0; }
-
-    .pill.st-new { --tone: var(--primary); }
-    .pill.st-wait { --tone: #b45309; }
-    .pill.st-bad { --tone: #b91c1c; }
-
-    .tbl th.r, .tbl td.r { text-align: right; white-space: nowrap; }
-    .total { margin: 14px 0 0; font-size: 15px; text-align: right; }
-    .total strong { font-size: 18px; }
-
-    .actform { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--border); }
-    .actform .field { margin-bottom: 12px; }
-    .actform .field input[type="text"] { width: 100%; box-sizing: border-box; }
-    .actrow { display: flex; flex-wrap: wrap; gap: 10px; }
-    .actrow button { width: auto; }
-
-    .failed-head { margin: 34px 0 6px; font-size: 20px; font-weight: 800; letter-spacing: -.02em; color: #b91c1c; }
-</style>
 
 <?php if ($message): ?><div class="alert ok"><?= $h($message) ?></div><?php endif; ?>
 <?php if ($error): ?><div class="alert error"><?= $h($error) ?></div><?php endif; ?>
@@ -259,8 +255,8 @@ engage_header([
 <?php foreach ($requests as $req) { reimbursement_card($req, false, $h, $noteModel); } ?>
 
 <?php if (!empty($paymentFailed)): ?>
-    <h2 class="failed-head">Payment failed: needs attention</h2>
-    <p class="intro">
+    <h2 class="sec-title" style="color: var(--accent);">Payment failed: needs attention</h2>
+    <p class="note">
         Finance tried to pay these and it didn't go through. Check the note below,
         fix the payment details if needed (the applicant may need to resubmit
         correct bank/UPI details), then re-approve or reject.
