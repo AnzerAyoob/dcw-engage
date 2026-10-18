@@ -1050,3 +1050,42 @@ table.ms-table { width: 100%; border-collapse: collapse; min-width: 720px; }
 .ms-table th, .ms-table td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); font-size: 14px; vertical-align: top; }
 .ms-table tr.wait td:first-child { box-shadow: inset 3px 0 0 var(--amber, #b45309); }
 .ms-tag { display: inline-block; margin-left: 6px; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; background: var(--accent-tint); color: var(--accent-dark); }
+
+/* ======================================================================
+   Member support: white card sections and the "waiting" label.
+   Used by member-support.php (the card wraps each section so nothing sits bare on the blue band).
+   ====================================================================== */
+.ms-card {
+    margin: 0 0 18px; padding: 20px 22px;
+    background: var(--card); border: 1.5px solid var(--border); border-radius: 16px;
+    box-shadow: 0 2px 0 var(--edge), var(--lift);
+}
+.ms-card .panel-head { margin-bottom: 14px; }
+.ms-table .ms-waiting { display: block; font-size: 12.5px; font-weight: 600; color: var(--amber, #b45309); }
+
+/* ======================================================================
+   Technical issues (report forms, reply thread, issue details).
+   These rules used to be printed inline by tech_styles() in includes/tech_issue_ui.php.
+   Labels, inputs and selects come from the shared .field rules; tables from .tbl; filters from .tabs.
+   ====================================================================== */
+.tech-form .field { max-width: 560px; margin-bottom: 14px; }
+.tech-form textarea { min-height: 130px; resize: vertical; }
+.fcard .tech-form .send { width: auto; padding: 12px 30px; }   /* outranks ".fcard button[type=submit]" (full width) */
+.chk { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; font-size: 14px; }
+
+.warn-text, .tbl .sub.warn-text { color: var(--amber, #b45309); font-weight: 600; }
+
+.thread { display: grid; gap: 10px; margin: 14px 0; }
+.msg { padding: 12px 14px; background: #fff; border: 1.5px solid var(--border); border-radius: 12px; }
+.msg.theirs { background: #F6F9FB; }
+.msg.internal { background: var(--gold-tint, #fffbeb); border-color: #F1C56B; }
+.msg .who { margin: 0 0 4px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.msg .txt { font-size: 14px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.issue-meta {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px 22px;
+    margin: 12px 0 16px; padding: 14px 16px; background: #F6F9FB; border-radius: 10px;
+    font-size: 14px; color: var(--ink);
+}
+.issue-meta div { min-width: 0; overflow-wrap: anywhere; }
+.issue-meta b { display: block; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
