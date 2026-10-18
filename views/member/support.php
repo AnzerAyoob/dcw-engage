@@ -71,19 +71,20 @@ if ($memberActive) {
     try {
         $verifiedUsername = (new MemberProfileModel())->verifiedUsername((string) $member['member_id']);
     } catch (Throwable $e) {
-        error_log('Engage support profile lookup failed: ' . $e->getMessage());
+        app_log('Engage support profile lookup failed: ' . $e->getMessage());
     }
 }
 
-// Conversation Hour attendance and the technical list are checked on the server.
+// Conversation Hour attendance and the technical list are ALWAYS checked on the server. If the
+// lookup fails, the form is not offered (fail closed): there is no self-declared fallback.
 $elig = null;
-$chLive = false;
+$chError = false;
 if ($memberActive && $verifiedUsername !== '') {
     try {
         $elig = (new CommunityRecordsModel())->eligibilityFor((string) $member['member_id'], $verifiedUsername);
-        $chLive = !empty($elig['live']);
     } catch (Throwable $e) {
-        error_log('Engage support eligibility lookup failed: ' . $e->getMessage());
+        app_log('Engage support eligibility lookup failed: ' . $e->getMessage());
+        $chError = true;
     }
 }
 
@@ -127,12 +128,16 @@ if ($action === 'submit_internet_request' && $type === 'internet') {
         $errors['system'] = "Support requests are for members with an active membership.";
     } elseif ($verifiedUsername === '') {
         $errors['system'] = "Please add and verify your Wikimedia username on your profile before requesting internet support.";
+    } elseif ($chError || $elig === null) {
+        $errors['system'] = "We couldn't check your Conversation Hour attendance right now. Please try again in a little while.";
     } else {
         try {
             $applicantName = trim($_POST['applicant_name'] ?? '');
 
             // Eligibility and narrative answers are validated inside the model,
             // so the rules live in one place.
+            app_log('Internet support submit: member=' . $member['member_id']
+                . ' attended=' . var_export($elig['attended_ch'] ?? null, true) . ' tech=' . var_export($elig['tech'] ?? null, true));
             $result = $internetModel->createRequest(
                 $verifiedEmail,
                 $applicantName,
@@ -144,21 +149,18 @@ if ($action === 'submit_internet_request' && $type === 'internet') {
                 $_POST['reason'] ?? '',
                 [
                     'wikimedia_username' => $verifiedUsername,   // from the verified profile, not the form
-                    'edits_80'           => $_POST['edits_80'] ?? '',
-                    'attended_ch'        => $chLive ? ($elig['attended_ch'] ? 'yes' : 'no') : ($_POST['attended_ch'] ?? ''),
-                    'tech_contributor'   => $chLive ? ($elig['tech'] ? 'yes' : 'no') : ($_POST['tech_contributor'] ?? ''),
+                    'member_id'          => (string) $member['member_id'],   // the model re-checks attendance with this
+                    'edits_80'           => $_POST['edits_80'] ?? '',   // the only self-declared answer; attendance and technical status come from staff records inside the model
                     'contributions'      => $_POST['contributions'] ?? '',
                     'plans'              => $_POST['plans'] ?? '',
                     'pack_ends_on'       => $_POST['pack_ends_on'] ?? '',
                 ]
             );
 
-            if ($chLive) {
-                try {
-                    (new CommunityRecordsModel())->saveSnapshot($result['tracking_id'], (string) $member['member_id'], $elig, (string) ($_POST['edits_80'] ?? ''));
-                } catch (Throwable $e) {
-                    app_log('Eligibility snapshot failed for ' . $result['tracking_id'] . ': ' . $e->getMessage());
-                }
+            try {
+                (new CommunityRecordsModel())->saveSnapshot($result['tracking_id'], (string) $member['member_id'], $elig, (string) ($_POST['edits_80'] ?? ''));
+            } catch (Throwable $e) {
+                app_log('Eligibility snapshot failed for ' . $result['tracking_id'] . ': ' . $e->getMessage());
             }
 
             require_once __DIR__ . '/../../includes/mailer.php';
@@ -315,16 +317,13 @@ if (!$memberActive) {
 
 // Internet support
 $maxAmountRupees = $internetSettings ? (int) ($internetSettings['max_amount_paise'] / 100) : 0;
-$eligibilityQuestions = [
-    'edits_80'         => 'Have you made 80+ edits to Wikimedia projects in the past month, without using automated tools like Depictor?',
-    'attended_ch'      => 'Have you attended the past 3 DCW Conversation Hours?',
-    'tech_contributor' => 'Are you actively contributing to DCW technical projects?',
+// Members only answer the edits question. Conversation Hours and technical status come from staff records.
+$askQuestions = [
+    'edits_80' => 'Have you made 80+ edits to Wikimedia projects in the past month, without using automated tools like Depictor?',
 ];
-// When the check is live, members only answer the edits question. The other two come from staff records.
-$askQuestions = $chLive ? ['edits_80' => $eligibilityQuestions['edits_80']] : $eligibilityQuestions;
-// Check is live and they can't qualify by either route (not on the technical list, and not at all
-// of the last sessions): ask nothing and block the form straight away. The server still re-checks.
-$chBlocked = $chLive && empty($elig['tech']) && empty($elig['attended_ch']);
+// They can't qualify by either route (not on the technical list, and not at all of the last 3
+// sessions): ask nothing and block the form straight away. The server still re-checks.
+$chBlocked = $elig !== null && empty($elig['tech']) && empty($elig['attended_ch']);
 if ($chBlocked) $askQuestions = [];
 
 // Internet support: the date picker for "when does your current pack end" uses the same window the
@@ -431,6 +430,11 @@ engage_header([
                     <a href="/member/profile" style="color:#991b1b;">profile</a>; a reviewer or coordinator will verify it,
                     and this form opens as soon as they have.
                 </div>
+            <?php elseif ($chError || $elig === null): ?>
+                <div class="alert error" style="margin:0;">
+                    <strong>We couldn't check your Conversation Hour attendance right now.</strong>
+                    Please try again in a little while.
+                </div>
             <?php else: ?>
             <form method="POST" action="/member/support?type=internet">
                 <?= CSRF::getInputField() ?>
@@ -447,7 +451,6 @@ engage_header([
                             </div>
                         </div>
                     <?php endforeach; ?>
-                    <?php if ($chLive): ?>
                         <div class="field">
                             <label>Conversation Hours (checked by us)</label>
                             <ul style="list-style:none; margin:6px 0 0; padding:0;">
@@ -461,13 +464,13 @@ engage_header([
                             <?php endforeach; ?>
                             </ul>
                             <span class="hint">Based on the 3 most recent Conversation Hours, matched to your Member ID and verified username.
-                                If this looks wrong, ask a reviewer to check the attendance record.</span>
+                                If this looks wrong, ask a reviewer to check the attendance record.
+                                <?= count($elig['sessions']) < CommunityRecordsModel::WINDOW ? ' Fewer than ' . CommunityRecordsModel::WINDOW . ' Conversation Hours have been logged so far, so attendance cannot count yet.' : '' ?></span>
                         </div>
                         <div class="field">
                             <label>Technical contributor (checked by us)</label>
                             <span><?= $elig['tech'] ? '&#10003; You are on the technical contributors list.' : 'You are not on the technical contributors list.' ?></span>
                         </div>
-                    <?php endif; ?>
                     <div id="ineligible-note" class="alert error" style="display:<?= $chBlocked ? 'block' : 'none' ?>;">
                         Based on your answers, you're not eligible for support right now. You need 80+ manual edits
                         in the past month and attendance at the last 3 Conversation Hours, or active contribution
@@ -561,11 +564,11 @@ engage_header([
                     var note = document.getElementById('ineligible-note');
                     var submit = form.querySelector('button[type="submit"]');
                     function val(n) { var el = form.querySelector('input[name="' + n + '"]:checked'); return el ? el.value : ''; }
-                    var CH = <?= json_encode($chLive ? ['attended' => (bool) $elig['attended_ch'], 'tech' => (bool) $elig['tech']] : null) ?>;
+                    var CH = <?= json_encode(['attended' => (bool) ($elig['attended_ch'] ?? false), 'tech' => (bool) ($elig['tech'] ?? false)]) ?>;
                     function update() {
                         var e = val('edits_80');
-                        var a = CH ? (CH.attended ? 'yes' : 'no') : val('attended_ch');
-                        var t = CH ? (CH.tech ? 'yes' : 'no') : val('tech_contributor');
+                        var a = CH.attended ? 'yes' : 'no';
+                        var t = CH.tech ? 'yes' : 'no';
                         var blocked = e && a && t && !(t === 'yes' || (e === 'yes' && a === 'yes'));
                         note.style.display = blocked ? 'block' : 'none';
                         submit.disabled = !!blocked;
