@@ -14,6 +14,9 @@ require_once __DIR__ . '/../../models/MemberTicketModel.php';
  * Role check: DCW Support or owner. DCW Support never sees conversations flagged about_staff;
  * that is enforced in MemberTicketModel's queries, so a guessed ID returns "not found".
  * The audit log records who did what, never what was written.
+ *
+ * Design: same shell as the workspace dashboard (slim band, who + sign-out in the top bar, white cards on the
+ * overlap). The .ms-* styles live in assets/css/engage.css; this file prints no <style> of its own.
  */
 requireRole([MemberTicketModel::SUPPORT_ROLE, 'owner']);
 
@@ -82,6 +85,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     header('Location: ' . $self . '?id=' . $pid); exit;
 }
 
+// The top-bar buttons, the same as on the workspace dashboard: who is signed in, owner shortcuts, sign out.
+// Sign out is a POST with a CSRF token (logout.php ignores anything else).
+ob_start(); ?>
+<span class="who"><?= htmlspecialchars((string) Auth::email()) ?></span>
+<?php if ($isOwner): ?>
+    <a href="/admin/team" class="chip-btn">Team</a>
+    <a href="/admin/audit" class="chip-btn">Audit log</a>
+<?php endif; ?>
+<form method="POST" action="/admin/logout">
+    <?= CSRF::getInputField() ?>
+    <button type="submit" class="chip-btn">Sign out</button>
+</form>
+<?php
+$topTools = ob_get_clean();
+
 $id = isset($_GET['id']) ? (int) $_GET['id'] : 0;
 
 // ---------------------------------------------------------------- one conversation
@@ -102,15 +120,15 @@ if ($id > 0) {
     engage_header([
         'title'   => $ticket['tracking_id'],
         'heading' => (string) $ticket['subject'],
-        'kicker'  => MemberTicketModel::SUPPORT_LABEL . ' · ' . $label,
-        'lead'    => $ticket['tracking_id'] . ' · started ' . ms_date($ticket['created_at']),
+        'lead'    => $ticket['tracking_id'] . ' · ' . $label . ' · started ' . ms_date($ticket['created_at']),
+        'slim'    => true,
         'wide'    => true,
         'crumbs'  => [['Workspace', '/admin/dashboard'], [MemberTicketModel::SUPPORT_LABEL, $self], [$ticket['tracking_id']]],
+        'tools'   => $topTools,
     ]);
-    echo ms_styles();
     echo ms_flash_html();
     ?>
-        <section class="panel">
+        <section class="ms-card">
             <div class="panel-head">
                 <span class="pill" style="--tone: <?= ms_e(ms_tone((string) $ticket['status'])) ?>;"><?= ms_e($ticket['status']) ?></span>
                 <?php if (!empty($ticket['about_staff'])): ?><span class="ms-tag">About the team · owners only</span><?php endif; ?>
@@ -131,7 +149,7 @@ if ($id > 0) {
             </div>
         </section>
 
-        <section class="panel">
+        <section class="ms-card">
             <div class="panel-head">
                 <h2>Reply</h2>
                 <p>The member gets an email that something is waiting. The email never contains your message.</p>
@@ -145,11 +163,11 @@ if ($id > 0) {
                     <input type="checkbox" id="internal" name="internal" value="1">
                     <span>Internal note only. The member will not see it and will not be emailed.</span>
                 </label>
-                <div class="ms-actions"><button type="submit" class="btn-pill">Send</button></div>
+                <div class="ms-actions"><button type="submit" class="btn-ok">Send</button></div>
             </form>
         </section>
 
-        <section class="panel">
+        <section class="ms-card">
             <div class="panel-head"><h2>Manage</h2></div>
             <form method="post" action="<?= ms_e($self) ?>" class="ms-form ms-filters">
                 <?= ms_csrf_field() ?>
@@ -161,7 +179,7 @@ if ($id > 0) {
                         <option value="<?= ms_e($s) ?>"<?= $s === $ticket['status'] ? ' selected' : '' ?>><?= ms_e($s) ?></option>
                     <?php endforeach; ?>
                 </select>
-                <button type="submit" class="btn-pill">Update status</button>
+                <button type="submit" class="btn-neutral">Update status</button>
             </form>
 
             <form method="post" action="<?= ms_e($self) ?>" class="ms-form ms-filters">
@@ -175,7 +193,7 @@ if ($id > 0) {
                         <option value="<?= ms_e($a) ?>"<?= strtolower((string) $ticket['assigned_to']) === strtolower($a) ? ' selected' : '' ?>><?= ms_e($a) ?></option>
                     <?php endforeach; ?>
                 </select>
-                <button type="submit" class="btn-pill">Assign</button>
+                <button type="submit" class="btn-neutral">Assign</button>
             </form>
             <?php if ($closed): ?><p class="ms-meta">This conversation is closed. If the member writes again, a complaint or question reopens automatically.</p><?php endif; ?>
         </section>
@@ -199,15 +217,15 @@ $tickets = $model->listForStaff($isOwner, $fType, $fStatus, $fAssignee);
 engage_header([
     'title'   => MemberTicketModel::SUPPORT_LABEL,
     'heading' => MemberTicketModel::SUPPORT_LABEL,
-    'kicker'  => 'Organizer workspace',
     'lead'    => 'Complaints, suggestions and questions from members. Oldest activity first.',
+    'slim'    => true,
     'wide'    => true,
     'crumbs'  => [['Workspace', '/admin/dashboard'], [MemberTicketModel::SUPPORT_LABEL]],
+    'tools'   => $topTools,
 ]);
-echo ms_styles();
 echo ms_flash_html();
 ?>
-        <section class="panel">
+        <section class="ms-card">
             <form method="get" action="<?= ms_e($self) ?>" class="ms-form ms-filters">
                 <select name="type" aria-label="Type">
                     <option value="">All types</option>
@@ -229,7 +247,7 @@ echo ms_flash_html();
                         <option value="<?= ms_e($a) ?>"<?= $fAssignee === $a ? ' selected' : '' ?>><?= ms_e($a) ?></option>
                     <?php endforeach; ?>
                 </select>
-                <button type="submit" class="btn-pill">Filter</button>
+                <button type="submit" class="btn-neutral">Filter</button>
             </form>
 
             <?php if (empty($tickets)): ?>
@@ -245,7 +263,7 @@ echo ms_flash_html();
                         <tr class="<?= $waiting ? 'wait' : '' ?>">
                             <td><a href="<?= ms_e($self) ?>?id=<?= (int) $t['id'] ?>"><?= ms_e($t['tracking_id']) ?></a></td>
                             <td><?= ms_e(MemberTicketModel::LABELS[$t['type']] ?? $t['type']) ?><?= !empty($t['about_staff']) ? '<span class="ms-tag">Team</span>' : '' ?></td>
-                            <td><?= ms_e($t['subject']) ?><?= $waiting ? '<br><small style="color:#b45309;font-weight:600;">Waiting for a reply</small>' : '' ?></td>
+                            <td><?= ms_e($t['subject']) ?><?= $waiting ? '<small class="ms-waiting">Waiting for a reply</small>' : '' ?></td>
                             <td><?= !empty($t['hide_name']) ? '<em>Hidden</em>' : ms_e($t['member_name'] !== '' ? $t['member_name'] : $t['member_id']) ?></td>
                             <td><span class="pill" style="--tone: <?= ms_e(ms_tone((string) $t['status'])) ?>;"><?= ms_e($t['status']) ?></span></td>
                             <td><?= ms_e($t['assigned_to'] ?: '—') ?></td>
