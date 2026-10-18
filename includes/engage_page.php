@@ -24,8 +24,8 @@ function engage_asset(string $path): string {
  * Compact DCW Engage page shell.
  * Usage: engage_header([...]); ...content...; engage_footer();
  *
- * Staff pages (/admin, /finance) automatically get the "Ink & Teal" staff scheme: the <body> gets
- * class="admin" (see the end of assets/css/engage.css).
+ * Staff pages (/admin, /finance) automatically get the staff scheme ("Midnight Teal & Gold"): the <body> gets
+ * class="admin" and assets/css/staff.css is loaded after engage.css.
  *
  * Options:
  *   title    <title> text (" - DCW Engage" is added)
@@ -95,7 +95,7 @@ function engage_header(array $o) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="<?= $isStaff ? '#132A2E' : '#2E6599' ?>">
+    <meta name="theme-color" content="<?= $isStaff ? '#061A1E' : '#2E6599' ?>">
     <title><?= $e($title) ?> - DCW Engage</title>
     <?php ob_start(); require __DIR__ . '/favicon.php'; echo engage_strip_social_images(ob_get_clean()); ?>
     <?php if (!$isStaff) engage_social_meta([
@@ -105,8 +105,10 @@ function engage_header(array $o) {
         'image_alt'   => $o['image_alt'] ?? $heading,
     ]); ?>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <?php /* Versioned by file modification time: edits to engage.css show up at once, never stuck in a cache. */ ?>
+    <?php /* Versioned by file modification time: edits to the CSS show up at once, never stuck in a cache. */ ?>
     <link rel="stylesheet" href="<?= $e(engage_asset('/assets/css/engage.css')) ?>">
+    <?php /* Staff pages (/admin, /finance) add the staff scheme on top of the shared design system. */ ?>
+    <?php if ($isStaff): ?><link rel="stylesheet" href="<?= $e(engage_asset('/assets/css/staff.css')) ?>"><?php endif; ?>
 </head>
 <body<?= $isStaff ? ' class="admin"' : '' ?>>
 <header class="<?= $e($heroClass) ?>">
@@ -395,13 +397,18 @@ function engage_footer() {
     ?>
 </main>
 <style>
-    /* Site footer. Self-contained so it works on every page; colors come from the tokens in engage.css.
+    /* Site footer. Self-contained so it works on every page; colors come from the tokens in engage.css
+       (and staff.css on staff pages).
        The top edge is a three-color stripe taken from the DCW logo: blue, crimson, green. */
     footer.site-footer {
         display: block; text-align: left; margin: 48px 0 0; padding: 0;
         background: var(--bg); color: var(--ink);
         border-top: 4px solid transparent;
         border-image: linear-gradient(90deg, var(--primary) 0 40%, var(--accent) 40% 70%, var(--leaf) 70% 100%) 1;
+    }
+    /* Staff pages: the stripe is teal, gold and coral, to match the header band. */
+    body.admin footer.site-footer {
+        border-image: linear-gradient(90deg, var(--primary-light) 0 40%, var(--gold) 40% 70%, var(--accent) 70% 100%) 1;
     }
     .site-footer .sf-inner { max-width: 1100px; margin: 0 auto; padding: 40px 24px 20px; }
     .site-footer .sf-grid { display: grid; grid-template-columns: 1.4fr repeat(3, 1fr); gap: 32px 28px; }
