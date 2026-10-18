@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../../includes/init.php';
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../includes/engage_page.php';   // engage_asset(): versioned CSS links
 
 // Where to land after a successful sign in.
 $next = $_GET['next'] ?? $_POST['next'] ?? '';
@@ -39,21 +40,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <meta charset="UTF-8">
     <?php require __DIR__ . '/../../includes/favicon.php'; ?>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#0c567a">
+    <meta name="theme-color" content="#061A1E">
     <meta name="robots" content="noindex, nofollow">
     <title>Organizer sign in - DCW Engage</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/assets/css/engage.css?v=1">
+    <link rel="stylesheet" href="<?= htmlspecialchars(engage_asset('/assets/css/engage.css'), ENT_QUOTES) ?>">
+    <link rel="stylesheet" href="<?= htmlspecialchars(engage_asset('/assets/css/staff.css'), ENT_QUOTES) ?>">
 </head>
-<body>
-    <header class="hero">
-        <img class="logo" src="https://dcwwiki.org/dcwwiki/images/5/56/DCW_logo.png" alt="Deoband Community Wikimedia">
-        <p class="kicker">Organizer workspace</p>
-        <h1>DCW Engage</h1>
-        <p class="lead">Sign in to review applications, memberships and support requests.</p>
-    </header>
+<body class="admin signin">
+    <main class="signin-shell">
+        <section class="signin-brand">
+            <span class="s-logo"><img src="https://dcwwiki.org/dcwwiki/images/5/56/DCW_logo.png" alt="Deoband Community Wikimedia"></span>
+            <p class="kicker">Organizer workspace</p>
+            <h1>DCW <em>Engage</em></h1>
+            <p class="lead">Sign in to review applications, memberships and support requests.</p>
+            <div class="stripe" aria-hidden="true"></div>
+        </section>
 
-    <main class="wrap cards-wrap">
         <div class="auth-card">
             <h2>Sign in</h2>
             <p class="sub">Use the email and password for your organizer account.</p>
