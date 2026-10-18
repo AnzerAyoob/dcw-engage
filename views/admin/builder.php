@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../../includes/init.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/require_role.php';
+require_once __DIR__ . '/../../includes/engage_page.php';
 require_once __DIR__ . '/../../models/FormModel.php';
 
 // Creating and editing forms (and their schemas): organizers and owners for ordinary forms.
@@ -172,21 +173,20 @@ if ($coordChapters) {
     $examples = array_map(fn($c) => 'membership-' . $c . ' or membership-renewal-' . $c . '-2027', $coordChapters);
     $slugHint = 'Membership forms for your chapters must start with: ' . implode('; ', $examples) . '.';
 }
+
+// Page shell: header band, staff stylesheet, noindex and the shared footer all come from engage_header()/engage_footer().
+engage_header([
+    'title'   => 'Visual form builder',
+    'heading' => isset($_GET['edit']) ? 'Edit form' : 'New form',
+    'kicker'  => 'Organizer workspace',
+    'lead'    => 'Build the questions, then save and publish.',
+    'tools'   => '',
+    'crumbs'  => [['Workspace', '/admin/dashboard'], ['Form builder']],
+]);
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <link rel="icon" type="image/png" href="https://dcwwiki.org/dcwwiki/images/5/56/DCW_logo.png">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin - Visual Form Builder</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/assets/css/admin.css?v=<?= filemtime(__DIR__ . '/../../assets/css/admin.css') ?>">
-</head>
-<body>
-    <div class="container">
-        <?php if ($success): ?><div class="alert-success"><?= $success ?></div><?php endif; ?>
-        <?php if ($error): ?><div class="alert-error"><?= $error ?></div><?php endif; ?>
+    <div class="builder">
+        <?php if ($success): ?><div class="alert ok"><?= $success ?></div><?php endif; ?>
+        <?php if ($error): ?><div class="alert error"><?= $error ?></div><?php endif; ?>
 
         <form id="builderForm" method="POST">
             <?= CSRF::getInputField() ?>
@@ -197,7 +197,7 @@ if ($coordChapters) {
             <div class="header-card">
                 <input type="text" class="field-title-input" id="form_title" placeholder="Form Title (e.g. Untitled Form)" required style="font-size: 28px !important; width: 100%;">
                 
-                <div id="description_toolbar" style="display:flex; gap:6px; margin-bottom:6px;">
+                <div id="description_toolbar" style="display:flex; gap:6px; margin-bottom:6px; flex-wrap:wrap;">
                     <button type="button" class="btn-outline btn-sm" title="Bold" data-wiki-wrap="'''" style="font-weight:700;">B</button>
                     <button type="button" class="btn-outline btn-sm" title="Italic" data-wiki-wrap="''" style="font-style:italic;">I</button>
                     <button type="button" class="btn-outline btn-sm" title="Link" data-wiki-link="1">Link</button>
@@ -207,35 +207,35 @@ if ($coordChapters) {
                     <button type="button" class="btn-outline btn-sm" title="Bullet list" data-wiki-list="*">&bull; List</button>
                     <button type="button" class="btn-outline btn-sm" title="Numbered list" data-wiki-list="#">1. List</button>
                 </div>
-                <textarea id="form_description" placeholder="Form Description (Optional)" style="width: 100%; padding: 12px; margin-bottom: 5px; border: 1px solid var(--border-color); border-radius: 6px; font-family: 'Inter', sans-serif; font-size: 14px; min-height: 140px; overflow-y: hidden; resize: vertical;"></textarea>
-                <span style="font-size: 13px; color: #64748b; margin-bottom: 20px; display:block;">Formatting supported: '''bold''', ''italic'', [https://example.com link text], == Large heading ==, === Medium heading === (each heading must start and end its own line), :/::/::: for indenting up to 3 levels, and */# for bullet/numbered lists (consecutive lines of the same marker group into one list) — use the buttons above or type wikitext directly.</span>
+                <textarea id="form_description" placeholder="Form Description (Optional)" style="width: 100%; padding: 12px; margin-bottom: 5px; border: 1.5px solid var(--border); border-radius: 10px; font-family: 'Inter', sans-serif; font-size: 14px; min-height: 140px; overflow-y: hidden; resize: vertical;"></textarea>
+                <span class="hint" style="margin-bottom: 20px;">Formatting supported: '''bold''', ''italic'', [https://example.com link text], == Large heading ==, === Medium heading === (each heading must start and end its own line), :/::/::: for indenting up to 3 levels, and */# for bullet/numbered lists (consecutive lines of the same marker group into one list) — use the buttons above or type wikitext directly.</span>
 
-                <input type="url" id="banner_image" placeholder="Banner Image URL (Optional, e.g. https://example.com/banner.jpg)" style="width: 100%; padding: 12px; margin-bottom: 20px; border: 1px solid var(--border-color); border-radius: 6px; font-family: 'Inter', sans-serif; font-size: 14px;">
+                <input type="url" id="banner_image" placeholder="Banner Image URL (Optional, e.g. https://example.com/banner.jpg)" style="width: 100%; padding: 12px; margin-bottom: 20px; border: 1.5px solid var(--border); border-radius: 10px; font-family: 'Inter', sans-serif; font-size: 14px;">
                 
                 <label>URL Slug (Identifier)</label>
                 <input type="text" name="form_type" id="form_type" required placeholder="e.g. fellowship-2026" style="margin-bottom: 0;">
-                <span style="font-size: 13px; color: #64748b; margin-top: 5px; display:block;">Users will access this form at: /&lt;slug&gt;</span>
+                <span class="hint">Users will access this form at: /&lt;slug&gt;</span>
                 <?php if ($slugHint): ?>
-                    <span style="font-size: 13px; color: #0369a1; margin-top: 5px; display:block;"><?= htmlspecialchars($slugHint) ?></span>
+                    <span class="hint b-slug-hint"><?= htmlspecialchars($slugHint) ?></span>
                 <?php endif; ?>
 
-                <label style="margin-top: 20px; display:block;">Alert Emails (Optional)</label>
+                <label style="margin-top: 20px;">Alert Emails (Optional)</label>
                 <input type="text" name="notify_emails" id="notify_emails" placeholder="e.g. clublead@dcwwiki.org, coordinator@dcwwiki.org" value="<?= htmlspecialchars($existingNotifyEmails, ENT_QUOTES) ?>" style="margin-bottom: 0;">
-                <span style="font-size: 13px; color: #64748b; margin-top: 5px; display:block;">Organizers notified when someone submits this form. Comma-separate multiple addresses. Leave blank for none.</span>
+                <span class="hint">Organizers notified when someone submits this form. Comma-separate multiple addresses. Leave blank for none.</span>
 
-                <label style="margin-top: 20px; display:block;">Deadline (Optional)</label>
+                <label style="margin-top: 20px;">Deadline (Optional)</label>
                 <?php /* No min when the saved deadline has already passed: the browser would refuse to save any other edit to a closed form. The server checks a CHANGED deadline is in the future. */ ?>
                 <input type="datetime-local" name="deadline_at" id="deadline_at" value="<?= htmlspecialchars($deadlineValue, ENT_QUOTES) ?>"<?= ($deadlineValue === '' || $deadlineValue >= $deadlineMin) ? ' min="' . htmlspecialchars($deadlineMin, ENT_QUOTES) . '"' : '' ?> style="margin-bottom: 0;">
-                <span style="font-size: 13px; color: #64748b; margin-top: 5px; display:block;">The form closes automatically at this time (IST, India Standard Time). Leave blank for no deadline. You can extend it later from the form's manager page.</span>
+                <span class="hint">The form closes automatically at this time (IST, India Standard Time). Leave blank for no deadline. You can extend it later from the form's manager page.</span>
 
                 <label style="margin-top: 20px; display:flex; align-items:center; gap:8px; cursor:pointer;">
-                    <input type="checkbox" name="unlisted" id="unlisted" value="1" <?= $unlistedValue ? 'checked' : '' ?> style="width:auto; margin:0;">
+                    <input type="checkbox" name="unlisted" id="unlisted" value="1" <?= $unlistedValue ? 'checked' : '' ?> style="margin:0;">
                     <span>Link only (do not list on the home page)</span>
                 </label>
-                <span style="font-size: 13px; color: #64748b; margin-top: 5px; display:block;">The form stays live and anyone with its link can open it, but it is left out of the public "Open programs" list and asked not to be indexed by search engines. Share the link only with the people who should fill it in.</span>
+                <span class="hint">The form stays live and anyone with its link can open it, but it is left out of the public "Open programs" list and asked not to be indexed by search engines. Share the link only with the people who should fill it in.</span>
             </div>
 
-            <div style="background: #e0f2fe; color: #0369a1; padding: 15px; border-radius: 6px; margin-bottom: 20px; border: 1px solid #bae6fd; font-size: 14px;">
+            <div class="b-notice">
                 <strong>Notice:</strong> An <em>Email Address</em> field is automatically added to the top of every form to support Magic Links. You do not need to create one below.
             </div>
 
@@ -249,9 +249,9 @@ if ($coordChapters) {
             </div>
 
             <!-- Floating Save Actions -->
-            <div class="floating-action" style="display:flex; gap:10px;">
-                <button type="button" class="btn-outline" id="preview_form_btn" style="background:#fff; color:#106b9a; border:1px solid #106b9a;">Preview</button>
-                <button type="submit" class="btn-primary" style="box-shadow: 0 10px 15px -3px rgba(16,107,154,0.3);">Save Form & Publish</button>
+            <div class="floating-action">
+                <button type="button" class="btn-outline" id="preview_form_btn">Preview</button>
+                <button type="submit" class="btn-primary">Save Form &amp; Publish</button>
             </div>
         </form>
 
@@ -270,5 +270,4 @@ if ($coordChapters) {
         const existingFormType = <?= isset($existingFormType) ? json_encode($existingFormType) : 'null' ?>;
     </script>
     <script src="/assets/js/builder.js?v=<?= filemtime(__DIR__ . '/../../assets/js/builder.js') ?>"></script>
-</body>
-</html>
+<?php engage_footer(); ?>
