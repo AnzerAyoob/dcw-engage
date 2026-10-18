@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../../includes/init.php';
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../includes/engage_page.php';
 require_once __DIR__ . '/../../models/FormModel.php';
 require_once __DIR__ . '/../../models/ApplicationModel.php';
 require_once __DIR__ . '/../../models/MemberModel.php';
@@ -206,46 +207,32 @@ function form_tile(array $icons, array $form): void
     </a>
     <?php
 }
-?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <?php require __DIR__ . '/../../includes/favicon.php'; ?>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#132A2E">
-    <meta name="robots" content="noindex, nofollow">
-    <title>Organizer workspace - DCW Engage</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/assets/css/engage.css?v=3">
-</head>
-<body class="admin">
-    <header class="hero slim">
-        <div class="topbar">
-            <a class="brand" href="/admin/dashboard">
-                <span class="brand-logo"><img src="https://dcwwiki.org/dcwwiki/images/5/56/DCW_logo.png" alt=""></span>
-                <span class="bname">DCW Engage</span>
-            </a>
-            <div class="tools">
-                <span class="who"><?= htmlspecialchars(Auth::email()) ?></span>
-                <?php /* Owner-only housekeeping lives up here, out of the way of the day-to-day work. */ ?>
-                <?php if ($canManageTeam): ?>
-                    <a href="/admin/team" class="chip-btn">Team</a>
-                    <a href="/admin/audit" class="chip-btn">Audit log</a>
-                <?php endif; ?>
-                <form method="POST" action="/admin/logout">
-                    <?= CSRF::getInputField() ?>
-                    <button type="submit" class="chip-btn">Sign out</button>
-                </form>
-            </div>
-        </div>
-        <div class="hero-copy">
-            <h1>Workspace</h1>
-            <p class="lead">Everything you can review, approve and manage, in one place.</p>
-        </div>
-    </header>
 
-    <main class="wrap wide cards-wrap">
+// The top-bar buttons. Owner-only housekeeping lives up here, out of the way of the day-to-day work.
+ob_start(); ?>
+<span class="who"><?= htmlspecialchars(Auth::email()) ?></span>
+<?php if ($canManageTeam): ?>
+    <a href="/admin/team" class="chip-btn">Team</a>
+    <a href="/admin/audit" class="chip-btn">Audit log</a>
+<?php endif; ?>
+<form method="POST" action="/admin/logout">
+    <?= CSRF::getInputField() ?>
+    <button type="submit" class="chip-btn">Sign out</button>
+</form>
+<?php
+$topTools = ob_get_clean();
+
+// engage_header() adds the staff stylesheet, the "admin" body class, noindex and the shared footer for /admin pages.
+engage_header([
+    'title'   => 'Organizer workspace',
+    'heading' => 'Workspace',
+    'lead'    => 'Everything you can review, approve and manage, in one place.',
+    'slim'    => true,
+    'wide'    => true,
+    'crumbs'  => [],
+    'tools'   => $topTools,
+]);
+?>
 
         <?php foreach ($techWaiting as $t): ?>
             <div class="action-banner" role="status">
@@ -390,46 +377,35 @@ function form_tile(array $icons, array $form): void
         </div>
         <?php endif; ?>
 
-    </main>
-
-    <footer>
-        <div class="org">
-            <img src="https://dcwwiki.org/dcwwiki/images/5/56/DCW_logo.png" alt="">
-            <span>Deoband Community Wikimedia</span>
-        </div>
-        <div class="foot-links">&copy; <?= date('Y') ?> · <a href="/">Public home page</a> · <a href="/admin/report-problem">Report a problem</a></div>
-    </footer>
-
-    <script>
-    // Vertical tabs: show one section at a time. The section is remembered in the address (#forms) so a
-    // refresh or a shared link opens the same tab. Arrow keys move between tabs.
-    (function () {
-        var tabs = [].slice.call(document.querySelectorAll('.vtab'));
-        var panels = [].slice.call(document.querySelectorAll('.vpanel'));
-        if (!tabs.length) return;
-        function show(id, focus) {
-            tabs.forEach(function (t) {
-                var on = t.getAttribute('data-tab') === id;
-                t.setAttribute('aria-selected', on ? 'true' : 'false');
-                t.tabIndex = on ? 0 : -1;
-                if (on && focus) t.focus();
-            });
-            panels.forEach(function (p) { p.hidden = p.id !== 'p-' + id; });
-            try { history.replaceState(null, '', '#' + id); } catch (e) {}
-        }
-        tabs.forEach(function (t, i) {
-            t.addEventListener('click', function () { show(t.getAttribute('data-tab')); });
-            t.addEventListener('keydown', function (e) {
-                var d = (e.key === 'ArrowDown' || e.key === 'ArrowRight') ? 1 : (e.key === 'ArrowUp' || e.key === 'ArrowLeft') ? -1 : 0;
-                if (!d) return;
-                e.preventDefault();
-                show(tabs[(i + d + tabs.length) % tabs.length].getAttribute('data-tab'), true);
-            });
+<script>
+// Vertical tabs: show one section at a time. The section is remembered in the address (#forms) so a
+// refresh or a shared link opens the same tab. Arrow keys move between tabs.
+(function () {
+    var tabs = [].slice.call(document.querySelectorAll('.vtab'));
+    var panels = [].slice.call(document.querySelectorAll('.vpanel'));
+    if (!tabs.length) return;
+    function show(id, focus) {
+        tabs.forEach(function (t) {
+            var on = t.getAttribute('data-tab') === id;
+            t.setAttribute('aria-selected', on ? 'true' : 'false');
+            t.tabIndex = on ? 0 : -1;
+            if (on && focus) t.focus();
         });
-        var start = (location.hash || '').replace('#', '');
-        var ids = tabs.map(function (t) { return t.getAttribute('data-tab'); });
-        show(ids.indexOf(start) > -1 ? start : ids[0]);
-    })();
-    </script>
-</body>
-</html>
+        panels.forEach(function (p) { p.hidden = p.id !== 'p-' + id; });
+        try { history.replaceState(null, '', '#' + id); } catch (e) {}
+    }
+    tabs.forEach(function (t, i) {
+        t.addEventListener('click', function () { show(t.getAttribute('data-tab')); });
+        t.addEventListener('keydown', function (e) {
+            var d = (e.key === 'ArrowDown' || e.key === 'ArrowRight') ? 1 : (e.key === 'ArrowUp' || e.key === 'ArrowLeft') ? -1 : 0;
+            if (!d) return;
+            e.preventDefault();
+            show(tabs[(i + d + tabs.length) % tabs.length].getAttribute('data-tab'), true);
+        });
+    });
+    var start = (location.hash || '').replace('#', '');
+    var ids = tabs.map(function (t) { return t.getAttribute('data-tab'); });
+    show(ids.indexOf(start) > -1 ? start : ids[0]);
+})();
+</script>
+<?php engage_footer(); ?>
