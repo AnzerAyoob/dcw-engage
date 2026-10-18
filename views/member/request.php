@@ -24,8 +24,8 @@ require_once __DIR__ . '/../../models/CommunityRecordsModel.php';
  * when the request is made. It is shown here read-only and is NOT part of what can be resubmitted,
  * so a member cannot swap in an unverified account by answering a reviewer.
  *
- * Conversation Hours / technical projects: once the staff-record check is live (CommunityRecordsModel::isLive),
- * those two answers are shown read-only and InternetSupportModel::resubmitDraft() keeps them as stored.
+ * Conversation Hours / technical projects: attendance and technical-contributor status always come from staff records,
+ * so those two answers are shown read-only and InternetSupportModel::resubmitDraft() keeps them as stored.
  */
 MemberSession::requireLogin();
 $member = MemberSession::current();
@@ -50,7 +50,7 @@ $reimbursement = $reimbursementModel = $reimbDraft = $postedReimb = null;
 $internet = $internetModel = $internetDraft = $postedDraft = null;
 $reimbursementThread = $internetThread = [];
 $error = $uploadMessage = '';
-$chLocked = false;   // true once the staff-record check is live: attended_ch / tech_contributor are read-only
+$chLocked = false;   // set true when a resubmit form is shown: attended_ch / tech_contributor are always read-only
 $action = $_POST['action'] ?? '';
 $isPost = $_SERVER['REQUEST_METHOD'] === 'POST';
 
@@ -198,9 +198,9 @@ if ($isRb) {
             foreach (['wikimedia_username', 'contributions', 'plans'] as $k) {
                 $internetDraft[$k] = (string) ($internetDraft[$k] ?? '');
             }
-            // Once the staff-record check is live these two answers are fixed (the model enforces it too).
+            // These two answers are always fixed (the model enforces it too).
             // The form shows them as read-only text, so keep them on screen if the form comes back with an error.
-            $chLocked = (new CommunityRecordsModel())->isLive();
+            $chLocked = true;
             $keep = [];
             if ($chLocked) {
                 foreach (['attended_ch', 'tech_contributor'] as $k) {

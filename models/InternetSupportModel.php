@@ -154,16 +154,22 @@ class InternetSupportModel {
      * approve a different amount); finance confirms the operator's real price
      * when doing the recharge (and may recharge a different amount).
      *
-     * Eligibility answers are self-declared too. Rule: an applicant who is
-     * actively contributing to DCW technical projects is eligible outright;
-     * everyone else needs BOTH 80+ manual edits in the past month AND
-     * attendance at the last 3 Conversation Hours.
+     * Eligibility rule: an applicant who is actively contributing to DCW technical
+     * projects is eligible outright; everyone else needs BOTH 80+ manual edits in the
+     * past month AND attendance at the last 3 Conversation Hours.
+     *
+     * The edits answer is self-declared. The Conversation Hour and technical answers are
+     * NEVER taken from the caller: they are always looked up here from the staff records using
+     * 'member_id', whatever the form posted. A caller that does not pass 'member_id' is
+     * refused, so no entry point can skip the check. With fewer than 3 sessions logged,
+     * nobody qualifies by attendance.
      *
      * @param string $email        the signed-in member's email
      * @param string $amountRupees e.g. "299" or "299.50"
      * @param mixed  $validityDays optional whole days, '' for none
      * @param array  $eligibility  keys: wikimedia_username (the member's VERIFIED username, from member_profile),
-     *                             edits_80, attended_ch, tech_contributor ('yes'|'no'),
+     *                             member_id (the signed-in member's Member ID; required),
+     *                             edits_80 ('yes'|'no'; attended_ch / tech_contributor are ignored: the staff records decide),
      *                             contributions, plans (free text), pack_ends_on ('YYYY-MM-DD': when the
      *                             applicant's current pack ends; required)
      * @throws \InvalidArgumentException on any validation failure
@@ -241,7 +247,7 @@ class InternetSupportModel {
             throw new \InvalidArgumentException('That doesn\'t look like a valid Wikimedia username. Enter the username only, without "User:" or a link.');
         }
 
-        // --- Eligibility (self-declared; reviewers can spot-check) ---
+        // --- Eligibility ---
         $yesNo = function ($key) use ($eligibility) {
             $v = $eligibility[$key] ?? '';
             return in_array($v, ['yes', 'no'], true) ? $v : null;
@@ -249,6 +255,18 @@ class InternetSupportModel {
         $edits80     = $yesNo('edits_80');
         $attendedCH  = $yesNo('attended_ch');
         $techContrib = $yesNo('tech_contributor');
+
+        // The Conversation Hour and technical answers ALWAYS come from the staff records, never from
+        // the caller. This runs here (not only on the page) so no entry point can get around it, and
+        // it fails closed: no Member ID, or a lookup error, means no request.
+        require_once __DIR__ . '/CommunityRecordsModel.php';
+        $memberId = strtoupper(trim((string) ($eligibility['member_id'] ?? '')));
+        if ($memberId === '') {
+            throw new \InvalidArgumentException('Please make internet support requests from the member support page while signed in.');
+        }
+        $check = (new CommunityRecordsModel())->eligibilityFor($memberId, trim((string) ($eligibility['wikimedia_username'] ?? '')));
+        $attendedCH  = !empty($check['attended_ch']) ? 'yes' : 'no';
+        $techContrib = !empty($check['tech']) ? 'yes' : 'no';
 
         if ($edits80 === null || $attendedCH === null || $techContrib === null) {
             throw new \InvalidArgumentException('Please answer all the eligibility questions.');
@@ -638,10 +656,6 @@ class InternetSupportModel {
      * whatever the form posts. (edits_80 stays editable: reviewers check it on the contributions link.)
      */
     private function withLockedEligibility($trackingId, $email, array $answers) {
-        require_once __DIR__ . '/CommunityRecordsModel.php';
-        if (!(new CommunityRecordsModel())->isLive()) {
-            return $answers;
-        }
         $stmt = $this->db->prepare(
             "SELECT attended_ch, tech_contributor FROM internet_requests
              WHERE tracking_id = :t AND email = :email AND status = 'Info Requested'"
