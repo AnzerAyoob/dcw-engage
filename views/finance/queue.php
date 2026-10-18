@@ -289,22 +289,49 @@ $tab = $requestedTab;
 $e = fn($s) => htmlspecialchars((string) $s);
 $todayIst = (new DateTimeImmutable('today', new DateTimeZone('Asia/Kolkata')))->format('Y-m-d');
 
+// Sidebar icons (24x24 stroke icons, same set as the workspace).
+$ico = [
+    'card'    => '<rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/>',
+    'wifi'    => '<path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/>',
+    'archive' => '<polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/>',
+];
+
 engage_header([
     'title'   => 'Finance queue',
     'heading' => 'Finance queue',
-    'kicker'  => 'Finance',
     'lead'    => 'Pay approved claims, recharge approved packs and check receipts.',
     'wide'    => true,
-    'crumbs'  => [['Home', '/'], ['Finance queue']],
-    'tools'   => '<span class="who">' . $e(Auth::email()) . '</span>'
-               . '<a class="chip-btn" href="/finance/closed?tab=' . $e($tab) . '">Closed requests &amp; receipts &rarr;</a>',
+    'slim'    => true,
+    'crumbs'  => [],
+    'back'    => ['Workspace', '/admin/dashboard'],
+    'tools'   => '<span class="who">' . $e(Auth::email()) . '</span>',
 ]);
 ?>
-<div class="fcard wide">
-    <nav class="tabs" aria-label="Queue">
-        <a class="tab<?= $tab === 'reimbursement' ? ' on' : '' ?>" href="/finance?tab=reimbursement">Reimbursements <span class="count"><?= $reimbursementCount ?></span></a>
-        <a class="tab<?= $tab === 'internet' ? ' on' : '' ?>" href="/finance?tab=internet">Internet support <span class="count"><?= $internetCount ?></span></a>
+<div class="adm-shell">
+
+    <nav class="vtabs" aria-label="Queue">
+        <a class="vtab<?= $tab === 'reimbursement' ? ' on' : '' ?>" href="/finance?tab=reimbursement"<?= $tab === 'reimbursement' ? ' aria-current="page"' : '' ?>>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><?= $ico['card'] ?></svg>
+            <span>Reimbursements</span>
+            <span class="vcount<?= $reimbursementCount === 0 ? ' zero' : '' ?>"><?= $reimbursementCount ?></span>
+        </a>
+        <a class="vtab<?= $tab === 'internet' ? ' on' : '' ?>" href="/finance?tab=internet"<?= $tab === 'internet' ? ' aria-current="page"' : '' ?>>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><?= $ico['wifi'] ?></svg>
+            <span>Internet support</span>
+            <span class="vcount<?= $internetCount === 0 ? ' zero' : '' ?>"><?= $internetCount ?></span>
+        </a>
+        <?php if ($tab === 'internet'): ?>
+            <a class="vsub" href="#recharge"><span>To recharge</span><span><?= count($rechargeQueue) ?></span></a>
+            <a class="vsub" href="#receipts"><span>Receipts to check</span><span><?= count($receiptQueue) ?></span></a>
+        <?php endif; ?>
+        <div class="vsep"></div>
+        <a class="vtab" href="/finance/closed?tab=<?= $e($tab) ?>">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><?= $ico['archive'] ?></svg>
+            <span>Closed requests</span>
+        </a>
     </nav>
+
+    <div class="adm-main">
 
     <?php if ($message): ?>
         <div class="alert ok">
@@ -320,8 +347,12 @@ engage_header([
     <?php if ($error): ?><div class="alert error"><?= $e($error) ?></div><?php endif; ?>
 
 <?php if ($tab === 'reimbursement'): ?>
+    <div class="panel-head">
+        <h2>Reimbursements</h2>
+        <p>Approved claims awaiting payment.</p>
+    </div>
     <p class="note">
-        Approved claims awaiting payment. Expense details aren't shown here; that review already happened.
+        Expense details aren't shown here; that review already happened.
         If receipts were attached, download them before marking a request paid, as they are deleted from the server afterwards.
         The amount shown is what the reviewer approved. If you pay a different amount, change it in the form and give a reason: the applicant is told.
     </p>
@@ -382,15 +413,21 @@ engage_header([
                         I have downloaded the receipts; OK to delete them from the server
                     </label>
                 <?php endif; ?>
-                <button type="submit" name="result" value="paid" class="btn-ok">Mark paid</button>
-                <button type="submit" name="result" value="failed" formnovalidate class="btn-bad">Payment failed</button>
-                <button type="submit" name="result" value="send_back" formnovalidate class="btn-bad" style="background:linear-gradient(135deg,#475569,#64748b); box-shadow:0 5px 14px rgba(71,85,105,.25);"
-                        onclick="return confirm('Send this request back to the reviewers? It leaves the finance queue until they approve it again. The applicant will NOT be emailed.');">Send back to review</button>
+                <div class="qactions">
+                    <button type="submit" name="result" value="paid" class="btn-ok">Mark paid</button>
+                    <button type="submit" name="result" value="failed" formnovalidate class="btn-bad">Payment failed</button>
+                    <button type="submit" name="result" value="send_back" formnovalidate class="btn-neutral"
+                            onclick="return confirm('Send this request back to the reviewers? It leaves the finance queue until they approve it again. The applicant will NOT be emailed.');">Send back to review</button>
+                </div>
             </form>
         </div>
     <?php endforeach; ?>
 
 <?php else: ?>
+    <div class="panel-head">
+        <h2>Internet support</h2>
+        <p>Recharges, then receipts to check.</p>
+    </div>
     <p class="note">
         Approved requests waiting for a recharge, then receipts waiting to be checked.
         Recharges are listed by the date the applicant's current pack ends, soonest first; older requests with no date come last.
@@ -398,7 +435,7 @@ engage_header([
         The amount shown is what the reviewer approved. If the operator's real price is different, enter what you actually recharged and give a reason: the applicant is told.
     </p>
 
-    <h2 class="sec-title">1. To recharge <span class="pill"><?= count($rechargeQueue) ?></span></h2>
+    <h2 class="sec-title" id="recharge">To recharge <span class="pill"><?= count($rechargeQueue) ?></span></h2>
     <?php if (empty($rechargeQueue)): ?><div class="empty-note">Nothing awaiting recharge.</div><?php endif; ?>
 
     <?php foreach ($rechargeQueue as $req): ?>
@@ -459,17 +496,19 @@ engage_header([
                     <input type="text" name="amount_note" maxlength="500" placeholder="Reason, only if this differs from the approved amount (the applicant sees it)">
                 <?php endif; ?>
                 <textarea name="notes" placeholder="Notes (required if recharge failed or sending back to review; the reviewers see them)"></textarea>
-                <?php if (!$req['phone_error']): ?>
-                    <button type="submit" name="result" value="done" class="btn-ok">Recharge done</button>
-                <?php endif; ?>
-                <button type="submit" name="result" value="failed" formnovalidate class="btn-bad">Recharge failed</button>
-                <button type="submit" name="result" value="send_back" formnovalidate class="btn-bad" style="background:linear-gradient(135deg,#475569,#64748b); box-shadow:0 5px 14px rgba(71,85,105,.25);"
-                        onclick="return confirm('Send this request back to the reviewers? It leaves the finance queue until they approve it again. The applicant will NOT be emailed.');">Send back to review</button>
+                <div class="qactions">
+                    <?php if (!$req['phone_error']): ?>
+                        <button type="submit" name="result" value="done" class="btn-ok">Recharge done</button>
+                    <?php endif; ?>
+                    <button type="submit" name="result" value="failed" formnovalidate class="btn-bad">Recharge failed</button>
+                    <button type="submit" name="result" value="send_back" formnovalidate class="btn-neutral"
+                            onclick="return confirm('Send this request back to the reviewers? It leaves the finance queue until they approve it again. The applicant will NOT be emailed.');">Send back to review</button>
+                </div>
             </form>
         </div>
     <?php endforeach; ?>
 
-    <h2 class="sec-title">2. Receipts to check <span class="pill" style="--tone:#c2410c;"><?= count($receiptQueue) ?></span></h2>
+    <h2 class="sec-title" id="receipts">Receipts to check <span class="pill" style="--tone:#c2410c;"><?= count($receiptQueue) ?></span></h2>
     <?php if (empty($receiptQueue)): ?><div class="empty-note">No receipts waiting.</div><?php endif; ?>
 
     <?php foreach ($receiptQueue as $req): ?>
@@ -511,11 +550,15 @@ engage_header([
                     <input type="checkbox" name="receipt_downloaded" value="1">
                     I have downloaded the receipt; OK to delete it from the server
                 </label>
-                <button type="submit" name="result" value="close" class="btn-ok">Verify &amp; close</button>
-                <button type="submit" name="result" value="bounce" class="btn-bad">Send receipt back</button>
+                <div class="qactions">
+                    <button type="submit" name="result" value="close" class="btn-ok">Verify &amp; close</button>
+                    <button type="submit" name="result" value="bounce" class="btn-bad">Send receipt back</button>
+                </div>
             </form>
         </div>
     <?php endforeach; ?>
 <?php endif; ?>
-</div>
+
+    </div><!-- /.adm-main -->
+</div><!-- /.adm-shell -->
 <?php engage_footer(); ?>

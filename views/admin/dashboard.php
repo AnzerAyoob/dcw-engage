@@ -88,7 +88,7 @@ if (!function_exists('review_hidden_form')) {
 
 // Applications waiting for a first decision (New or Submitted), across the program forms this person can open
 // (closed and test forms are left out, the same as in the review queue).
-// Shown as a count on the "Application review" card. Uses ApplicationModel::countAwaitingByForm();
+// Shown as a count on the "Application review" row. Uses ApplicationModel::countAwaitingByForm();
 // if that method is not added yet, or the query fails, the count is simply left out.
 $appsWaiting = 0;
 if ($canReviewApplications) {
@@ -116,7 +116,7 @@ if ($canReviewMembership) {
     } catch (Throwable $e) { $membershipWaiting = null; }
 }
 
-// The "Review" panel holds the two review queues. Everything else on the page is a smaller tile.
+// The "Review" tab holds the review queues. Everything else is its own tab.
 $showReviewPanel = $canReviewApplications || $canReviewMembership || $canManageRecords;
 $reviewIntro = ($canReviewApplications && $canReviewMembership)
     ? 'Decide on applications to our programs and on membership requests' . ($chapterLimited ? ' for your chapters' : '') . '.'
@@ -124,7 +124,7 @@ $reviewIntro = ($canReviewApplications && $canReviewMembership)
         ? 'Decide on applications to our programs, across every form in one list.'
         : 'Review new applications and renewals' . ($chapterLimited ? ' for your chapters' : '') . '.');
 
-// One panel for member conversations and the technical tools, so they are not three separate sections.
+// One tab for member conversations and the technical tools.
 $showSupportTech = $canWorkMemberSupport || $canWorkTech;
 
 // Inner SVG markup for the card icons (24x24 viewBox, stroke icons).
@@ -141,44 +141,36 @@ $icons = [
     'pulse'  => '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>',
 ];
 
-/**
- * Renders one compact tool tile. $badge (optional) replaces the arrow with a small pill, for a count that
- * should catch the eye, e.g. "5 open".
- */
-function workspace_tile(array $icons, string $tone, string $icon, string $title, string $desc, string $href, string $badge = ''): void
-{
-    ?>
-    <a class="tile" href="<?= htmlspecialchars($href) ?>" style="--tone: <?= htmlspecialchars($tone) ?>;">
-        <span class="tick"><svg viewBox="0 0 24 24" aria-hidden="true"><?= $icons[$icon] ?></svg></span>
-        <span><h3><?= htmlspecialchars($title) ?></h3><p><?= htmlspecialchars($desc) ?></p></span>
-        <?php if ($badge !== ''): ?>
-            <span class="pill badge-attn"><?= htmlspecialchars($badge) ?></span>
-        <?php else: ?>
-            <span class="arrow" aria-hidden="true">→</span>
-        <?php endif; ?>
-    </a>
-    <?php
-}
+// The vertical tabs, in order: [id, label, icon, number shown in a coral badge (0 = none)].
+$vtabs = [];
+if ($showReviewPanel) $vtabs[] = ['review',  'Review',               'inbox', (int) $appsWaiting + (int) $membershipWaiting];
+if ($canSeeSupport)   $vtabs[] = ['support', 'Volunteer support',    'card',  0];
+if ($showFormsGrid)   $vtabs[] = ['forms',   'Application forms',    'doc',   0];
+if ($showSupportTech) $vtabs[] = ['tech',    'Support & technical',  'chat',  (int) $techOpen];
 
 /**
- * Renders one large review card (the "Review" panel). $count: a number shows as a big figure
- * ("7 waiting"), 0 shows "All clear", null shows nothing (e.g. a count that could not be read).
+ * Renders one list row (one per line). $count: a number > 0 shows a coral "7 waiting" chip, 0 shows a green
+ * "All clear" chip, null shows nothing. $badge (optional text, e.g. "5 open") shows a coral chip instead.
  */
-function review_card(array $icons, string $tone, string $icon, string $title, string $desc, string $href, ?int $count = null, string $cta = 'Open'): void
+function lrow(array $icons, string $tone, string $icon, string $title, string $desc, string $href, ?int $count = null, string $badge = ''): void
 {
     ?>
-    <a class="rcard" href="<?= htmlspecialchars($href) ?>" style="--tone: <?= htmlspecialchars($tone) ?>;">
-        <span class="top">
-            <span class="tick"><svg viewBox="0 0 24 24" aria-hidden="true"><?= $icons[$icon] ?></svg></span>
-            <?php if ($count !== null && $count > 0): ?>
-                <span class="count"><strong><?= (int) $count ?></strong><span>waiting</span></span>
-            <?php elseif ($count === 0): ?>
-                <span class="count clear"><strong>&#10003; All clear</strong><span>nothing waiting</span></span>
-            <?php endif; ?>
+    <a class="lrow" href="<?= htmlspecialchars($href) ?>" style="--tone: <?= htmlspecialchars($tone) ?>;">
+        <span class="tick"><svg viewBox="0 0 24 24" aria-hidden="true"><?= $icons[$icon] ?></svg></span>
+        <span>
+            <h3><?= htmlspecialchars($title) ?></h3>
+            <p><?= htmlspecialchars($desc) ?></p>
         </span>
-        <h3><?= htmlspecialchars($title) ?></h3>
-        <p><?= htmlspecialchars($desc) ?></p>
-        <span class="go"><?= htmlspecialchars($cta) ?> <span aria-hidden="true">&rarr;</span></span>
+        <span class="lside">
+            <?php if ($badge !== ''): ?>
+                <span class="chip attn"><?= htmlspecialchars($badge) ?></span>
+            <?php elseif ($count !== null && $count > 0): ?>
+                <span class="chip attn"><?= (int) $count ?> waiting</span>
+            <?php elseif ($count === 0): ?>
+                <span class="chip clear">&#10003; All clear</span>
+            <?php endif; ?>
+            <span class="arrow" aria-hidden="true">&rarr;</span>
+        </span>
     </a>
     <?php
 }
@@ -221,57 +213,18 @@ function form_tile(array $icons, array $form): void
     <meta charset="UTF-8">
     <?php require __DIR__ . '/../../includes/favicon.php'; ?>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#2E6599">
+    <meta name="theme-color" content="#132A2E">
     <meta name="robots" content="noindex, nofollow">
     <title>Organizer workspace - DCW Engage</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/assets/css/engage.css?v=2">
-    <style>
-        .hero { padding-bottom: 44px; }
-        /* Wider tiles so titles and paths are not squeezed */
-        .tiles { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
-        @media (max-width: 640px) { .tiles { grid-template-columns: 1fr; } }
-
-        /* Large review cards */
-        .rcards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 18px; }
-        .rcard {
-            --tone: var(--primary); position: relative; overflow: hidden; display: flex; flex-direction: column; gap: 6px;
-            padding: 24px 24px 20px; text-decoration: none; color: inherit;
-            background: var(--card); border: 1px solid var(--border); border-radius: 18px;
-            box-shadow: 0 6px 18px rgba(15,23,42,.06);
-            transition: transform .18s, box-shadow .18s, border-color .18s;
-        }
-        .rcard::before { content: ''; position: absolute; inset: 0 0 auto 0; height: 5px; background: var(--tone); }
-        .rcard:hover { transform: translateY(-4px); box-shadow: 0 16px 34px rgba(15,23,42,.14); border-color: var(--tone); }
-        .rcard .top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
-        .rcard .tick { width: 50px; height: 50px; border-radius: 14px; display: grid; place-items: center; background: color-mix(in srgb, var(--tone) 14%, #fff); }
-        .rcard .tick svg { width: 24px; height: 24px; stroke: var(--tone); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-        .rcard .count { text-align: right; line-height: 1.1; }
-        .rcard .count strong { display: block; font-size: 38px; font-weight: 800; letter-spacing: -1px; color: var(--accent); }
-        .rcard .count span { display: block; margin-top: 2px; font-size: 11.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
-        .rcard .count.clear strong { font-size: 16px; letter-spacing: 0; padding-top: 10px; color: var(--leaf-dark, #3E7A53); }
-        .rcard h3 { margin: 0; font-size: 20px; font-weight: 800; letter-spacing: -.01em; }
-        .rcard p { margin: 0; flex: 1; color: var(--muted); font-size: 14.5px; }
-        .rcard .go { margin-top: 14px; color: var(--tone); font-weight: 700; font-size: 14.5px; }
-        .rcard:hover .go span { display: inline-block; transform: translateX(4px); transition: transform .15s; }
-        .wrap.cards-wrap { margin-top: 34px; }
-        .closed-forms { margin-top: 18px; }
-        .closed-forms summary { cursor: pointer; font-weight: 600; color: var(--muted); padding: 6px 0; }
-        .closed-forms .tiles { margin-top: 12px; }
-        /* Count badge on a tile: crimson from the logo, the one color that should catch the eye */
-        .pill.badge-attn { color: #fff; background: var(--accent); padding: 3px 12px; font-size: 12px; }
-        /* "New form" button in a panel heading */
-        .panel-head .head-act { margin-left: auto; text-decoration: none; white-space: nowrap; }
-        /* Quiet links at the bottom */
-        .foot-links a { color: var(--muted); }
-    </style>
+    <link rel="stylesheet" href="/assets/css/engage.css?v=3">
 </head>
-<body>
-    <header class="hero">
+<body class="admin">
+    <header class="hero slim">
         <div class="topbar">
             <a class="brand" href="/admin/dashboard">
-                <img src="https://dcwwiki.org/dcwwiki/images/5/56/DCW_logo.png" alt="">
-                <span>DCW Engage</span>
+                <span class="brand-logo"><img src="https://dcwwiki.org/dcwwiki/images/5/56/DCW_logo.png" alt=""></span>
+                <span class="bname">DCW Engage</span>
             </a>
             <div class="tools">
                 <span class="who"><?= htmlspecialchars(Auth::email()) ?></span>
@@ -286,9 +239,10 @@ function form_tile(array $icons, array $form): void
                 </form>
             </div>
         </div>
-        <p class="kicker">Organizer workspace</p>
-        <h1>Workspace</h1>
-        <p class="lead">Everything you can review, approve and manage, in one place.</p>
+        <div class="hero-copy">
+            <h1>Workspace</h1>
+            <p class="lead">Everything you can review, approve and manage, in one place.</p>
+        </div>
     </header>
 
     <main class="wrap wide cards-wrap">
@@ -301,117 +255,139 @@ function form_tile(array $icons, array $form): void
             </div>
         <?php endforeach; ?>
 
-        <?php if ($showReviewPanel): ?>
-            <section class="panel">
-                <div class="panel-head">
-                    <h2>Review</h2>
-                    <p><?= htmlspecialchars($reviewIntro) ?></p>
-                </div>
-                <div class="rcards">
-                    <?php
-                    if ($canReviewApplications) {
-                        review_card($icons, 'var(--primary)', 'inbox', 'Application review',
-                            'Responses to every program form, grouped by program. Accept, reject or send back.',
-                            '/admin/application-review', $appsWaiting, 'Open the queue');
-                    }
-                    if ($canReviewMembership) {
-                        review_card($icons, 'var(--accent)', 'people', 'Membership review',
-                            'New applications and renewals, the member list and membership cards.',
-                            '/admin/membership-review', $membershipWaiting, 'Open the queue');
-                    }
-                    if ($canManageRecords) {
-                        review_card($icons, 'var(--leaf-dark, #3E7A53)', 'check', 'Community records',
-                            'Log Conversation Hour attendance and keep the technical contributors list. Internet support reads from these.',
-                            '/admin/community-records', null, 'Open records');
-                    }
-                    ?>
-                </div>
-            </section>
-        <?php endif; ?>
+        <?php if (!$vtabs): ?>
+            <div class="empty-note">Nothing is assigned to your account yet. Ask an owner to give you a role.</div>
+        <?php else: ?>
+        <div class="adm-shell">
 
-        <?php if ($canSeeSupport): ?>
-            <section class="panel">
-                <div class="panel-head">
-                    <h2>Volunteer support</h2>
-                    <p>Reimbursements and internet support, from review to payment.</p>
-                    <div class="legend">
-                        <?php if ($canReviewAny): ?><span style="--tone:var(--leaf-dark, #3E7A53)"><i></i>Review</span><?php endif; ?>
-                        <?php if ($canProcessFinance): ?><span style="--tone:#b45309"><i></i>Finance</span><?php endif; ?>
+            <nav class="vtabs" role="tablist" aria-label="Workspace sections" aria-orientation="vertical">
+                <?php foreach ($vtabs as $i => [$id, $label, $icon, $num]): ?>
+                    <button type="button" class="vtab" role="tab" id="t-<?= $id ?>" data-tab="<?= $id ?>"
+                            aria-controls="p-<?= $id ?>" aria-selected="<?= $i === 0 ? 'true' : 'false' ?>" tabindex="<?= $i === 0 ? '0' : '-1' ?>">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><?= $icons[$icon] ?></svg>
+                        <span><?= htmlspecialchars($label) ?></span>
+                        <?php if ($num > 0): ?><span class="vcount"><?= (int) $num ?></span><?php endif; ?>
+                    </button>
+                <?php endforeach; ?>
+            </nav>
+
+            <div class="adm-main">
+
+                <?php if ($showReviewPanel): ?>
+                <section class="vpanel" id="p-review" role="tabpanel" aria-labelledby="t-review">
+                    <div class="panel-head">
+                        <h2>Review</h2>
+                        <p><?= htmlspecialchars($reviewIntro) ?></p>
                     </div>
-                </div>
-                <div class="tiles">
-                    <?php
-                    if ($canReviewReimbursements) {
-                        workspace_tile($icons, 'var(--leaf-dark, #3E7A53)', 'check', 'Reimbursement review',
-                            'Approve or reject claims. Line items and receipts only, no payment details.', '/admin/reimbursements/review');
-                    }
-                    if ($canReviewInternet) {
-                        workspace_tile($icons, 'var(--leaf-dark, #3E7A53)', 'wifi', 'Internet support review',
-                            'Judge reasons and packages. No phone numbers shown.', '/admin/internet-review');
-                    }
-                    if ($canProcessFinance) {
-                        workspace_tile($icons, '#b45309', 'card', 'Finance queue',
-                            'Pay claims, recharge numbers and check receipts, one tab for each.', '/finance');
-                        workspace_tile($icons, '#b45309', 'archive', 'Closed requests',
-                            'Paid and closed requests, with a receipt PDF for each.', '/finance/closed');
-                    }
-                    ?>
-                </div>
-            </section>
-        <?php endif; ?>
-
-        <?php if ($showFormsGrid): ?>
-        <section class="panel">
-            <div class="panel-head">
-                <h2>Application forms</h2>
-                <p><?= $canCreateForms
-                    ? 'Open and close the forms volunteers apply through, and review responses.'
-                    : 'Review responses to membership forms.' ?></p>
-                <?php if ($canCreateForms): ?>
-                    <a class="btn-ghost head-act" href="/admin/builder">+ New form</a>
+                    <div class="lrows">
+                        <?php
+                        if ($canReviewApplications) {
+                            lrow($icons, 'var(--primary)', 'inbox', 'Application review',
+                                'Responses to every program form, grouped by program. Accept, reject or send back.',
+                                '/admin/application-review', $appsWaiting);
+                        }
+                        if ($canReviewMembership) {
+                            lrow($icons, 'var(--accent)', 'people', 'Membership review',
+                                'New applications and renewals, the member list and membership cards.',
+                                '/admin/membership-review', $membershipWaiting);
+                        }
+                        if ($canManageRecords) {
+                            lrow($icons, 'var(--leaf-dark, #3E7A53)', 'check', 'Community records',
+                                'Log Conversation Hour attendance and keep the technical contributors list. Internet support reads from these.',
+                                '/admin/community-records');
+                        }
+                        ?>
+                    </div>
+                </section>
                 <?php endif; ?>
-            </div>
-            <?php if ($activeForms): ?>
-                <div class="tiles">
-                    <?php foreach ($activeForms as $form) form_tile($icons, $form); ?>
-                </div>
-            <?php else: ?>
-                <div class="empty-note">No forms are open right now.</div>
-            <?php endif; ?>
 
-            <?php if ($closedForms): ?>
-                <details class="closed-forms">
-                    <summary>Closed forms (<?= count($closedForms) ?>)</summary>
-                    <div class="tiles">
-                        <?php foreach ($closedForms as $form) form_tile($icons, $form); ?>
+                <?php if ($canSeeSupport): ?>
+                <section class="vpanel" id="p-support" role="tabpanel" aria-labelledby="t-support" hidden>
+                    <div class="panel-head">
+                        <h2>Volunteer support</h2>
+                        <p>Reimbursements and internet support, from review to payment.</p>
+                        <div class="legend">
+                            <?php if ($canReviewAny): ?><span style="--tone:var(--leaf-dark, #3E7A53)"><i></i>Review</span><?php endif; ?>
+                            <?php if ($canProcessFinance): ?><span style="--tone:#C96A12"><i></i>Finance</span><?php endif; ?>
+                        </div>
                     </div>
-                </details>
-            <?php endif; ?>
-        </section>
-        <?php endif; ?>
+                    <div class="lrows">
+                        <?php
+                        if ($canReviewReimbursements) {
+                            lrow($icons, 'var(--leaf-dark, #3E7A53)', 'check', 'Reimbursement review',
+                                'Approve or reject claims. Line items and receipts only, no payment details.', '/admin/reimbursements/review');
+                        }
+                        if ($canReviewInternet) {
+                            lrow($icons, 'var(--leaf-dark, #3E7A53)', 'wifi', 'Internet support review',
+                                'Judge reasons and packages. No phone numbers shown.', '/admin/internet-review');
+                        }
+                        if ($canProcessFinance) {
+                            lrow($icons, '#C96A12', 'card', 'Finance queue',
+                                'Pay claims, recharge numbers and check receipts, one tab for each.', '/finance');
+                            lrow($icons, '#C96A12', 'archive', 'Closed requests',
+                                'Paid and closed requests, with a receipt PDF for each.', '/finance/closed');
+                        }
+                        ?>
+                    </div>
+                </section>
+                <?php endif; ?>
 
-        <?php if ($showSupportTech): ?>
-            <section class="panel">
-                <div class="panel-head">
-                    <h2>Member support &amp; technical</h2>
-                    <p>Conversations from members, reported problems and health checks.</p>
-                </div>
-                <div class="tiles">
-                    <?php
-                    if ($canWorkMemberSupport) {
-                        workspace_tile($icons, 'var(--primary)', 'chat', 'DCW Support',
-                            'Read and answer member conversations. Replies are emailed as a notification only.', '/admin/member-support');
-                    }
-                    if ($canWorkTech) {
-                        workspace_tile($icons, 'var(--primary-dark)', 'alert', 'Reported problems',
-                            'Problems from members and the team. Reporters show only as "Member" or by team email.',
-                            '/admin/tech-issues', $techOpen > 0 ? $techOpen . ' open' : '');
-                        workspace_tile($icons, 'var(--primary-dark)', 'pulse', 'Diagnostics',
-                            'Read-only health checks: server, database, security and storage.', '/admin/tech-diagnostics');
-                    }
-                    ?>
-                </div>
-            </section>
+                <?php if ($showFormsGrid): ?>
+                <section class="vpanel" id="p-forms" role="tabpanel" aria-labelledby="t-forms" hidden>
+                    <div class="panel-head">
+                        <h2>Application forms</h2>
+                        <p><?= $canCreateForms
+                            ? 'Open and close the forms volunteers apply through, and review responses.'
+                            : 'Review responses to membership forms.' ?></p>
+                        <?php if ($canCreateForms): ?>
+                            <a class="btn-ghost head-act" href="/admin/builder">+ New form</a>
+                        <?php endif; ?>
+                    </div>
+                    <?php if ($activeForms): ?>
+                        <div class="tiles">
+                            <?php foreach ($activeForms as $form) form_tile($icons, $form); ?>
+                        </div>
+                    <?php else: ?>
+                        <div class="empty-note">No forms are open right now.</div>
+                    <?php endif; ?>
+
+                    <?php if ($closedForms): ?>
+                        <details class="closed-forms">
+                            <summary>Closed forms (<?= count($closedForms) ?>)</summary>
+                            <div class="tiles">
+                                <?php foreach ($closedForms as $form) form_tile($icons, $form); ?>
+                            </div>
+                        </details>
+                    <?php endif; ?>
+                </section>
+                <?php endif; ?>
+
+                <?php if ($showSupportTech): ?>
+                <section class="vpanel" id="p-tech" role="tabpanel" aria-labelledby="t-tech" hidden>
+                    <div class="panel-head">
+                        <h2>Member support &amp; technical</h2>
+                        <p>Conversations from members, reported problems and health checks.</p>
+                    </div>
+                    <div class="lrows">
+                        <?php
+                        if ($canWorkMemberSupport) {
+                            lrow($icons, 'var(--primary)', 'chat', 'DCW Support',
+                                'Read and answer member conversations. Replies are emailed as a notification only.', '/admin/member-support');
+                        }
+                        if ($canWorkTech) {
+                            lrow($icons, 'var(--primary-dark)', 'alert', 'Reported problems',
+                                'Problems from members and the team. Reporters show only as "Member" or by team email.',
+                                '/admin/tech-issues', null, $techOpen > 0 ? $techOpen . ' open' : '');
+                            lrow($icons, 'var(--primary-dark)', 'pulse', 'Diagnostics',
+                                'Read-only health checks: server, database, security and storage.', '/admin/tech-diagnostics');
+                        }
+                        ?>
+                    </div>
+                </section>
+                <?php endif; ?>
+
+            </div>
+        </div>
         <?php endif; ?>
 
     </main>
@@ -423,5 +399,37 @@ function form_tile(array $icons, array $form): void
         </div>
         <div class="foot-links">&copy; <?= date('Y') ?> · <a href="/">Public home page</a> · <a href="/admin/report-problem">Report a problem</a></div>
     </footer>
+
+    <script>
+    // Vertical tabs: show one section at a time. The section is remembered in the address (#forms) so a
+    // refresh or a shared link opens the same tab. Arrow keys move between tabs.
+    (function () {
+        var tabs = [].slice.call(document.querySelectorAll('.vtab'));
+        var panels = [].slice.call(document.querySelectorAll('.vpanel'));
+        if (!tabs.length) return;
+        function show(id, focus) {
+            tabs.forEach(function (t) {
+                var on = t.getAttribute('data-tab') === id;
+                t.setAttribute('aria-selected', on ? 'true' : 'false');
+                t.tabIndex = on ? 0 : -1;
+                if (on && focus) t.focus();
+            });
+            panels.forEach(function (p) { p.hidden = p.id !== 'p-' + id; });
+            try { history.replaceState(null, '', '#' + id); } catch (e) {}
+        }
+        tabs.forEach(function (t, i) {
+            t.addEventListener('click', function () { show(t.getAttribute('data-tab')); });
+            t.addEventListener('keydown', function (e) {
+                var d = (e.key === 'ArrowDown' || e.key === 'ArrowRight') ? 1 : (e.key === 'ArrowUp' || e.key === 'ArrowLeft') ? -1 : 0;
+                if (!d) return;
+                e.preventDefault();
+                show(tabs[(i + d + tabs.length) % tabs.length].getAttribute('data-tab'), true);
+            });
+        });
+        var start = (location.hash || '').replace('#', '');
+        var ids = tabs.map(function (t) { return t.getAttribute('data-tab'); });
+        show(ids.indexOf(start) > -1 ? start : ids[0]);
+    })();
+    </script>
 </body>
 </html>

@@ -385,72 +385,57 @@ $idGroups = function (array $mems): array {
 $scopeLine = $scope !== null
     ? ($scope ? 'Your chapters: ' . implode(', ', array_map(fn($c) => MemberModel::CHAPTER_NAMES[$c] ?? $c, $scope)) : 'No chapters are assigned to you yet. Ask an owner.')
     : '';
-$crumbs = $app
-    ? [['Workspace', '/admin/dashboard'], ['Membership review', '/admin/membership-review'], [$app['applicant_name'] ?: $app['email']]]
-    : [['Workspace', '/admin/dashboard'], ['Membership review']];
 
 engage_header([
     'title'   => 'Membership review',
     'heading' => 'Membership review',
-    'kicker'  => 'Organizer workspace',
     'lead'    => $scopeLine,
     'tools'   => '',
     'wide'    => true,
-    'crumbs'  => $crumbs,
+    'slim'    => true,
+    'crumbs'  => [],
+    'back'    => $app ? ['Membership review', '/admin/membership-review'] : ['Workspace', '/admin/dashboard'],
 ]);
 ?>
 <style>
     /* Membership review only. Everything else comes from /assets/css/engage.css */
 
     /* ---- Cards ---- */
-    .sect { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 20px 22px; margin: 0 0 18px; box-shadow: 0 6px 18px rgba(15,23,42,.06); }
+    .sect { background: var(--card); border: 1.5px solid var(--border); border-radius: 16px; padding: 20px 22px; margin: 0 0 18px; box-shadow: 0 2px 0 var(--edge), var(--lift); }
     .sect > h3:first-child, .sect .card-title { margin: 0 0 12px; font-size: 15px; font-weight: 800; letter-spacing: -.005em; }
     .sect select, .sect input[type=text], .sect input[type=search] {
         padding: 8px 12px; background: #fff; color: var(--ink);
-        border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 14px;
+        border: 1.5px solid #C5D3DE; border-radius: 10px; font: inherit; font-size: 14px;
     }
-    .sect select:focus, .sect input[type=text]:focus, .sect input[type=search]:focus { outline: 2px solid var(--primary); outline-offset: -1px; border-color: transparent; }
+    .sect select:focus, .sect input[type=text]:focus, .sect input[type=search]:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 20%, transparent); }
     .btn-ghost.sm, .btn-solid.sm { width: auto; padding: 7px 16px; font-size: 13.5px; }
     a.btn-ghost, a.btn-ok { display: inline-block; text-decoration: none; }
 
     .pill.st-new { --tone: var(--primary); }
     .pill.st-review { --tone: #6d28d9; }
     .pill.st-wait { --tone: #b45309; }
-    .pill.st-ok { --tone: #047857; }
-    .pill.st-bad { --tone: #b91c1c; }
+    .pill.st-ok { --tone: var(--leaf-dark); }
+    .pill.st-bad { --tone: var(--accent); }
 
     .action-banner ul { flex-basis: 100%; margin: 6px 0 0; padding-left: 18px; }
     .flash-link { display: block; flex-basis: 100%; margin-top: 8px; padding: 10px; background: rgba(0,0,0,.06); border-radius: 6px; font-size: 12px; word-break: break-all; }
     .muted { color: #94a3b8; }
 
-    /* ---- Tabs ---- */
-    .rv-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 18px; border-bottom: 2px solid var(--border); }
-    .rv-tab { display: inline-flex; align-items: center; gap: 8px; margin-bottom: -2px; padding: 10px 18px; border-bottom: 3px solid transparent;
-              font-size: 15px; font-weight: 700; color: var(--muted); text-decoration: none; transition: color .15s, border-color .15s; }
-    .rv-tab:hover { color: var(--primary-dark); }
-    .rv-tab.on { color: var(--primary-dark); border-bottom-color: var(--primary); }
-    .rv-tab .n { padding: 1px 9px; border-radius: 999px; font-size: 12px; font-variant-numeric: tabular-nums; background: #eef3f8; color: var(--muted); }
-    .rv-tab.on .n { background: var(--primary); color: #fff; }
-
-    /* ---- Tiles that filter ---- */
-    .rv-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 0 0 18px; }
-    .rv-stat { --tone: var(--primary); display: block; padding: 14px 16px; background: var(--card); border: 1px solid var(--border); border-top: 4px solid var(--tone);
-               border-radius: 14px; color: inherit; text-decoration: none; transition: transform .15s, box-shadow .15s, background .15s; }
-    .rv-stat:hover { transform: translateY(-2px); box-shadow: 0 10px 22px rgba(15,23,42,.1); }
-    .rv-stat b { display: block; font-size: 28px; line-height: 1.1; font-weight: 800; color: var(--tone); font-variant-numeric: tabular-nums; }
-    .rv-stat span { font-size: 13px; font-weight: 600; color: var(--muted); }
-    .rv-stat.on { background: color-mix(in srgb, var(--tone) 9%, #fff); box-shadow: 0 0 0 2px var(--tone); }
+    /* ---- Sidebar extras (the sidebar itself is .vtabs in engage.css) ---- */
+    .vsub.on { background: var(--primary-tint); color: var(--primary-dark); box-shadow: inset 3px 0 0 var(--primary); }
+    .vsub span:last-child { font-variant-numeric: tabular-nums; font-weight: 800; }
+    @media (max-width: 860px) { .vtabs .vsub { display: flex; flex: none; margin: 0; gap: 8px; white-space: nowrap; } }
 
     /* ---- Search row ---- */
     .rv-search { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 0 0 16px; }
     .rv-search input[type=search] { flex: 1 1 280px; min-width: 0; padding: 10px 14px 10px 38px; font-size: 15px;
-        background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%235B6B7C' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='M21 21l-4.3-4.3'/%3E%3C/svg%3E") no-repeat 12px center; }
+        background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%2355696C' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='M21 21l-4.3-4.3'/%3E%3C/svg%3E") no-repeat 12px center; }
     .rv-search .clear { font-size: 13.5px; font-weight: 600; color: var(--primary); text-decoration: none; }
     .rv-search .clear:hover { text-decoration: underline; }
     .rv-result { margin: 0 0 12px; font-size: 14px; color: var(--muted); }
 
     /* ---- Bulk bar and tables ---- */
-    .bulkbar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 0 0 14px; padding: 12px 14px; background: #fff; border: 1px solid var(--primary); border-radius: 12px; box-shadow: 0 8px 20px rgba(15,23,42,.12); }
+    .bulkbar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 0 0 14px; padding: 12px 14px; background: #fff; border: 1.5px solid var(--primary); border-radius: 12px; box-shadow: 0 3px 0 var(--edge), 0 8px 20px rgba(15,23,42,.10); }
     .bulkbar .count { min-width: 90px; font-size: 14px; font-weight: 700; color: var(--primary); }
     .bulkbar input[type=text] { flex: 1 1 240px; min-width: 200px; }
     .tbl th.pick, .tbl td.pick { width: 36px; padding-right: 0; }
@@ -458,7 +443,7 @@ engage_header([
     .tbl td.pick input:disabled { cursor: not-allowed; }
     .tbl td .sub { display: block; color: var(--muted); font-size: 12.5px; }
     .tbl td .warn { display: inline-block; margin-top: 4px; padding: 1px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 700; background: #fffbeb; color: #92400e; border: 1px solid #fcd34d; }
-    .tbl td .warn.bad { background: #fef2f2; color: #991b1b; border-color: #fca5a5; }
+    .tbl td .warn.bad { background: var(--accent-tint); color: var(--accent-dark); border-color: #f0c2bd; }
     .tbl td.act { white-space: nowrap; text-align: right; }
     .tbl td.act form { display: inline; margin: 0; }
     .tbl .btn-ghost, .tbl .btn-ok { width: auto; padding: 4px 13px; font-size: 12.5px; }
@@ -471,11 +456,11 @@ engage_header([
     .kind.k-join { background: #f3e8ff; color: #6d28d9; }
     .age { display: block; margin-top: 3px; font-size: 12.5px; color: var(--muted); }
     .age.late { color: #b45309; font-weight: 700; }
-    .vbadge { display: inline-flex; align-items: center; gap: 5px; margin-top: 4px; padding: 1px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; color: #047857; background: var(--leaf-tint); border: 1px solid #bfdfca; }
+    .vbadge { display: inline-flex; align-items: center; gap: 5px; margin-top: 4px; padding: 1px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; color: var(--leaf-dark); background: var(--leaf-tint); border: 1px solid #bfdfca; }
     .vbadge.no { color: #92400e; background: #fffbeb; border-color: #fcd34d; }
     .vu { font-weight: 700; white-space: nowrap; }
     .vu.soon { color: #b45309; }
-    .vu.gone { color: #b91c1c; }
+    .vu.gone { color: var(--accent-dark); }
 
     /* ---- Application page ---- */
     .rv-back { display: inline-block; margin: 0 0 14px; font-size: 14px; font-weight: 600; color: var(--primary); text-decoration: none; }
@@ -487,7 +472,7 @@ engage_header([
     @media (min-width: 1000px) {
         .rv-grid { grid-template-columns: minmax(0, 1fr) 380px; align-items: start; }
         /* The whole right column stays in view: Decision first, the rest scrolls inside it. */
-        .rv-side { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; padding: 2px 4px 2px 2px; margin: -2px; }
+        .rv-side { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; padding: 2px 4px 6px 2px; margin: -2px; }
     }
 
     dl.answers { margin: 0; display: grid; grid-template-columns: minmax(130px, 240px) minmax(0, 1fr); }
@@ -503,7 +488,7 @@ engage_header([
         dl.answers dt:first-of-type { border-top: 0; }
     }
 
-    .rv-decision { border-top: 4px solid var(--primary); }
+    .rv-decision { border-top: 5px solid var(--primary); }
     .actrow { display: flex; flex-wrap: wrap; gap: 10px; }
     .rv-fold { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
     .rv-fold > summary { cursor: pointer; font-size: 14.5px; font-weight: 700; list-style: none; }
@@ -513,7 +498,7 @@ engage_header([
     .rv-fold form { margin-top: 12px; }
     .rv-fold .field { margin-bottom: 12px; }
 
-    .rv-adv { border: 1px dashed #c3d0dc; background: #fafcfe; box-shadow: none; }
+    .rv-adv { border: 1.5px dashed #b6c8c6; background: #F8FBFA; box-shadow: none; }
     .rv-adv > summary { cursor: pointer; font-size: 14.5px; font-weight: 800; list-style: none; color: var(--muted); }
     .rv-adv > summary::-webkit-details-marker { display: none; }
     .rv-adv > summary::before { content: '\25B8'; margin-right: 8px; }
@@ -521,7 +506,7 @@ engage_header([
     .rv-adv .adv-block { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
     .rv-adv .adv-block:first-of-type { border-top: 0; padding-top: 0; }
     .rv-adv h4 { margin: 0 0 8px; font-size: 14px; font-weight: 800; }
-    .rv-adv h4.danger { color: #b91c1c; }
+    .rv-adv h4.danger { color: var(--accent-dark); }
 
     .idline { margin: 6px 0 0; font-size: 14.5px; }
     .idform { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 12px; }
@@ -530,8 +515,8 @@ engage_header([
     .idform .btn-ghost, .idform .btn-solid, .idform .btn-ok { width: auto; padding: 7px 16px; font-size: 13.5px; }
     .idlist { margin: 10px 0 0; padding-left: 18px; font-size: 14.5px; }
     .idlist li { margin: 3px 0; }
-    .idwarn { margin: 12px 0 0; padding: 10px 12px; background: #fffbeb; border: 1px solid #fcd34d; border-radius: 10px; font-size: 14px; color: #92400e; }
-    .idbad { margin: 12px 0 0; padding: 10px 12px; background: #fef2f2; border: 1px solid #fca5a5; border-radius: 10px; font-size: 14px; color: #991b1b; }
+    .idwarn { margin: 12px 0 0; padding: 10px 12px; background: #fffbeb; border: 1.5px solid #fcd34d; border-radius: 10px; font-size: 14px; color: #92400e; }
+    .idbad { margin: 12px 0 0; padding: 10px 12px; background: var(--accent-tint); border: 1.5px solid #f0c2bd; border-radius: 10px; font-size: 14px; color: var(--accent-dark); }
     .rv-meta + .idbad { margin: -8px 0 18px; }
     dl.answers dd .idform.userfix { margin-top: 6px; }
     dl.answers dd .idform.userfix input[type=text] { max-width: 260px; }
@@ -552,13 +537,13 @@ engage_header([
     .tl li::after { content: ''; position: absolute; left: 0; top: 4px; width: 12px; height: 12px; border-radius: 50%; background: var(--c, var(--primary)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c, var(--primary)) 20%, #fff); }
     .tl b { font-size: 14.5px; }
     .tl .who { display: block; font-size: 12.5px; color: var(--muted); }
-    .tl .why { margin: 6px 0 0; padding: 8px 12px; font-size: 13.5px; background: #f8fafc; border-left: 3px solid var(--c, var(--primary)); border-radius: 0 8px 8px 0; }
+    .tl .why { margin: 6px 0 0; padding: 8px 12px; font-size: 13.5px; background: #F6F9FB; border-left: 3px solid var(--c, var(--primary)); border-radius: 0 8px 8px 0; }
 
     /* ---- Mobile decision bar ---- */
     .mbar { display: none; }
     @media (max-width: 999px) {
         .mbar { display: flex; gap: 10px; position: fixed; left: 0; right: 0; bottom: 0; z-index: 50; padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
-                background: #fff; border-top: 1px solid var(--border); box-shadow: 0 -8px 24px rgba(15,23,42,.14); }
+                background: #fff; border-top: 1.5px solid var(--border); box-shadow: 0 -8px 24px rgba(15,23,42,.14); }
         .mbar form { flex: 1; margin: 0; }
         .mbar button { width: 100%; padding: 13px; }
         .mbar > button { flex: 1; }
@@ -633,7 +618,7 @@ engage_header([
     $showAdvanced = $showLink || $showStrike;
     $advOpen = !empty($_GET['done']) && preg_match('/^(strike|link_id|unlink_id|relink_id)/', (string) $_GET['done']);
     $hist = $model->history((int) $app['id']);
-    $histTone = ['approved' => '#047857', 'rejected' => '#b91c1c', 'info_requested' => '#b45309', 'under_review' => '#6d28d9'];
+    $histTone = ['approved' => '#357A4C', 'rejected' => '#D4452B', 'info_requested' => '#b45309', 'under_review' => '#6d28d9'];
     $histName = ['approved' => 'Approved', 'rejected' => 'Rejected', 'info_requested' => 'Asked for more information', 'under_review' => 'Marked under review'];
     ?>
     <a class="rv-back" href="<?= $h($qUrl([])) ?>">&larr; Back to the queue</a>
@@ -745,7 +730,7 @@ engage_header([
                 <?php else: ?>
                     <?php if ($profName !== ''): ?>
                         <p class="wm-name"><?= $h($profName) ?>
-                            <?php if ($profVerified): ?><span class="pill" style="--tone:#047857;">Verified</span>
+                            <?php if ($profVerified): ?><span class="pill" style="--tone:#357A4C;">Verified</span>
                             <?php else: ?><span class="pill" style="--tone:#b45309;">Not verified</span><?php endif; ?></p>
                         <?php if ($profVerified): ?>
                             <p class="wm-sub">By <?= $h($prof['username_verified_by']) ?> on <?= $h(MemberAuthModel::formatIst((string) $prof['username_verified_at'], 'j M Y')) ?></p>
@@ -901,7 +886,7 @@ engage_header([
             <h3>History</h3>
             <ol class="tl">
             <?php foreach ($hist as $e): ?>
-                <li style="--c: <?= $h($histTone[$e['decision']] ?? '#2E6599') ?>">
+                <li style="--c: <?= $h($histTone[$e['decision']] ?? '#1F7A74') ?>">
                     <b><?= $h($histName[$e['decision']] ?? ucfirst(str_replace('_', ' ', $e['decision']))) ?></b>
                     <span class="who"><?= $h($e['decided_by']) ?> &middot; <?= $h(MemberAuthModel::formatIst((string) $e['decided_at'], 'j M Y, g:i a')) ?></span>
                     <?php if ($e['reason']): ?><div class="why"><?= nl2br($h($e['reason'])) ?></div><?php endif; ?>
@@ -941,7 +926,7 @@ engage_header([
 <?php else:
     $all = $model->listApplications('', '', $scope);
 
-    // Counts for the tiles (within the chosen membership, if one is chosen). Not affected by the search.
+    // Counts for the sidebar (within the chosen membership, if one is chosen). Not affected by the search.
     $scoped = $fSlug === '' ? $all : array_filter($all, fn($r) => (string) $r['form_type'] === $fSlug);
     $cnt = ['New' => 0, 'Submitted' => 0, 'Under Review' => 0, 'Draft' => 0, 'Accepted' => 0, 'Rejected' => 0];
     foreach ($scoped as $r) { if (isset($cnt[$r['status']])) $cnt[$r['status']]++; }
@@ -987,33 +972,45 @@ engage_header([
 
     $openCount = $cnt['New'] + $cnt['Submitted'] + $cnt['Under Review'] + $cnt['Draft'];
 
-    // Tiles filter the Applications tab; Accepted opens the Members tab.
-    $tiles = [
-        ['todo',         'To review',          $cnt['New'] + $cnt['Submitted'], 'var(--primary)'],
-        ['Under Review', 'Under review',       $cnt['Under Review'],            '#6d28d9'],
-        ['Draft',        'Awaiting applicant', $cnt['Draft'],                   '#b45309'],
-        ['Rejected',     'Rejected',           $cnt['Rejected'],                '#b91c1c'],
+    // Sidebar filters under Applications. Clicking the active one clears it.
+    $subs = [
+        ['todo',         'To review',          $cnt['New'] + $cnt['Submitted']],
+        ['Under Review', 'Under review',       $cnt['Under Review']],
+        ['Draft',        'Awaiting applicant', $cnt['Draft']],
+        ['Rejected',     'Rejected',           $cnt['Rejected']],
+    ];
+    $svg = [
+        'inbox'  => '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+        'people' => '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+        'alert'  => '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>',
     ];
     ?>
-    <nav class="rv-tabs" aria-label="Membership review sections">
-        <a class="rv-tab<?= $tab === 'apps' ? ' on' : '' ?>" href="<?= $h($qUrl(['tab' => '', 'status' => $fStatus])) ?>">Applications <span class="n"><?= $openCount ?></span></a>
-        <a class="rv-tab<?= $tab === 'members' ? ' on' : '' ?>" href="<?= $h($qUrl(['tab' => 'members', 'status' => ''])) ?>">Members <span class="n"><?= $peopleCount ?></span></a>
+    <div class="adm-shell">
+
+    <nav class="vtabs" aria-label="Membership review sections">
+        <a class="vtab<?= $tab === 'apps' ? ' on' : '' ?>" href="<?= $h($qUrl(['tab' => '', 'status' => ''])) ?>"<?= $tab === 'apps' ? ' aria-current="page"' : '' ?>>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><?= $svg['inbox'] ?></svg><span>Applications</span>
+            <span class="vcount<?= $openCount === 0 ? ' zero' : '' ?>"><?= $openCount ?></span>
+        </a>
+        <?php if ($tab === 'apps'): foreach ($subs as [$val, $text, $n]): $on = $fStatus === $val; ?>
+            <a class="vsub<?= $on ? ' on' : '' ?>" href="<?= $h($qUrl(['status' => $on ? '' : $val])) ?>"<?= $on ? ' aria-current="true" title="Click to clear this filter"' : '' ?>>
+                <span><?= $h($text) ?></span><span><?= (int) $n ?></span></a>
+        <?php endforeach; endif; ?>
+        <a class="vtab<?= $tab === 'members' ? ' on' : '' ?>" href="<?= $h($qUrl(['tab' => 'members', 'status' => ''])) ?>"<?= $tab === 'members' ? ' aria-current="page"' : '' ?>>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><?= $svg['people'] ?></svg><span>Members</span>
+            <span class="vcount zero"><?= $peopleCount ?></span>
+        </a>
         <?php if ($canStrike): ?>
-        <a class="rv-tab<?= $tab === 'struck' ? ' on' : '' ?>" href="<?= $h($qUrl(['tab' => 'struck', 'status' => '', 'q' => ''])) ?>">Struck off <span class="n"><?= count($struckList) ?></span></a>
+        <a class="vtab<?= $tab === 'struck' ? ' on' : '' ?>" href="<?= $h($qUrl(['tab' => 'struck', 'status' => '', 'q' => ''])) ?>"<?= $tab === 'struck' ? ' aria-current="page"' : '' ?>>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><?= $svg['alert'] ?></svg><span>Struck off</span>
+            <span class="vcount<?= count($struckList) === 0 ? ' zero' : '' ?>"><?= count($struckList) ?></span>
+        </a>
         <?php endif; ?>
     </nav>
 
-    <?php if ($tab !== 'struck'): ?>
-    <?php if ($tab === 'apps'): ?>
-    <div class="rv-stats">
-        <?php foreach ($tiles as [$val, $text, $n, $col]): $on = $fStatus === $val; ?>
-            <a class="rv-stat<?= $on ? ' on' : '' ?>" style="--tone: <?= $h($col) ?>;" href="<?= $h($qUrl(['status' => $on ? '' : $val])) ?>"
-               <?= $on ? 'aria-current="true" title="Click to clear this filter"' : '' ?>><b><?= (int) $n ?></b><span><?= $h($text) ?></span></a>
-        <?php endforeach; ?>
-        <a class="rv-stat" style="--tone: #047857;" href="<?= $h($qUrl(['tab' => 'members', 'status' => ''])) ?>"><b><?= (int) $cnt['Accepted'] ?></b><span>Accepted &rarr;</span></a>
-    </div>
-    <?php endif; ?>
+    <div class="adm-main">
 
+    <?php if ($tab !== 'struck'): ?>
     <form method="GET" class="rv-search" role="search">
         <?php if ($tab !== 'apps'): ?><input type="hidden" name="tab" value="<?= $h($tab) ?>"><?php endif; ?>
         <?php if ($fStatus !== ''): ?><input type="hidden" name="status" value="<?= $h($fStatus) ?>"><?php endif; ?>
@@ -1136,7 +1133,7 @@ engage_header([
                 <td title="<?= $h(implode('; ', $expTitle)) ?>">
                     <?php if ($g['expires']): ?>
                         <span class="vu<?= $vuCls ?>"><?= $h(MemberAuthModel::formatIst($g['expires'], 'j M Y')) ?></span>
-                        <span class="age<?= $vuCls !== '' ? ' late' : '' ?>"<?= $vuCls === ' gone' ? ' style="color:#b91c1c"' : '' ?>><?=
+                        <span class="age<?= $vuCls !== '' ? ' late' : '' ?>"<?= $vuCls === ' gone' ? ' style="color:#A82F18"' : '' ?>><?=
                             $left < 0 ? 'Expired' : ($left <= 30 ? 'Expires in ' . $left . ' day' . ($left === 1 ? '' : 's') : '') ?></span>
                         <?php if (count($mships) > 1): ?><span class="sub">latest of <?= count($mships) ?></span><?php endif; ?>
                     <?php else: ?><span class="muted">&mdash;</span><?php endif; ?></td>
@@ -1191,6 +1188,9 @@ engage_header([
         <?php endif; ?>
     </section>
     <?php endif; ?>
+
+    </div><!-- /.adm-main -->
+    </div><!-- /.adm-shell -->
 
     <?php if ($tab === 'apps'): ?>
     <script>
