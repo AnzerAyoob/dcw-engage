@@ -91,11 +91,11 @@ if ($memberActive && $verifiedUsername !== '') {
 $typeMeta = [
     'internet' => [
         'title' => 'Internet support',
-        'blurb' => 'Help paying for a data pack so you can keep contributing.',
+        'blurb' => 'Financial assistance for a data pack so you can stay active in your contributions.',
     ],
     'reimbursement' => [
         'title' => 'Reimbursement',
-        'blurb' => 'Claim back expenses for a DCW-aligned event.',
+        'blurb' => 'Claim reimbursement for expenses incurred towards a DCW-aligned event.',
     ],
 ];
 
@@ -125,11 +125,11 @@ if ($action === 'submit_internet_request' && $type === 'internet') {
     }
 
     if ($verifiedEmail === '') {
-        $errors['system'] = "Support requests are for members with an active membership.";
+        $errors['system'] = "Support requests are exclusively for members with an active membership.";
     } elseif ($verifiedUsername === '') {
         $errors['system'] = "Please add and verify your Wikimedia username on your profile before requesting internet support.";
     } elseif ($chError || $elig === null) {
-        $errors['system'] = "We couldn't check your Conversation Hour attendance right now. Please try again in a little while.";
+        $errors['system'] = "We are unable to verify your Conversation Hour attendance at the moment. Please try again shortly.";
     } else {
         try {
             $applicantName = trim($_POST['applicant_name'] ?? '');
@@ -172,7 +172,7 @@ if ($action === 'submit_internet_request' && $type === 'internet') {
             $errors['system'] = $e->getMessage();
         } catch (Exception $e) {
             app_log("Internet support submission failed for <$verifiedEmail>: " . $e->getMessage());
-            $errors['system'] = "An error occurred submitting your request. Please try again.";
+            $errors['system'] = "An error occurred while submitting your request. Please try again.";
         }
     }
 }
@@ -201,15 +201,15 @@ if ($action === 'submit_reimbursement' && $type === 'reimbursement') {
     $dcwEvent  = $_POST['dcw_event'] ?? '';
 
     if ($verifiedEmail === '') {
-        $errors['system'] = "Support requests are for members with an active membership.";
+        $errors['system'] = "Support requests are exclusively for members with an active membership.";
     } elseif ($dcwEvent === '') {
-        $errors['system'] = "Please tell us whether this was a DCW-aligned, DCW-organised or DCW-associated event.";
+        $errors['system'] = "Please indicate whether this was a DCW-aligned, DCW-organised, or DCW-associated event.";
     } elseif ($dcwEvent !== 'yes') {
-        $errors['system'] = "Reimbursement is only available for events that are DCW-aligned, DCW-organised or DCW-associated.";
+        $errors['system'] = "Reimbursements are only permissible for events that are DCW-aligned, DCW-organised, or DCW-associated.";
     } elseif ($eventName === '') {
-        $errors['system'] = "Please enter the name of the event.";
+        $errors['system'] = "Please enter the event name.";
     } elseif ($reimbursementModel->hasOpenOrPaidRequest($verifiedEmail, $eventName)) {
-        $errors['system'] = "You already have a reimbursement request on file for \"" . $eventName . "\".";
+        $errors['system'] = "You already have a reimbursement request registered for \"" . $eventName . "\".";
     } else {
         require_once __DIR__ . '/../../models/FileUploader.php';
         $fileUploader = new FileUploader();
@@ -235,7 +235,7 @@ if ($action === 'submit_reimbursement' && $type === 'reimbursement') {
                 // Same parser as the resubmit flow, so an amount can't pass here and fail there.
                 $paise = ReimbursementModel::rupeesToPaise($amountRupees);
                 if ($category === '' || $description === '' || $paise === null || $paise <= 0) {
-                    throw new \InvalidArgumentException("Row " . ($i + 1) . ": category, description, and a positive amount are all required.");
+                    throw new \InvalidArgumentException("Row " . ($i + 1) . ": category, description, and a positive amount are mandatory fields.");
                 }
 
                 // Receipts are optional. '' means none was attached.
@@ -283,7 +283,7 @@ if ($action === 'submit_reimbursement' && $type === 'reimbursement') {
         } catch (Exception $e) {
             cleanupUploadedPaths($uploadedPaths);
             app_log("Reimbursement submission failed for <$verifiedEmail> (event: $eventName): " . $e->getMessage());
-            $errors['system'] = "An error occurred submitting your request. Please try again.";
+            $errors['system'] = "An error occurred while submitting your request. Please try again.";
         }
     }
 }
@@ -312,14 +312,14 @@ $inactiveReason = '';
 if (!$memberActive) {
     $inactiveReason = (($member['status'] ?? '') === 'active')
         ? 'Your membership expired on ' . MemberAuthModel::formatIst((string) $member['expires_at'], 'j M Y') . '.'
-        : 'Your membership is not active.';
+        : 'Your membership is currently not active.';
 }
 
 // Internet support
 $maxAmountRupees = $internetSettings ? (int) ($internetSettings['max_amount_paise'] / 100) : 0;
 // Members only answer the edits question. Conversation Hours and technical status come from staff records.
 $askQuestions = [
-    'edits_80' => 'Have you made 80+ edits to Wikimedia projects in the past month, without using automated tools like Depictor?',
+    'edits_80' => 'Have you made 80 or more edits to Wikimedia projects in the past month, excluding automated tools such as Depictor?',
 ];
 // They can't qualify by either route (not on the technical list, and not at all of the last 3
 // sessions): ask nothing and block the form straight away. The server still re-checks.
@@ -355,7 +355,7 @@ engage_header([
     'title'   => $pageHeading,
     'heading' => $pageHeading,
     'kicker'  => 'Member support',
-    'lead'    => $type ? $typeMeta[$type]['blurb'] : 'Tell us what kind of support you need.',
+    'lead'    => $type ? $typeMeta[$type]['blurb'] : 'Select the type of support you require.',
     'member'  => $member,
     'crumbs'  => $type
         ? [['Home', '/'], ['My dashboard', '/member/dashboard'], ['Support', '/member/support'], [$typeMeta[$type]['title']]]
@@ -367,27 +367,27 @@ engage_header([
     <div class="fcard">
         <div class="alert error" style="margin:0;">
             <strong>Notice:</strong> <?= htmlspecialchars($inactiveReason) ?>
-            Support requests are for members with an active membership.
-            <a href="/membership" style="color:#991b1b;">Renew your membership</a> to continue.
+            Support requests are exclusively for members with an active membership.
+            <a href="/membership" style="color:#991b1b;">Renew your membership</a> to proceed.
         </div>
     </div>
 
 <?php elseif ($success): ?>
     <div class="fcard">
         <div class="result">
-            <h3>Request submitted</h3>
+            <h3>Request submitted successfully</h3>
             Your tracking ID is <code><?= htmlspecialchars($success['tracking_id']) ?></code>.<br>
-            We've emailed you a confirmation. You can follow this request any time from
-            <a href="<?= htmlspecialchars(member_request_url($success['tracking_id'])) ?>">your dashboard</a><?= $successType === 'reimbursement' ? " (we'll also email you once it's reviewed)." : '.' ?>
+            A confirmation has been emailed to you. You can track this request at any time from
+            <a href="<?= htmlspecialchars(member_request_url($success['tracking_id'])) ?>">your dashboard</a><?= $successType === 'reimbursement' ? " (we will also email you once it has been reviewed)." : '.' ?>
         </div>
-        <a class="back-link" href="/member/dashboard">&larr; Back to my dashboard</a>
+        <a class="back-link" href="/member/dashboard">&larr; Return to my dashboard</a>
     </div>
 
 <?php elseif ($type === null): ?>
     <?php if ($requestedClosed): ?>
         <div class="fcard" style="max-width:none; padding:18px 22px;">
             <div class="alert error" style="margin:0;">
-                <strong>Notice:</strong> <?= htmlspecialchars($typeMeta[$requested]['title']) ?> requests are closed right now.
+                <strong>Notice:</strong> <?= htmlspecialchars($typeMeta[$requested]['title']) ?> requests are currently closed.
             </div>
         </div>
     <?php endif; ?>
@@ -399,17 +399,17 @@ engage_header([
                 <span class="tick"><svg viewBox="0 0 24 24" aria-hidden="true"><?= $icons[$st['icon']] ?></svg></span>
                 <h3><?= htmlspecialchars($meta['title']) ?></h3>
                 <p><?= htmlspecialchars($meta['blurb']) ?></p>
-                <?php if ($open): ?><span class="go">Start a request <span aria-hidden="true">→</span></span><?php endif; ?>
+                <?php if ($open): ?><span class="go">Start request <span aria-hidden="true">→</span></span><?php endif; ?>
             </<?= $open ? 'a' : 'div' ?>>
         <?php endforeach; ?>
     </div>
     <p style="text-align:center; margin-top:22px; font-size:14px; color:var(--muted);">
-        You can follow your requests from your <a href="/member/dashboard" style="color:var(--primary); font-weight:600;">dashboard</a>.
+        You can monitor your requests from your <a href="/member/dashboard" style="color:var(--primary); font-weight:600;">dashboard</a>.
     </p>
 
 <?php else: ?>
     <div class="fcard">
-        <a class="back-link" href="/member/support">&larr; Choose a different kind of support</a>
+        <a class="back-link" href="/member/support">&larr; Select a different type of support</a>
 
         <?php if (!empty($errors['system'])): ?>
             <div class="alert error"><strong>Notice:</strong> <?= htmlspecialchars($errors['system']) ?></div>
@@ -417,23 +417,23 @@ engage_header([
 
         <?php if ($type === 'internet'): ?>
             <p class="intro">
-                A reviewer checks the request, our finance team does the recharge, and you then upload the
-                operator's receipt so we can close it. You can submit one request every
+                A reviewer will verify the request, our finance team will process the recharge, and you will then need to upload the
+                operator receipt to complete the process. You may submit one request every
                 <?= (int) InternetSupportModel::MIN_DAYS_BETWEEN_REQUESTS ?> days.
-                Please apply at least <?= $packNoticeDays ?> days before your current pack ends.
+                Please apply at least <?= $packNoticeDays ?> days prior to the expiration of your current data pack.
             </p>
 
             <?php if ($verifiedUsername === ''): ?>
                 <div class="alert error" style="margin:0;">
-                    <strong>Verify your Wikimedia username first.</strong>
-                    Reviewers check your contributions against it. Add it on your
-                    <a href="/member/profile" style="color:#991b1b;">profile</a>; a reviewer or coordinator will verify it,
-                    and this form opens as soon as they have.
+                    <strong>Please verify your Wikimedia username first.</strong>
+                    Reviewers cross-check your contributions against it. Add your username on your
+                    <a href="/member/profile" style="color:#991b1b;">profile page</a>; once verified by a reviewer or coordinator,
+                    this form will automatically open.
                 </div>
             <?php elseif ($chError || $elig === null): ?>
                 <div class="alert error" style="margin:0;">
-                    <strong>We couldn't check your Conversation Hour attendance right now.</strong>
-                    Please try again in a little while.
+                    <strong>We are unable to verify your Conversation Hour attendance at the moment.</strong>
+                    Please try again shortly.
                 </div>
             <?php else: ?>
             <form method="POST" action="/member/support?type=internet">
@@ -452,7 +452,7 @@ engage_header([
                         </div>
                     <?php endforeach; ?>
                         <div class="field">
-                            <label>Conversation Hours (checked by us)</label>
+                            <label>Conversation Hours (verified by us)</label>
                             <ul style="list-style:none; margin:6px 0 0; padding:0;">
                             <?php foreach ($elig['sessions'] as $s): ?>
                                 <li style="margin:4px 0;">
@@ -463,30 +463,30 @@ engage_header([
                                 </li>
                             <?php endforeach; ?>
                             </ul>
-                            <span class="hint">Based on the 3 most recent Conversation Hours, matched to your Member ID and verified username.
-                                If this looks wrong, ask a reviewer to check the attendance record.
-                                <?= count($elig['sessions']) < CommunityRecordsModel::WINDOW ? ' Fewer than ' . CommunityRecordsModel::WINDOW . ' Conversation Hours have been logged so far, so attendance cannot count yet.' : '' ?></span>
+                            <span class="hint">Based on the 3 most recent Conversation Hours, matched with your Member ID and verified username.
+                                If you believe this is incorrect, please request a reviewer to verify your attendance records.
+                                <?= count($elig['sessions']) < CommunityRecordsModel::WINDOW ? ' Fewer than ' . CommunityRecordsModel::WINDOW . ' Conversation Hours have been recorded so far, so attendance cannot be factored in yet.' : '' ?></span>
                         </div>
                         <div class="field">
-                            <label>Technical contributor (checked by us)</label>
-                            <span><?= $elig['tech'] ? '&#10003; You are on the technical contributors list.' : 'You are not on the technical contributors list.' ?></span>
+                            <label>Technical contributor status (verified by us)</label>
+                            <span><?= $elig['tech'] ? '&#10003; You are listed as a technical contributor.' : 'You are not listed as a technical contributor.' ?></span>
                         </div>
                     <div id="ineligible-note" class="alert error" style="display:<?= $chBlocked ? 'block' : 'none' ?>;">
-                        Based on your answers, you're not eligible for support right now. You need 80+ manual edits
-                        in the past month and attendance at the last 3 Conversation Hours, or active contribution
+                        Based on your responses, you are not eligible for support at this time. You require 80+ manual edits
+                        in the past month along with attendance at the last 3 Conversation Hours, or active contributions
                         to DCW technical projects.
                     </div>
                 </fieldset>
 
                 <div class="row">
                     <div class="field">
-                        <label>Your name <span class="req-star">*</span></label>
+                        <label>Your full name <span class="req-star">*</span></label>
                         <input type="text" name="applicant_name" required maxlength="255" value="<?= $oldName() ?>">
                     </div>
                     <div class="field">
                         <label>Wikimedia username</label>
                         <input type="text" value="<?= htmlspecialchars($verifiedUsername) ?>" readonly>
-                        <span class="hint">Verified on your profile. <a href="/member/profile">Change it</a> (a new account has to be verified again).</span>
+                        <span class="hint">Verified via your profile. <a href="/member/profile">Modify username</a> (new accounts require re-verification).</span>
                     </div>
                 </div>
 
@@ -494,7 +494,7 @@ engage_header([
                     <div class="field">
                         <label>Mobile number to be recharged <span class="req-star">*</span></label>
                         <input type="tel" name="phone" required maxlength="20" placeholder="10-digit mobile number" value="<?= $old('phone') ?>">
-                        <span class="hint">Only the finance team can see this number.</span>
+                        <span class="hint">This number is strictly visible only to the finance team.</span>
                     </div>
                     <div class="field">
                         <label>Mobile operator <span class="req-star">*</span></label>
@@ -509,16 +509,16 @@ engage_header([
                 </div>
 
                 <div class="field">
-                    <label>The pack you need <span class="req-star">*</span></label>
+                    <label>Data pack required <span class="req-star">*</span></label>
                     <input type="text" name="package_name" required minlength="3" maxlength="120" placeholder="e.g. 1.5 GB/day recharge" value="<?= $old('package_name') ?>">
-                    <span class="hint">Describe the plan as your operator lists it.</span>
+                    <span class="hint">Specify the plan exactly as listed by your operator.</span>
                 </div>
 
                 <div class="row">
                     <div class="field">
-                        <label>Price of the pack (₹) <span class="req-star">*</span></label>
+                        <label>Pack price (₹) <span class="req-star">*</span></label>
                         <input type="number" name="amount" required min="1" max="<?= (int) $maxAmountRupees ?>" step="0.01" value="<?= $old('amount') ?>">
-                        <span class="hint">Up to ₹<?= number_format($maxAmountRupees) ?>.</span>
+                        <span class="hint">Maximum limit is ₹<?= number_format($maxAmountRupees) ?>.</span>
                     </div>
                     <div class="field">
                         <label>Validity (days)</label>
@@ -527,28 +527,28 @@ engage_header([
                 </div>
 
                 <div class="field">
-                    <label>When does your current pack end? <span class="req-star">*</span></label>
+                    <label>When does your current pack expire? <span class="req-star">*</span></label>
                     <input type="date" name="pack_ends_on" id="pack-ends-on" required
                            min="<?= htmlspecialchars($packEndMin) ?>" max="<?= htmlspecialchars($packEndMax) ?>" value="<?= $old('pack_ends_on') ?>">
-                    <span class="hint">We try to have the recharge ready by then. Please apply at least <?= $packNoticeDays ?> days before this date.</span>
+                    <span class="hint">We aim to complete the recharge by this date. Please submit your application at least <?= $packNoticeDays ?> days in advance.</span>
                     <div id="short-notice-note" class="alert error" style="display:none; margin:10px 0 0;">
-                        That is less than <?= $packNoticeDays ?> days away. You can still submit, but we usually need about
-                        <?= $packNoticeDays ?> days to review and recharge, so it may not be ready in time.
+                        This date is less than <?= $packNoticeDays ?> days away. You may still proceed with the submission, but please note that we typically require around
+                        <?= $packNoticeDays ?> days for review and processing, so the recharge may not be completed in time.
                     </div>
                 </div>
 
-                <h3>Your request</h3>
+                <h3>Request details</h3>
                 <div class="field">
-                    <label>Why do you need support with internet access? <span class="req-star">*</span></label>
+                    <label>Why do you require internet support? <span class="req-star">*</span></label>
                     <textarea name="reason" required minlength="<?= (int) InternetSupportModel::MIN_REASON_LENGTH ?>" maxlength="<?= (int) InternetSupportModel::MAX_REASON_LENGTH ?>" rows="5"><?= $old('reason') ?></textarea>
-                    <span class="hint">We are particularly interested in the motivation behind the request. For example, the support will help you contribute in an xyz way.</span>
+                    <span class="hint">Please describe the specific motivation behind your request. For instance, how this support will assist you in your contributions.</span>
                 </div>
                 <div class="field">
-                    <label>Your contributions in the last three months relevant to the growth of DCW <span class="req-star">*</span></label>
+                    <label>Your contributions over the past three months relevant to DCW growth <span class="req-star">*</span></label>
                     <textarea name="contributions" required minlength="<?= (int) InternetSupportModel::MIN_NARRATIVE_LENGTH ?>" maxlength="<?= (int) InternetSupportModel::MAX_NARRATIVE_LENGTH ?>" rows="5"><?= $old('contributions') ?></textarea>
                 </div>
                 <div class="field">
-                    <label>Your plans for the period you are seeking internet support for <span class="req-star">*</span></label>
+                    <label>Your plans for the period for which you are seeking internet support <span class="req-star">*</span></label>
                     <textarea name="plans" required minlength="<?= (int) InternetSupportModel::MIN_NARRATIVE_LENGTH ?>" maxlength="<?= (int) InternetSupportModel::MAX_NARRATIVE_LENGTH ?>" rows="5"><?= $old('plans') ?></textarea>
                 </div>
 
@@ -608,19 +608,19 @@ engage_header([
                 <input type="hidden" name="action" value="submit_reimbursement">
 
                 <div class="field">
-                    <label>Your name <span class="req-star">*</span></label>
+                    <label>Your full name <span class="req-star">*</span></label>
                     <input type="text" name="applicant_name" required value="<?= $oldName() ?>">
                 </div>
 
                 <div class="field">
-                    <label>Was this a DCW-aligned, DCW-organised or DCW-associated event? <span class="req-star">*</span></label>
+                    <label>Was this a DCW-aligned, DCW-organised, or DCW-associated event? <span class="req-star">*</span></label>
                     <select name="dcw_event" id="dcw-event" required>
-                        <option value="">Select…</option>
+                        <option value="">Select option…</option>
                         <option value="yes"<?= $postedDcw === 'yes' ? ' selected' : '' ?>>Yes</option>
                         <option value="no"<?= $postedDcw === 'no' ? ' selected' : '' ?>>No</option>
                     </select>
                     <div id="dcw-no-notice" class="alert error" style="display:none; margin:10px 0 0;">
-                        Reimbursement is only available for DCW-aligned, DCW-organised or DCW-associated events.
+                        Reimbursements are only applicable for DCW-aligned, DCW-organised, or DCW-associated events.
                     </div>
                 </div>
 
@@ -633,18 +633,18 @@ engage_header([
                         <label>Event date <span class="req-star">*</span></label>
                         <input type="date" name="event_date" required
                                min="<?= htmlspecialchars($minEventDate) ?>" max="<?= htmlspecialchars($maxEventDate) ?>" value="<?= $old('event_date') ?>">
-                        <span class="hint">Submit within <?= (int) ReimbursementModel::CLAIM_WINDOW_DAYS ?> days of the event.</span>
+                        <span class="hint">Claims must be submitted within <?= (int) ReimbursementModel::CLAIM_WINDOW_DAYS ?> days of the event.</span>
                     </div>
                 </div>
 
                 <h3>Expenses</h3>
                 <div id="line-items"></div>
-                <button type="button" id="add-line-item" class="btn-ghost" style="margin-bottom:16px;">+ Add expense</button>
+                <button type="button" id="add-line-item" class="btn-ghost" style="margin-bottom:16px;">+ Add expense item</button>
                 <div class="total-bar"><span>Running total</span><strong>₹<span id="running-total">0.00</span></strong></div>
 
                 <h3>Payment details</h3>
                 <p style="font-size:13.5px; color:var(--muted); margin-top:0;">
-                    UPI is available for claims up to ₹<?= number_format($upiMaxRupees) ?>. Larger claims are paid by bank transfer.
+                    UPI transfers are available for claims up to ₹<?= number_format($upiMaxRupees) ?>. Higher amounts will be processed via bank transfer.
                 </p>
                 <div class="field choices stack">
                     <label><input type="radio" name="payment_method" value="upi" id="method-upi"<?= $postedMethod === 'upi' ? ' checked' : '' ?>> UPI</label>
@@ -687,7 +687,7 @@ engage_header([
                         <input type="text" name="line_item_description[]">
                     </div>
                     <div class="field">
-                        <label>Receipt <span style="font-weight:400; color:var(--muted);">(optional, but recommended)</span></label>
+                        <label>Receipt <span style="font-weight:400; color:var(--muted);">(optional, but highly recommended)</span></label>
                         <input type="file" name="__RECEIPT_NAME__" accept=".pdf,.jpg,.jpeg,.png">
                     </div>
                     <button type="button" class="remove-line-item btn-danger-ghost">Remove</button>
