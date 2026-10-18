@@ -250,46 +250,7 @@ engage_header([
     'crumbs'  => [['Workspace', '/admin/dashboard'], ['Team']],
 ]);
 ?>
-<style>
-    /* Team page only. Everything else comes from /assets/css/engage.css */
-    .ctitle { margin: 0 0 6px; font-size: 20px; font-weight: 800; letter-spacing: -.02em; }
-    .invite-form .field { max-width: 460px; }
-
-    .role-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 8px 16px; margin: 4px 0 14px; }
-    label.check { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 14px; font-weight: 500; cursor: pointer; }
-    label.check input { width: 16px; height: 16px; margin: 0; accent-color: var(--primary); }
-
-    .pills { display: inline-flex; flex-wrap: wrap; gap: 4px; }
-    .pill-owner { --tone: var(--primary); }
-    .pill-organizer { --tone: #475569; }
-    .pill-finance { --tone: #3730a3; }
-    .pill-support_reviewer { --tone: #b45309; }
-    .pill-member_support { --tone: #106b9a; }
-    .pill-membership_reviewer { --tone: #6d28d9; }
-    .pill-membership_coordinator { --tone: #047857; }
-    .pill-technical_manager { --tone: #0e7490; }
-    .pill-expired { --tone: #b91c1c; }
-
-    .tbl .sub { margin-top: 6px; }
-    .warn-text { color: #b45309; }
-    .tbl th.r, .tbl td.r { text-align: right; }
-
-    /* engage.css gives every submit button inside .fcard the full-width gradient look.
-       These rules turn the small in-table buttons and the invite button back into compact ones. */
-    .fcard .invite-form .send { width: auto; padding: 12px 30px; }
-    .fcard .tbl .tb-btn { width: auto; padding: 6px 16px; font-size: 13px; box-shadow: none; }
-    .fcard .tbl .tb-btn:hover:not(:disabled) { transform: none; box-shadow: none; }
-    .fcard .tbl .tb-danger { background: #fff; color: #991b1b; border: 1px solid #f87171; }
-    .fcard .tbl .tb-danger:hover:not(:disabled) { background: #fef2f2; }
-    .tb-save { margin-top: 12px; }
-
-    details.edit { margin-top: 10px; }
-    details.edit summary { font-size: 13px; font-weight: 600; color: var(--primary); cursor: pointer; }
-    details.edit form { margin: 10px 0 0; padding: 14px; background: #f8fafc; border: 1px solid var(--border); border-radius: 12px; }
-    details.edit fieldset.group { background: #fff; margin-bottom: 0; }
-
-    .flash-link { display: block; flex-basis: 100%; margin-top: 10px; padding: 10px; background: rgba(0,0,0,.06); border-radius: 6px; font-size: 12px; word-break: break-all; }
-</style>
+<?php /* Styles for this page (.ctitle, .role-grid, label.check, the role pills, .tb-btn, details.edit, .flash-link) live in assets/css/staff.css. */ ?>
 
 <?php if ($flash):
     $flashClass = $flash['type'] === 'success' ? 'alert ok' : ($flash['type'] === 'error' ? 'alert error' : 'action-banner'); ?>
