@@ -81,15 +81,14 @@ class CommunityRecordsModel
         return (int) $this->db->query('SELECT COUNT(*) FROM ch_sessions')->fetchColumn();
     }
 
-    /** The rule only applies once enough sessions exist. */
+    /**
+     * True once enough sessions are logged for attendance to be able to count for anyone.
+     * Informational only (the admin banner): eligibilityFor() always applies the attendance rule,
+     * and with fewer than WINDOW sessions nobody qualifies by attendance. Errors are not swallowed.
+     */
     public function isLive(): bool
     {
-        try {
-            return $this->sessionCount() >= self::WINDOW;
-        } catch (Throwable $e) {
-            error_log('CommunityRecords isLive failed: ' . $e->getMessage());
-            return false;   // tables missing (migration not run yet): the old form keeps working
-        }
+        return $this->sessionCount() >= self::WINDOW;
     }
 
     public function lastSessions(): array
@@ -314,32 +313,30 @@ class CommunityRecordsModel
     // ------------------------------------------------------------------
 
     /**
-     * Server-side answers for the two questions members used to tick themselves.
-     * $verifiedUsername must be the member's VERIFIED username ('' if none).
+     * Server-side answers for the Conversation Hour and technical questions. ALWAYS applied, from
+     * the first session on: with fewer than WINDOW sessions logged nobody qualifies by attendance
+     * (only the technical route is open). A lookup error is thrown, never swallowed, so callers
+     * fail closed. $verifiedUsername must be the member's VERIFIED username ('' if none).
      */
     public function eligibilityFor(string $memberId, string $verifiedUsername): array
     {
-        $live = $this->isLive();
         $sessions = [];
         $all = true;
-        if ($live) {
-            $st = $this->db->prepare(
-                'SELECT status FROM ch_attendance
-                  WHERE session_id = :s AND (member_id = :m OR (:u1 <> "" AND LOWER(wikimedia_username) = LOWER(:u2)))
-                  ORDER BY (status = "present") DESC LIMIT 1'
-            );
-            foreach ($this->lastSessions() as $s) {
-                $st->execute([':s' => $s['id'], ':m' => strtoupper($memberId), ':u1' => $verifiedUsername, ':u2' => $verifiedUsername]);
-                $status = $st->fetchColumn() ?: 'absent';
-                if ($status === 'absent') $all = false;
-                $sessions[] = ['id' => (int) $s['id'], 'title' => $s['title'], 'held_on' => $s['held_on'], 'status' => $status];
-            }
+        $st = $this->db->prepare(
+            'SELECT status FROM ch_attendance
+              WHERE session_id = :s AND (member_id = :m OR (:u1 <> "" AND LOWER(wikimedia_username) = LOWER(:u2)))
+              ORDER BY (status = "present") DESC LIMIT 1'
+        );
+        foreach ($this->lastSessions() as $s) {
+            $st->execute([':s' => $s['id'], ':m' => strtoupper($memberId), ':u1' => $verifiedUsername, ':u2' => $verifiedUsername]);
+            $status = $st->fetchColumn() ?: 'absent';
+            if ($status === 'absent') $all = false;
+            $sessions[] = ['id' => (int) $s['id'], 'title' => $s['title'], 'held_on' => $s['held_on'], 'status' => $status];
         }
-        $tech = $live ? $this->techActiveRow($memberId) : null;
+        $tech = $this->techActiveRow($memberId);
         return [
-            'live'        => $live,
             'sessions'    => $sessions,
-            'attended_ch' => $live && $all && count($sessions) === self::WINDOW,
+            'attended_ch' => count($sessions) === self::WINDOW && $all,
             'tech'        => $tech !== null,
             'tech_row'    => $tech,
         ];
