@@ -24,6 +24,9 @@ function engage_asset(string $path): string {
  * Compact DCW Engage page shell.
  * Usage: engage_header([...]); ...content...; engage_footer();
  *
+ * Staff pages (/admin, /finance) automatically get the "Ink & Teal" staff scheme: the <body> gets
+ * class="admin" (see the end of assets/css/engage.css).
+ *
  * Options:
  *   title    <title> text (" - DCW Engage" is added)
  *   heading  big heading in the hero (defaults to title)
@@ -85,16 +88,17 @@ function engage_header(array $o) {
     $joinInMenu    = $tools !== null && strpos((string) $tools, '/membership') !== false;
 
     $heroClass = 'hero' . ($slim ? ' slim' : '') . ($home ? ' home' : '') . ($compact ? ' compact' : '') . ($bare ? ' bare' : '') . ($flat ? ' flat' : '');
+    $isStaff   = engage_is_staff_path();
     ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#2E6599">
+    <meta name="theme-color" content="<?= $isStaff ? '#132A2E' : '#2E6599' ?>">
     <title><?= $e($title) ?> - DCW Engage</title>
     <?php ob_start(); require __DIR__ . '/favicon.php'; echo engage_strip_social_images(ob_get_clean()); ?>
-    <?php if (!engage_is_staff_path()) engage_social_meta([
+    <?php if (!$isStaff) engage_social_meta([
         'title'       => $title . ' - DCW Engage',
         'description' => $o['description'] ?? null,
         'image'       => $o['image'] ?? null,
@@ -104,7 +108,7 @@ function engage_header(array $o) {
     <?php /* Versioned by file modification time: edits to engage.css show up at once, never stuck in a cache. */ ?>
     <link rel="stylesheet" href="<?= $e(engage_asset('/assets/css/engage.css')) ?>">
 </head>
-<body>
+<body<?= $isStaff ? ' class="admin"' : '' ?>>
 <header class="<?= $e($heroClass) ?>">
     <div class="topbar">
         <?php /* The logo sits inside .brand-logo: a small circle that crops the image (see engage.css). */ ?>
@@ -409,10 +413,10 @@ function engage_footer() {
     .site-footer ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 9px; }
     .site-footer a { color: var(--ink); text-decoration: none; font-size: 14.5px; }
     .site-footer a:hover { color: var(--accent); text-decoration: underline; }
-    .site-footer .sf-cta { display: inline-block; margin-top: 4px; padding: 8px 16px; border-radius: 999px; background: var(--accent); color: #fff; font-weight: 600; font-size: 14px; }
+    .site-footer .sf-cta { display: inline-block; margin-top: 4px; padding: 8px 16px; border-radius: 999px; background: var(--accent); color: #fff; font-weight: 600; font-size: 14px; box-shadow: 0 3px 0 var(--accent-dark); }
     .site-footer .sf-cta:hover { background: var(--accent-dark); color: #fff; text-decoration: none; }
     .site-footer .sf-social { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
-    .site-footer .sf-social a { padding: 5px 12px; border: 1px solid var(--border); border-radius: 999px; background: #fff; font-size: 13px; font-weight: 600; }
+    .site-footer .sf-social a { padding: 5px 12px; border: 1.5px solid var(--border); border-radius: 999px; background: #fff; font-size: 13px; font-weight: 600; }
     .site-footer .sf-social a:hover { border-color: var(--primary); background: var(--primary-tint); color: var(--primary); text-decoration: none; }
     .site-footer .sf-bottom { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px 20px; margin-top: 32px; padding-top: 18px; border-top: 1px solid var(--border); font-size: 13px; color: var(--muted); }
     .site-footer .sf-bottom a { font-size: 13px; color: var(--muted); }
