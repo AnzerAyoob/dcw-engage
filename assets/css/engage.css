@@ -1089,3 +1089,32 @@ table.ms-table { width: 100%; border-collapse: collapse; min-width: 720px; }
 }
 .issue-meta div { min-width: 0; overflow-wrap: anywhere; }
 .issue-meta b { display: block; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+
+/* ======================================================================
+   Review decision forms (reimbursement review, and any queue card with
+   Approve / Reject buttons under a set of fields).
+   Used with .qcard, .field and .btn-ok / .btn-bad / .btn-neutral above.
+   ====================================================================== */
+.actform { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--border); }
+.actform .field { margin-bottom: 12px; }
+.actrow { display: flex; flex-wrap: wrap; gap: 10px; }
+
+/* ======================================================================
+   Internal notes (the staff-only box under a request card).
+   These rules used to be printed inline by internal_notes_block() in includes/internal_notes_ui.php.
+   The "Add note" button is the shared .btn-neutral.
+   ====================================================================== */
+.inotes {
+    margin: 0 0 14px; padding: 10px 12px; font-size: 14px;
+    background: var(--gold-tint, #fffbeb); border: 1.5px solid #F1C56B; border-radius: 12px;
+}
+.inotes summary { cursor: pointer; font-weight: 700; color: #92400e; }
+.inotes .inote { margin: 10px 0 0; padding: 8px 10px; background: #fff; border: 1px solid #F1C56B; border-radius: 10px; overflow-wrap: anywhere; }
+.inotes .inote-meta { margin: 0 0 2px; font-size: 12px; color: var(--muted); }
+.inotes form { margin-top: 10px; }
+.inotes textarea {
+    display: block; width: 100%; min-height: 60px; padding: 10px 12px; resize: vertical;
+    background: #fff; color: var(--ink); border: 1.5px solid #C5D3DE; border-radius: 10px; font: inherit; font-size: 14.5px;
+}
+.inotes textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 20%, transparent); }
+.inotes form .btn-neutral { margin-top: 8px; }
