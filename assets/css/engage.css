@@ -988,3 +988,65 @@ a.help-item:hover { transform: translateY(-2px); box-shadow: 0 4px 0 var(--edge)
     .cards-wrap .rv-tab { padding: 10px 10px 8px; font-size: 14px; }
     .cards-wrap .rv-search select { flex: 1 1 100%; }
 }
+
+/* ======================================================================
+   Member support (.ms-*).
+
+   These rules used to be printed inline by ms_styles() in member_support_helpers.php, with fixed colours.
+   They now use the shared tokens, so the same markup is blue on member pages and teal on staff pages
+   (staff.css redefines the tokens under body.admin).
+   ====================================================================== */
+.ms-form label { display: block; font-weight: 600; margin: 16px 0 6px; }
+.ms-form input[type=text], .ms-form textarea, .ms-form select {
+    width: 100%; padding: 11px 12px; background: #fff; color: var(--ink); font: inherit; box-sizing: border-box;
+    border: 1.5px solid color-mix(in srgb, var(--border) 55%, var(--muted)); border-radius: 10px;
+}
+.ms-form input:focus, .ms-form textarea:focus, .ms-form select:focus {
+    outline: none; border-color: var(--primary); box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 20%, transparent);
+}
+.ms-form textarea { min-height: 160px; resize: vertical; }
+.ms-form .hint { color: var(--muted); font-size: 13px; margin: 6px 0 0; font-weight: 400; }
+
+.ms-types { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+.ms-types label {
+    margin: 0; padding: 12px 14px; font-weight: 600; cursor: pointer; background: #fff;
+    border: 1.5px solid color-mix(in srgb, var(--border) 55%, var(--muted)); border-radius: 12px;
+}
+.ms-types label span { display: block; font-weight: 400; font-size: 13px; color: var(--muted); margin-top: 4px; }
+/* Selected and keyboard-focus states for the type picker */
+.ms-types label:has(input:checked) {
+    border-color: var(--primary); background: var(--primary-tint);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent);
+}
+.ms-types label:focus-within { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+/* Prefixed with .ms-form so it outranks ".ms-form label" when the checkbox row is a <label> */
+.ms-form .ms-check { display: flex; gap: 10px; align-items: flex-start; margin: 14px 0 0; font-weight: 500; }
+.ms-form .ms-check input { margin-top: 4px; }
+.ms-actions { margin-top: 20px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+
+.ms-thread { display: grid; gap: 12px; margin-bottom: 8px; }
+.ms-msg {
+    max-width: 760px; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywhere;
+    background: #fff; border: 1.5px solid var(--border); border-radius: 14px;
+}
+.ms-msg.mine { margin-left: auto; background: var(--primary-tint); border-color: color-mix(in srgb, var(--primary) 25%, #fff); }
+.ms-msg.note { background: var(--gold-tint, #fffbeb); border-color: #F1C56B; }
+.ms-msg small { display: block; margin-bottom: 4px; font-size: 12px; font-weight: 600; color: var(--muted); }
+
+.ms-error, .ms-ok { padding: 12px 14px; margin-bottom: 14px; border: 1.5px solid; border-radius: 10px; font-weight: 500; }
+.ms-error { background: var(--accent-tint); border-color: #F3B8AC; color: var(--accent-dark); }
+.ms-ok    { background: var(--leaf-tint);   border-color: #A9DCC1; color: var(--leaf-dark); }
+.ms-meta { color: var(--muted); font-size: 14px; margin: 6px 0 0; }
+
+.ms-filters { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; align-items: center; }
+.ms-filters label { margin: 0; }
+.ms-filters select {
+    width: auto; padding: 8px 10px; background: #fff; font: inherit;
+    border: 1.5px solid color-mix(in srgb, var(--border) 55%, var(--muted)); border-radius: 10px;
+}
+.ms-scroll { overflow-x: auto; }
+table.ms-table { width: 100%; border-collapse: collapse; min-width: 720px; }
+.ms-table th, .ms-table td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); font-size: 14px; vertical-align: top; }
+.ms-table tr.wait td:first-child { box-shadow: inset 3px 0 0 var(--amber, #b45309); }
+.ms-tag { display: inline-block; margin-left: 6px; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; background: var(--accent-tint); color: var(--accent-dark); }
