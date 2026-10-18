@@ -322,14 +322,21 @@ class CommunityRecordsModel
     {
         $sessions = [];
         $all = true;
-        $st = $this->db->prepare(
-            'SELECT status FROM ch_attendance
-              WHERE session_id = :s AND (member_id = :m OR (:u1 <> "" AND LOWER(wikimedia_username) = LOWER(:u2)))
-              ORDER BY (status = "present") DESC LIMIT 1'
-        );
+        // Matching is done in PHP on purpose: comparing bound strings to literals/columns in SQL
+        // trips "Illegal mix of collations" on tables with different collations.
+        $st = $this->db->prepare('SELECT member_id, wikimedia_username, status FROM ch_attendance WHERE session_id = :s');
+        $mid = strtoupper(trim($memberId));
+        $uname = mb_strtolower(trim($verifiedUsername));
         foreach ($this->lastSessions() as $s) {
-            $st->execute([':s' => $s['id'], ':m' => strtoupper($memberId), ':u1' => $verifiedUsername, ':u2' => $verifiedUsername]);
-            $status = $st->fetchColumn() ?: 'absent';
+            $st->execute([':s' => $s['id']]);
+            $status = 'absent';
+            foreach ($st->fetchAll(\PDO::FETCH_ASSOC) as $r) {
+                $byId   = $mid !== '' && strtoupper(trim((string) $r['member_id'])) === $mid;
+                $byName = $uname !== '' && mb_strtolower(trim((string) $r['wikimedia_username'])) === $uname;
+                if (!$byId && !$byName) continue;
+                if ($r['status'] === 'present') { $status = 'present'; break; }
+                if ($status === 'absent') $status = (string) $r['status'];
+            }
             if ($status === 'absent') $all = false;
             $sessions[] = ['id' => (int) $s['id'], 'title' => $s['title'], 'held_on' => $s['held_on'], 'status' => $status];
         }
