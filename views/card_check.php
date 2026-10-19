@@ -62,11 +62,11 @@ if (!MemberCardModel::allow()) {
 
 // state => [accent color, headline, one line under it]
 $look = [
-    'office'   => ['#1d4ed8', 'DCW office bearer',      'This is an office bearer of Deoband Community Wikimedia.'],
+    'office'   => ['#1d4ed8', 'DCW office bearer',      'This member is an office bearer of Deoband Community Wikimedia.'],
     'valid'    => ['#047857', 'Valid DCW member',       'This membership is active.'],
     'expired'  => ['#b45309', 'Membership expired',     'This member’s tenure has lapsed.'],
     'inactive' => ['#b91c1c', 'Not an active member',   'This membership is currently inactive.'],
-    'unknown'  => ['#b91c1c', 'Invalid card',           'This code is not recognised. The card may have been reissued or cancelled. Kindly ask the person for their latest card.'],
+    'unknown'  => ['#b91c1c', 'Invalid card',           'This card is not recognised. The card may have been reissued or cancelled. Kindly ask the person for their latest card.'],
     'busy'     => ['#b45309', 'Please wait a moment',   'Too many verification attempts from this network. Kindly try again after a minute.'],
     'error'    => ['#b45309', 'Unable to verify',        'Something went wrong. Kindly try again in a short while.'],
 ];
@@ -114,7 +114,6 @@ engage_header([
                 <p class="cc-name"><?= $h($card['name']) ?></p>
             <?php endif; ?>
             <p class="cc-note">This confirms the office held in Deoband Community Wikimedia.
-                To verify identity, kindly request a valid photo ID proof.
                 Checked on <?= $h($checkedAt) ?>.</p>
 
         <?php elseif ($card !== null): ?>
@@ -141,7 +140,7 @@ engage_header([
                     </li>
                 <?php endforeach; ?>
             </ul>
-            <p class="cc-note">This confirms membership status only. To verify identity, kindly request a valid photo ID proof.
+            <p class="cc-note">This confirms membership status only.
                 Checked on <?= $h($checkedAt) ?>.</p>
         <?php endif; ?>
     </section>
