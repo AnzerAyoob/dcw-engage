@@ -41,6 +41,10 @@ if ($route === '/' || $route === '/index.php') {
     require __DIR__ . '/views/admin/audit.php';
 } elseif ($route === '/admin/dashboard') {
     require __DIR__ . '/views/admin/dashboard.php';
+
+// Owner-only preview of chapter colors and logos. The owner check is inside the view (Auth::requireOwner()).
+} elseif ($route === '/admin/chapter-themes') {
+    require __DIR__ . '/views/admin/chapter-themes.php';
 } elseif ($route === '/admin/form_manager') {
     require __DIR__ . '/views/admin/form_manager.php';
 
