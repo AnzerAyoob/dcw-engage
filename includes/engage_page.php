@@ -1,5 +1,21 @@
 <?php
 require_once __DIR__ . '/social_meta.php';
+require_once __DIR__ . '/chapter_theme.php';
+
+/**
+ * Absolute path of a file under the web root (e.g. '/assets/css/engage.css'), or null if it can't be found.
+ */
+function engage_asset_file(string $path): ?string {
+    $candidates = array_filter([
+        !empty($_SERVER['DOCUMENT_ROOT']) ? rtrim($_SERVER['DOCUMENT_ROOT'], '/') . $path : null,
+        __DIR__ . '/../public' . $path,
+        __DIR__ . '/..' . $path,
+    ]);
+    foreach ($candidates as $file) {
+        if (is_file($file)) return $file;
+    }
+    return null;
+}
 
 /**
  * Versioned URL for a file under the web root, e.g. engage_asset('/assets/css/engage.css').
@@ -7,24 +23,22 @@ require_once __DIR__ . '/social_meta.php';
  * from a stale browser or CDN cache. If the file can't be found, the plain URL is returned.
  */
 function engage_asset(string $path): string {
-    $candidates = array_filter([
-        !empty($_SERVER['DOCUMENT_ROOT']) ? rtrim($_SERVER['DOCUMENT_ROOT'], '/') . $path : null,
-        __DIR__ . '/../public' . $path,
-        __DIR__ . '/..' . $path,
-    ]);
-    foreach ($candidates as $file) {
-        if (is_file($file)) {
-            return $path . '?v=' . (int) filemtime($file);
-        }
-    }
-    return $path;
+    $file = engage_asset_file($path);
+    return $file !== null ? $path . '?v=' . (int) filemtime($file) : $path;
 }
 
 /**
- * URL of the DCW seal, read from engage/assets/chapters/generic.svg (versioned like the CSS).
- * Use this everywhere the logo is shown, so there is one place to change it.
+ * URL of the logo shown in the top bar (versioned like the CSS).
+ *
+ * With no argument it is the DCW seal, assets/chapters/generic.svg. Pass a member's chapter key
+ * (see engage_chapter_key()) and it is that chapter's logo, assets/chapters/<key>.svg, falling back to the
+ * DCW seal when the chapter has no logo file. The key is checked before it is used in a path.
  */
-function engage_logo_url(): string {
+function engage_logo_url(string $chapter = ''): string {
+    if ($chapter !== '' && $chapter !== 'generic' && preg_match('/^[a-z0-9_-]{1,40}\z/', $chapter)) {
+        $path = '/assets/chapters/' . $chapter . '.svg';
+        if (engage_asset_file($path) !== null) return engage_asset($path);
+    }
     return engage_asset('/assets/chapters/generic.svg');
 }
 
@@ -35,6 +49,14 @@ function engage_logo_url(): string {
  * Staff pages (/admin, /finance) automatically get the staff scheme ("Logo Blue, Green & Crimson"): the <body> gets
  * class="admin", assets/css/staff.css is loaded after engage.css, the page is marked noindex, and the brand
  * link goes to the workspace.
+ *
+ * Member pages that pass 'member' get that member's chapter colors and chapter logo (see
+ * includes/chapter_theme.php). Staff pages and pages with no member keep the default DCW look.
+ *
+ * Owner preview: the owner-only page admin/chapter-themes.php sets $GLOBALS['ENGAGE_THEME_PREVIEW'] = true
+ * before calling engage_header(). While that flag is set, a page under /admin is drawn with the MEMBER look
+ * (no staff scheme, no staff footer), is marked noindex and has no social preview tags, so the owner sees
+ * exactly what a member of the chosen chapter sees. Pass a made-up member (engage_preview_member()), never a real one.
  *
  * Options:
  *   title    <title> text (" - DCW Engage" is added)
@@ -54,6 +76,8 @@ function engage_logo_url(): string {
  *            'slim', and the breadcrumb trail is off unless 'crumbs' is given.
  *   bare     true for a band with only the top bar: no heading, no lead, no trail (the dashboard).
  *            Implies 'compact'.
+ *   flat     true for a band with only the top bar (like 'bare'), but the page starts below the band
+ *            with no overlap (the signed-in member's home page). Implies 'slim'.
  *   back     [label, href] a single quiet "← label" link above the heading (replaces the breadcrumb
  *            pills on member pages), e.g. ['Dashboard', '/member/dashboard'].
  *   crumbs   breadcrumb trail, e.g. [['Home','/'],['Support','/support'],['Reimbursement']].
@@ -89,6 +113,8 @@ function engage_header(array $o) {
     foreach ($crumbs as $c) { if (!empty($c[1])) { $backHref = $c[1]; $backLabel = $c[0]; } }
     $e = fn($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
 
+    $isPreview = engage_is_theme_preview();
+
     // Public pages get the About DCW links (inside the menu); staff pages (/admin, /finance) do not need them.
     $about = engage_is_staff_path() ? [] : engage_about_links(true);
     // A page that already passes the member menu has the About links inside it. Everyone else gets the small menu.
@@ -100,17 +126,26 @@ function engage_header(array $o) {
     $isStaff   = engage_is_staff_path();
     // The brand goes to the workspace on staff pages, to the public home page everywhere else.
     $brandHref = $isStaff ? '/admin/dashboard' : '/';
+
+    // Chapter look: a signed-in member sees their chapter's colors and logo. Staff pages and pages with no
+    // member keep the default DCW look ($themeCss is '' and the logo is the DCW seal).
+    // The theme is worked out once, here, and printed from the same array.
+    $chapterKey = (!$isStaff && $member) ? engage_chapter_key($member) : '';
+    $themeVars  = $chapterKey !== '' ? engage_chapter_theme_vars($member) : [];
+    $themeCss   = engage_theme_vars_css($themeVars);
+    $themeColor = $isStaff ? '#051A2B' : ($themeVars['--primary'] ?? '#2E6599');   // fallback = --primary in engage.css
+    $logoUrl    = engage_logo_url($chapterKey);
     ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="<?= $isStaff ? '#051A2B' : '#2E6599' ?>">
-    <?php if ($isStaff): ?><meta name="robots" content="noindex, nofollow"><?php endif; ?>
+    <meta name="theme-color" content="<?= $e($themeColor) ?>">
+    <?php if ($isStaff || $isPreview): ?><meta name="robots" content="noindex, nofollow"><?php endif; ?>
     <title><?= $e($title) ?> - DCW Engage</title>
     <?php ob_start(); require __DIR__ . '/favicon.php'; echo engage_strip_social_images(ob_get_clean()); ?>
-    <?php if (!$isStaff) engage_social_meta([
+    <?php if (!$isStaff && !$isPreview) engage_social_meta([
         'title'       => $title . ' - DCW Engage',
         'description' => $o['description'] ?? null,
         'image'       => $o['image'] ?? null,
@@ -119,14 +154,16 @@ function engage_header(array $o) {
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <?php /* Versioned by file modification time: edits to the CSS show up at once, never stuck in a cache. */ ?>
     <link rel="stylesheet" href="<?= $e(engage_asset('/assets/css/engage.css')) ?>">
+    <?php /* The member's chapter colors. Must come AFTER engage.css so these variables override the defaults. */ ?>
+    <?php if ($themeCss !== ''): ?><style><?= $themeCss ?></style><?php endif; ?>
     <?php /* Staff pages (/admin, /finance) add the staff scheme on top of the shared design system. */ ?>
     <?php if ($isStaff): ?><link rel="stylesheet" href="<?= $e(engage_asset('/assets/css/staff.css')) ?>"><?php endif; ?>
 </head>
 <body<?= $isStaff ? ' class="admin"' : '' ?>>
 <header class="<?= $e($heroClass) ?>">
     <div class="topbar">
-        <?php /* The logo (assets/chapters/generic.svg) sits inside .brand-logo: a small circle that crops the image (see engage.css). */ ?>
-        <a class="brand" href="<?= $e($brandHref) ?>"><span class="brand-logo"><img src="<?= $e(engage_logo_url()) ?>" alt=""></span><span class="bname">DCW Engage</span></a>
+        <?php /* The logo sits inside .brand-logo: a small circle that crops the image (see engage.css). It is the member's chapter logo (assets/chapters/<chapter>.svg) or the DCW seal (generic.svg). */ ?>
+        <a class="brand" href="<?= $e($brandHref) ?>"><span class="brand-logo"><img src="<?= $e($logoUrl) ?>" alt=""></span><span class="bname">DCW Engage</span></a>
         <div class="tools">
             <?php if ($tools !== null): ?>
                 <?= $tools ?>
@@ -214,8 +251,17 @@ function engage_safe_url($u): string {
     return preg_match('#^https?://#i', (string) $u) ? (string) $u : '';
 }
 
-/** Staff pages live under /admin and /finance. */
+/**
+ * True on the owner-only chapter theme preview page. That page sets $GLOBALS['ENGAGE_THEME_PREVIEW'] = true
+ * (after its own owner check) so the header and footer draw the member look instead of the staff look.
+ */
+function engage_is_theme_preview(): bool {
+    return !empty($GLOBALS['ENGAGE_THEME_PREVIEW']);
+}
+
+/** Staff pages live under /admin and /finance (except the owner theme preview, which shows the member look). */
 function engage_is_staff_path(): bool {
+    if (engage_is_theme_preview()) return false;
     $path = (string) parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
     return (bool) preg_match('#^/(admin|finance)(/|$)#', $path);
 }
