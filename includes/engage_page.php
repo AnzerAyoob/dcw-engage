@@ -384,12 +384,12 @@ function engage_member_menu(array $member, array $o = []): string {
                 <?php else: ?>
                     <?= $link('Home', '/') ?>
                 <?php endif; ?>
-                <?= $link('Track application', '/track') ?>
+                <?= $link('Track Application', '/track') ?>
 
                 <div class="msep"></div>
-                <?= $link('My dashboard', '/member/dashboard') ?>
-                <?= $link('My profile', '/member/profile') ?>
-                <?= $link('My certificates', '/member/certificates') ?>
+                <?= $link('My Dashboard', '/member/dashboard') ?>
+                <?= $link('My Profile', '/member/profile') ?>
+                <?= $link('My Certificates', '/member/certificates') ?>
                 <?= $link('Support', '/member/support') ?>
                 <?= $link('Talk to DCW Support', '/member/talk') ?>
                 <?= $link('Report a problem', '/member/report-problem') ?>
