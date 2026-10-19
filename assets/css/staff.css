@@ -48,13 +48,13 @@ body.admin {
 }
 body.admin ::selection { background: var(--primary); color: #fff; }
 
-/* ---------- Header band: deep logo blue with a soft glow and a blue / green / crimson stripe ---------- */
+/* ---------- Header band: bright logo blue with a soft glow and a blue / green / crimson stripe ---------- */
 body.admin .hero, body.admin .hero.slim {
     position: relative; text-align: left; padding: 14px 0 38px; border-bottom: 0; overflow: visible;
     background:
-        radial-gradient(60% 150% at 92% -30%, rgba(43,140,192,.55) 0, rgba(43,140,192,0) 62%),
-        radial-gradient(42% 110% at 0% 130%, rgba(155,2,2,.28) 0, rgba(155,2,2,0) 62%),
-        linear-gradient(135deg, #031321 0%, var(--deep-2) 55%, var(--deep-3) 100%);
+        radial-gradient(circle at 10% 15%, rgba(255,255,255,.12) 0, rgba(255,255,255,0) 40%),
+        radial-gradient(circle at 94% 100%, rgba(155,2,2,.22) 0, rgba(155,2,2,0) 42%),
+        linear-gradient(140deg, #0B5E8D 0%, var(--primary) 55%, #3F94C8 100%);
 }
 body.admin .hero::after {
     content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 4px;
@@ -62,7 +62,7 @@ body.admin .hero::after {
 }
 body.admin .hero .topbar {
     max-width: 1180px; margin: 0 auto 22px; padding: 0 22px 14px;
-    border-bottom: 1px solid rgba(255,255,255,.14);
+    border-bottom: 1px solid rgba(255,255,255,.22);
 }
 /* White ring instead of the old gold one, so the seal's own colours carry the logo */
 body.admin .topbar .brand-logo { box-shadow: 0 0 0 2px rgba(255,255,255,.55); }
@@ -72,19 +72,19 @@ body.admin .hero .hero-copy, body.admin .hero > h1, body.admin .hero > .lead {
 body.admin .hero .kicker {
     display: block; max-width: 1180px; margin: 0 auto 8px; padding: 0 22px;
     background: none; border: 0; border-radius: 0;
-    font-size: 12px; font-weight: 800; letter-spacing: .18em; text-transform: uppercase; color: #7FD0A5;
+    font-size: 12px; font-weight: 800; letter-spacing: .18em; text-transform: uppercase; color: #CFF3E0;
 }
 body.admin .hero h1 { color: #fff; font-size: clamp(26px, 3.6vw, 34px); letter-spacing: -.02em; margin-bottom: 4px; }
-body.admin .hero .lead { color: rgba(255,255,255,.78); font-size: 15.5px; }
+body.admin .hero .lead { color: rgba(255,255,255,.92); font-size: 15.5px; }
 /* Inside .hero-copy the lead fills the copy block; directly under the hero it stays in the 1180px column */
 body.admin .hero .hero-copy .lead { max-width: none; margin: 0; }
 body.admin .hero > .lead { max-width: 1180px; margin: 0 auto; }
 body.admin .hero .crumbs { max-width: 1180px; padding: 0 22px; justify-content: flex-start; }
-body.admin .hero .who { font-size: 13.5px; color: rgba(255,255,255,.7); }
+body.admin .hero .who { font-size: 13.5px; color: rgba(255,255,255,.88); }
 body.admin .crumbs a { background: rgba(255,255,255,.10); border-color: rgba(255,255,255,.22); }
 body.admin .crumbs a:hover { background: #fff; border-color: #fff; color: var(--deep); }
 body.admin .crumbs .here { color: #fff; }
-body.admin .chip-btn { background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.30); }
+body.admin .chip-btn { background: rgba(255,255,255,.16); border-color: rgba(255,255,255,.45); }
 body.admin .chip-btn:hover { background: #fff; border-color: #fff; color: var(--deep); }
 body.admin .wrap.cards-wrap { margin-top: 0; padding-top: 30px; }
 
