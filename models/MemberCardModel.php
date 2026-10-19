@@ -50,6 +50,16 @@ class MemberCardModel
             'title'  => 'Founder, Deoband Community Wikimedia',
             'detail' => 'Holds a Permanent voting seat on the DCW Executive Board.',
         ],
+         [
+        'muntaqibah' => [
+            'title' => 'Member, DCW Executive Board',
+            'detail' => 'Holds a voting seat on the DCW Board.',
+        ],
+            [
+        'shadab' => [
+            'title' => 'Member, DCW Executive Board',
+            'detail' => 'Holds a voting seat on the DCW Board.',
+        ],
     ];
 
     private PDO $db;
