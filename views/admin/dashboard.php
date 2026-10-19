@@ -214,6 +214,7 @@ ob_start(); ?>
 <?php if ($canManageTeam): ?>
     <a href="/admin/team" class="chip-btn">Team</a>
     <a href="/admin/audit" class="chip-btn">Audit log</a>
+    <a href="/admin/chapter-themes" class="chip-btn">Chapter themes</a>
 <?php endif; ?>
 <form method="POST" action="/admin/logout">
     <?= CSRF::getInputField() ?>
