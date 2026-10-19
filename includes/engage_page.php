@@ -21,10 +21,18 @@ function engage_asset(string $path): string {
 }
 
 /**
+ * URL of the DCW seal, read from engage/assets/chapters/generic.svg (versioned like the CSS).
+ * Use this everywhere the logo is shown, so there is one place to change it.
+ */
+function engage_logo_url(): string {
+    return engage_asset('/assets/chapters/generic.svg');
+}
+
+/**
  * Compact DCW Engage page shell.
  * Usage: engage_header([...]); ...content...; engage_footer();
  *
- * Staff pages (/admin, /finance) automatically get the staff scheme ("Midnight Teal & Gold"): the <body> gets
+ * Staff pages (/admin, /finance) automatically get the staff scheme ("Logo Blue, Green & Crimson"): the <body> gets
  * class="admin", assets/css/staff.css is loaded after engage.css, the page is marked noindex, and the brand
  * link goes to the workspace.
  *
@@ -98,7 +106,7 @@ function engage_header(array $o) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="<?= $isStaff ? '#061A1E' : '#2E6599' ?>">
+    <meta name="theme-color" content="<?= $isStaff ? '#051A2B' : '#2E6599' ?>">
     <?php if ($isStaff): ?><meta name="robots" content="noindex, nofollow"><?php endif; ?>
     <title><?= $e($title) ?> - DCW Engage</title>
     <?php ob_start(); require __DIR__ . '/favicon.php'; echo engage_strip_social_images(ob_get_clean()); ?>
@@ -117,8 +125,8 @@ function engage_header(array $o) {
 <body<?= $isStaff ? ' class="admin"' : '' ?>>
 <header class="<?= $e($heroClass) ?>">
     <div class="topbar">
-        <?php /* The logo sits inside .brand-logo: a small circle that crops the image (see engage.css). */ ?>
-        <a class="brand" href="<?= $e($brandHref) ?>"><span class="brand-logo"><img src="https://dcwwiki.org/dcwwiki/images/5/56/DCW_logo.png" alt=""></span><span class="bname">DCW Engage</span></a>
+        <?php /* The logo (assets/chapters/generic.svg) sits inside .brand-logo: a small circle that crops the image (see engage.css). */ ?>
+        <a class="brand" href="<?= $e($brandHref) ?>"><span class="brand-logo"><img src="<?= $e(engage_logo_url()) ?>" alt=""></span><span class="bname">DCW Engage</span></a>
         <div class="tools">
             <?php if ($tools !== null): ?>
                 <?= $tools ?>
@@ -410,15 +418,15 @@ function engage_footer() {
         border-top: 4px solid transparent;
         border-image: linear-gradient(90deg, var(--primary) 0 40%, var(--accent) 40% 70%, var(--leaf) 70% 100%) 1;
     }
-    /* Staff pages: the stripe is teal, gold and coral, to match the header band. */
+    /* Staff pages: the same three logo colours (blue, green, crimson), to match the header band. */
     body.admin footer.site-footer {
-        border-image: linear-gradient(90deg, var(--primary-light) 0 40%, var(--gold) 40% 70%, var(--accent) 70% 100%) 1;
+        border-image: linear-gradient(90deg, var(--primary-light) 0 40%, var(--leaf) 40% 70%, var(--accent) 70% 100%) 1;
     }
     .site-footer .sf-inner { max-width: 1100px; margin: 0 auto; padding: 40px 24px 20px; }
     .site-footer .sf-inner.sf-staff { padding-top: 22px; }
     .site-footer .sf-grid { display: grid; grid-template-columns: 1.4fr repeat(3, 1fr); gap: 32px 28px; }
     .site-footer .sf-org { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 16px; letter-spacing: -.01em; }
-    .site-footer .sf-org img { width: 34px; height: 34px; }
+    .site-footer .sf-org img { width: 34px; height: 34px; object-fit: contain; }
     .site-footer .sf-about { margin: 12px 0 0; font-size: 14px; line-height: 1.65; color: var(--muted); max-width: 40ch; }
     .site-footer .sf-about strong { color: var(--ink); }
     .site-footer h2 { margin: 0 0 12px; font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--primary); }
@@ -456,7 +464,7 @@ function engage_footer() {
         <div class="sf-grid">
             <div class="sf-brand">
                 <div class="sf-org">
-                    <img src="https://dcwwiki.org/dcwwiki/images/5/56/DCW_logo.png" alt="">
+                    <img src="<?= $e(engage_logo_url()) ?>" alt="">
                     <span>Deoband Community Wikimedia</span>
                 </div>
                 <p class="sf-about"><strong>DCW Engage</strong> serves as the central administrative hub for Deoband Community Wikimedia, connecting members to community governance, program applications, and support infrastructure.</p>
