@@ -485,13 +485,19 @@ if (!empty($schema['unlisted'])) {
     header('X-Robots-Tag: noindex, nofollow');
 }
 
+// Same page frame as the member dashboard: the slim hero with a left-aligned heading.
+//   'back'   a quiet "← Home" link above the heading. It replaces the breadcrumb pills.
+//   'crumbs' [] switches the breadcrumb trail off. Without this the form title was printed twice:
+//            once as the big heading and again as the last breadcrumb.
+//   'tools'  signed-in members get the shared member menu (avatar + three lines) in the top bar.
 engage_header([
     'title'       => $schema['title'],
     'heading'     => $schema['title'],
-    'kicker'      => 'Application',
-    'lead'        => '',
+    'slim'        => true,
+    'back'        => ['Home', '/'],
+    'crumbs'      => [],
     'member'      => $member,
-    'crumbs'      => [['Home', '/'], [$schema['title']]],
+    'tools'       => $member ? engage_member_menu($member) : null,
     // Social preview: banner image serves as the thumbnail, description serves as preview text.
     'description' => MiniWikiText::stripToPlainText($schema['description'] ?? ''),
     'image'       => $schema['banner_image'] ?? null,
@@ -501,8 +507,13 @@ engage_header([
 <style>
     /* Application form only. All other styles are sourced from /assets/css/engage.css */
 
-    /* Long titles wrap evenly instead of running as a single wide line */
-    .hero h1 { max-width: 880px; margin-left: auto; margin-right: auto; text-wrap: balance; }
+    /* Long titles wrap evenly. The heading stays left-aligned (slim hero). */
+    .hero h1 { text-wrap: balance; }
+
+    /* The form card uses the full content width, so its left edge lines up with the heading and the
+       top bar, like the panels on the member dashboard. To keep a narrower form, use for example:
+       .fcard { max-width: 860px; margin-left: 0; } */
+    .fcard { max-width: none; }
 
     /* Banner serves as the card header image: flush with the card edges (card padding is 30px).
        The attribution line (for Commons images) is positioned directly below it. */
