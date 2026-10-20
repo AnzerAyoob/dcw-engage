@@ -22,6 +22,7 @@ $existingFormType = '';
 $existingNotifyEmails = '';
 $existingDeadlineInput = '';   // the saved deadline, in IST, in datetime-local format
 $existingUnlisted = false;     // "link only": live, but not listed on the home page
+$existingKind = 'application'; // 'application' or 'feedback'; fixed once the form exists
 if (isset($_GET['edit'])) {
     $form = $formModel->getFormById($_GET['edit']);
     // Same response for "missing" and "not yours to open", so nobody can tell
@@ -36,12 +37,15 @@ if (isset($_GET['edit'])) {
     $existingNotifyEmails = $form['notify_emails'] ?? '';
     $existingDeadlineInput = FormModel::utcToIstInput($form['deadline_at'] ?? null);
     $existingUnlisted = !empty($form['schema']['unlisted']);
+    $existingKind = (($form['schema']['kind'] ?? '') === 'feedback') ? 'feedback' : 'application';
 }
 
 // What the deadline box shows: what was just posted (so a failed save does not lose it), else the saved value.
 $deadlineValue = $existingDeadlineInput;
 // Same for the "link only" checkbox.
 $unlistedValue = $existingUnlisted;
+// And for the form type.
+$kindValue = $existingKind;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!CSRF::validate($_POST['csrf_token'])) {
@@ -67,6 +71,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // on the POST itself, not just on page load, since a crafted POST skips
     // the page.
     $savedDeadlineInput = '';
+    $savedKind = null;
     if ($formId) {
         $target = $formModel->getFormById($formId);
         if (!$target || !FormModel::userCanEdit($target)) {
@@ -74,7 +79,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             die("Form not found.");
         }
         $savedDeadlineInput = FormModel::utcToIstInput($target['deadline_at'] ?? null);
+        $savedKind = (($target['schema']['kind'] ?? '') === 'feedback') ? 'feedback' : 'application';
     }
+
+    // Form type: an existing form keeps the type it was created with (its responses live in a table
+    // that depends on it); only a new form takes the type from the select. The select is disabled
+    // when editing, so it is not even posted then.
+    $kind = $savedKind ?? ((($_POST['form_kind'] ?? '') === 'feedback') ? 'feedback' : 'application');
+    $kindValue = $kind;
 
     // Normalise the comma-separated recipients and validate each one.
     // Empty is allowed — a form with no recipients simply sends no alerts.
@@ -124,6 +136,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $decodedSchema = json_decode($schemaJson, true);
         if (json_last_error() !== JSON_ERROR_NONE || !is_array($decodedSchema)) {
             $error = "Invalid JSON schema format generated.";
+        } elseif ($kind === 'feedback' && in_array('file', array_column($decodedSchema['fields'] ?? [], 'type'), true)) {
+            // Feedback responses are stored without any upload handling, so a file question could never work.
+            $error = "Feedback forms cannot include file upload questions.";
         } else {
             // "Link only" is set here, on the server, from the checkbox, rather than by builder.js.
             // That way the flag is always exactly what the checkbox says, and a builder that only
@@ -132,6 +147,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $decodedSchema['unlisted'] = true;
             } else {
                 unset($decodedSchema['unlisted']);
+            }
+
+            // Same for the form type: "kind": "feedback" is written here, not by builder.js.
+            // Applications carry no "kind" key at all, so every existing form stays an application.
+            if ($kind === 'feedback') {
+                $decodedSchema['kind'] = 'feedback';
+            } else {
+                unset($decodedSchema['kind']);
             }
             $schemaJson = json_encode($decodedSchema, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
@@ -212,6 +235,17 @@ engage_header([
 
                 <input type="url" id="banner_image" placeholder="Banner Image URL (Optional, e.g. https://example.com/banner.jpg)" style="width: 100%; padding: 12px; margin-bottom: 20px; border: 1.5px solid var(--border); border-radius: 10px; font-family: 'Inter', sans-serif; font-size: 14px;">
                 
+                <label>Form type</label>
+                <?php /* Disabled when editing: a disabled select is not posted, and the server keeps the saved type anyway. */ ?>
+                <select name="form_kind" id="form_kind" <?= isset($_GET['edit']) ? 'disabled' : '' ?> style="margin-bottom: 0;">
+                    <option value="application" <?= $kindValue === 'application' ? 'selected' : '' ?>>Application (tracked, drafts, review queue)</option>
+                    <option value="feedback" <?= $kindValue === 'feedback' ? 'selected' : '' ?>>Feedback (receipt email only, no tracking)</option>
+                </select>
+                <span class="hint">
+                    <?= isset($_GET['edit']) ? 'The type cannot be changed after a form is created.' : 'Choose carefully: the type cannot be changed after the form is saved.' ?>
+                </span>
+                <div style="height: 20px;"></div>
+
                 <label>URL Slug (Identifier)</label>
                 <input type="text" name="form_type" id="form_type" required placeholder="e.g. fellowship-2026" style="margin-bottom: 0;">
                 <span class="hint">Users will access this form at: /&lt;slug&gt;</span>
@@ -235,9 +269,24 @@ engage_header([
                 <span class="hint">The form stays live and anyone with its link can open it, but it is left out of the public "Open programs" list and asked not to be indexed by search engines. Share the link only with the people who should fill it in.</span>
             </div>
 
-            <div class="b-notice">
+            <div class="b-notice" id="notice_application">
                 <strong>Notice:</strong> An <em>Email Address</em> field is automatically added to the top of every form to support Magic Links. You do not need to create one below.
             </div>
+            <div class="b-notice" id="notice_feedback" style="display:none;">
+                <strong>Notice:</strong> <em>Name</em> and <em>Email Address</em> fields are added automatically to the top of a feedback form. The email is used only to send a receipt, and organizers can write back from the Feedback page if they need to. Feedback forms cannot have file uploads.
+            </div>
+            <script>
+                (function () {
+                    var sel = document.getElementById('form_kind');
+                    function sync() {
+                        var fb = sel.value === 'feedback';
+                        document.getElementById('notice_application').style.display = fb ? 'none' : '';
+                        document.getElementById('notice_feedback').style.display = fb ? '' : 'none';
+                    }
+                    sel.addEventListener('change', sync);
+                    sync();
+                })();
+            </script>
 
             <!-- Dynamic Fields Container -->
             <div id="fields_container">

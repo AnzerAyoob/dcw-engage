@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../includes/wikitext.php';
 require_once __DIR__ . '/../includes/engage_page.php';
 require_once __DIR__ . '/../models/FormModel.php';
+require_once __DIR__ . '/../models/FeedbackModel.php';
 require_once __DIR__ . '/../includes/member_session.php';
 require_once __DIR__ . '/../includes/member_stats.php';
 require_once __DIR__ . '/../includes/dcw_events.php';
@@ -22,6 +23,26 @@ $activeForms = array_values(array_filter($activeForms, fn($f) => !$isMembershipF
 // when its schema has "unlisted": true (the "Link only" checkbox in the form builder).
 // getActiveForms() returns this as the `unlisted` column.
 $activeForms = array_values(array_filter($activeForms, fn($f) => empty($f['unlisted'])));
+
+// Feedback forms (schema "kind": "feedback") are not applications, so they do not belong under
+// "Open programs" with an "Apply now" button. They are pulled out here and shown in their own
+// "Share your feedback" section further down, with "Give feedback" wording. A feedback form is
+// recognised by its id (FeedbackModel::feedbackForms()) or, when the row carries its schema, by the
+// schema itself. If the feedback table has not been created yet, nothing is pulled out.
+$feedbackIds = [];
+try {
+    foreach ((new FeedbackModel())->feedbackForms() as $fb) {
+        $feedbackIds[(int) $fb['id']] = true;
+    }
+} catch (Throwable $e) { /* migration not run yet */ }
+
+$isFeedbackForm = function (array $f) use ($feedbackIds): bool {
+    if (isset($f['id']) && isset($feedbackIds[(int) $f['id']])) return true;
+    $schema = $f['schema'] ?? (isset($f['schema_json']) ? json_decode((string) $f['schema_json'], true) : null);
+    return is_array($schema) && FeedbackModel::isFeedbackSchema($schema);
+};
+$feedbackForms = array_values(array_filter($activeForms, $isFeedbackForm));
+$activeForms = array_values(array_filter($activeForms, fn($f) => !$isFeedbackForm($f)));
 
 // Is a member signed in? Guarded so the public landing page can never break, for example
 // before sql/member_login.sql has been run.
@@ -141,6 +162,21 @@ foreach ($activeForms as $form) {
         'title' => $title,
         'desc'  => mb_strimwidth($desc, 0, 120, '…'),
         'cta'   => 'Apply now', 'href' => '/' . $form['form_type'],
+    ];
+}
+
+// Feedback forms get their own cards and wording. They are shown in a separate "Share your feedback"
+// section, not under "Open programs", and are not counted as programs.
+$feedbackCards = [];
+foreach ($feedbackForms as $form) {
+    $title = $form['title'] ?: ucwords(str_replace(['-', '_'], ' ', $form['form_type']));
+
+    $desc = $form['description'] ? MiniWikiText::stripToPlainText($form['description']) : 'Tell us what you think.';
+    $feedbackCards[] = [
+        'tone'  => 'var(--accent)', 'icon' => 'quote',
+        'title' => $title,
+        'desc'  => mb_strimwidth($desc, 0, 120, '…'),
+        'cta'   => 'Give feedback', 'href' => '/' . $form['form_type'],
     ];
 }
 
@@ -302,7 +338,7 @@ $onBand = !$signedInMember;
             </section>
         <?php endif; ?>
 
-        <?php if (empty($cards) && empty($programs) && $reflectionCard === '' && empty($events)): ?>
+        <?php if (empty($cards) && empty($programs) && empty($feedbackCards) && $reflectionCard === '' && empty($events)): ?>
             <div class="empty">
                 <h3>No open programs right now</h3>
                 <p>There are no forms accepting submissions at the moment. Please check back soon — new opportunities are added here as they open.</p>
@@ -351,9 +387,27 @@ $onBand = !$signedInMember;
             <div class="grid"><?= $reflectionCard ?></div>
         <?php endif; ?>
 
+        <?php /* Feedback forms: their own section, "Give feedback" wording, never under "Open programs". */ ?>
+        <?php if (!empty($feedbackCards)): ?>
+            <?php $fbTitleClass = 'section-title' . (empty($cards) && empty($programs) && ($reflectionCard === '' || $duo) && $onBand ? ' first' : ''); ?>
+            <h2 id="feedback" class="<?= $fbTitleClass ?>">Share your feedback</h2>
+            <div class="grid">
+                <?php foreach ($feedbackCards as $p): ?>
+                    <a class="prog" href="<?= htmlspecialchars($p['href']) ?>" style="--tone: <?= htmlspecialchars($p['tone']) ?>;">
+                        <span class="tick">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><?= $icons[$p['icon']] ?></svg>
+                        </span>
+                        <h3><?= htmlspecialchars($p['title']) ?></h3>
+                        <p><?= htmlspecialchars($p['desc']) ?></p>
+                        <span class="go"><?= htmlspecialchars($p['cta']) ?> <span aria-hidden="true">→</span></span>
+                    </a>
+                <?php endforeach; ?>
+            </div>
+        <?php endif; ?>
+
 
         <?php if (!empty($events)): ?>
-            <?php $evTitleClass = 'section-title' . (empty($cards) && empty($programs) && $onBand ? ' first' : ''); ?>
+            <?php $evTitleClass = 'section-title' . (empty($cards) && empty($programs) && empty($feedbackCards) && $onBand ? ' first' : ''); ?>
             <?php if ($duo): ?>
                 <?php /* Title, events, title, reflection: each card has its own heading, and on phones it stacks in that order. */ ?>
                 <div class="duo" id="events">

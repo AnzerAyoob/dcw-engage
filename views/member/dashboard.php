@@ -5,6 +5,7 @@ require_once __DIR__ . '/../../includes/engage_page.php';
 require_once __DIR__ . '/../../models/MemberAuthModel.php';
 require_once __DIR__ . '/../../models/MemberModel.php';
 require_once __DIR__ . '/../../models/FormModel.php';
+require_once __DIR__ . '/../../models/FeedbackModel.php';
 require_once __DIR__ . '/../../models/InternetSupportModel.php';
 require_once __DIR__ . '/../../models/ReimbursementSettingsModel.php';
 require_once __DIR__ . '/../../models/ReimbursementModel.php';
@@ -28,7 +29,9 @@ require_once __DIR__ . '/../../includes/cert_rows.php';
  * Certificates: only the latest few are shown here. The full list, with search and paging,
  * is /member/certificates.
  *
- * Link-only forms (schema "unlisted": true) are never listed under "More from DCW".
+ * Link-only forms (schema "unlisted": true) are never listed. Feedback forms (schema "kind": "feedback")
+ * are not applications, so they are kept out of "More from DCW" and get their own "Share your feedback"
+ * panel instead. Signed-in members open a feedback form without email verification.
  * Applications the member has saved as a Draft (still to be finished, or sent back) are listed under
  * "Requires your attention", with a button that emails them a fresh resume link. Applications in any
  * other status reach the applicant by email, so they are not repeated here.
@@ -142,12 +145,33 @@ try {
     $rs = (new ReimbursementSettingsModel())->get();
     $reimbursementOpen = $rs && !empty($rs['is_active']);
 } catch (Throwable $e) { $reimbursementOpen = false; }
+
+// Feedback forms (schema "kind": "feedback") are not applications, so they are kept out of
+// "More from DCW" and listed in their own "Share your feedback" panel. A feedback form is
+// recognised by its id (FeedbackModel::feedbackForms()) or, when the row carries its schema, by the
+// schema itself. Guarded on its own: if the feedback table has not been created yet, nothing is
+// pulled out and the programs list below still works.
+$feedbackIds = [];
 try {
-    // Membership forms have their own tile, and link-only forms (schema "unlisted": true) are
-    // shared by link only, so neither is listed here.
+    foreach ((new FeedbackModel())->feedbackForms() as $fb) {
+        $feedbackIds[(int) $fb['id']] = true;
+    }
+} catch (Throwable $e) { }
+
+$isFeedbackForm = function (array $f) use ($feedbackIds): bool {
+    if (isset($f['id']) && isset($feedbackIds[(int) $f['id']])) return true;
+    $schema = $f['schema'] ?? (isset($f['schema_json']) ? json_decode((string) $f['schema_json'], true) : null);
+    return is_array($schema) && FeedbackModel::isFeedbackSchema($schema);
+};
+
+try {
+    // Membership forms have their own tile, link-only forms (schema "unlisted": true) are
+    // shared by link only, and feedback forms are not applications, so none of these are listed here.
     $programs = array_values(array_filter(
         (new FormModel())->getActiveForms(),
-        fn($f) => !str_starts_with((string) $f['form_type'], 'membership-') && empty($f['unlisted'])
+        fn($f) => !str_starts_with((string) $f['form_type'], 'membership-')
+               && empty($f['unlisted'])
+               && !$isFeedbackForm($f)
     ));
 } catch (Throwable $e) { $programs = []; }
 

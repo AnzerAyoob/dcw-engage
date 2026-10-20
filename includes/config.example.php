@@ -31,6 +31,9 @@ return [
         // How long an emailed organizer invitation stays usable.
         'invite_expiry'           => '+7 days',
         // How long the emailed "verify your email" link for a form stays usable.
-        'email_verify_expiry'     => '+1 hour'
+        'email_verify_expiry'     => '+1 hour',
+        // How many months feedback responses are kept before cron/scrub_feedback.php blanks the name and
+        // email on them (the written answers are kept). Left out, it defaults to 12.
+        'feedback_retention_months' => 12
     ]
 ];
