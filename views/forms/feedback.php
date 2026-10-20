@@ -6,7 +6,11 @@
  * Runs in the renderer's scope, so it uses $form, $schema, $formType and $previewSchema from there.
  * The renderer has already dealt with closed / missing forms.
  *
- * Flow (email verification happens BEFORE the form opens):
+ * SIGNED-IN MEMBERS skip verification entirely. Their email was already verified when they signed in,
+ * so they go straight to the feedback fields and the response is stored under their member name and
+ * email from the session. Everyone else (guests) goes through the flow below.
+ *
+ * Guest flow (email verification happens BEFORE the form opens):
  *   1. gate     name + email  -> POST fb_action=request  -> verification link emailed
  *   2. check    "check your inbox" screen
  *   3. confirm  link opens ?verify=TOKEN -> token is staged in the session and the URL is cleaned
@@ -14,17 +18,21 @@
  *               on GET, so mail-security link scanners cannot burn it (see EmailVerificationModel::consume).
  *   4. form     the feedback fields; POST fb_action=submit
  *
- * The name and email stored with the response are the VERIFIED ones from the session, never values
- * posted with the final form, so a verified address cannot be swapped out at submit time.
+ * The name and email stored with the response are the VERIFIED ones (from the member session, or from
+ * the verified guest session), never values posted with the final form, so an address cannot be
+ * swapped out at submit time.
  *
  * What is still different from an application:
  *   - no draft, no magic link, no tracking ID, no duplicate check, no member-ID logic
  *   - the response goes to feedback_responses, not applications
  *   - the person gets a receipt email and nothing else
+ *
+ * The abuse limits (FeedbackModel::MAX_PER_EMAIL_PER_HOUR / MAX_PER_FORM_PER_10_MIN) apply to members too.
  */
 require_once __DIR__ . '/../../includes/engage_page.php';
 require_once __DIR__ . '/../../includes/wikitext.php';
 require_once __DIR__ . '/../../includes/app_log.php';
+require_once __DIR__ . '/../../includes/member_session.php';
 require_once __DIR__ . '/../../models/FormModel.php';
 require_once __DIR__ . '/../../models/FeedbackModel.php';
 require_once __DIR__ . '/../../models/EmailVerificationModel.php';
@@ -44,9 +52,31 @@ $fbName    = '';   // gate form values (kept when re-showing the gate with error
 $fbEmail   = '';
 
 // ---------------------------------------------------------------------------------------------
-// GET ?verify=TOKEN: stage the token and clean the URL. Nothing is redeemed here.
+// Signed-in member? Their login already verified the email, so no verification step is needed.
+// Guarded so a problem with the member session can never break the public form: on any failure the
+// visitor is simply treated as a guest. Not used in preview mode.
 // ---------------------------------------------------------------------------------------------
-if (!$isPreview && $_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['verify'])) {
+$fbMember = null;
+if (!$isPreview) {
+    try {
+        $sessionMember = MemberSession::current();
+    } catch (Throwable $e) {
+        $sessionMember = null;
+    }
+    if (is_array($sessionMember)) {
+        $mEmail = strtolower(trim((string) ($sessionMember['email'] ?? '')));
+        if ($mEmail !== '' && filter_var($mEmail, FILTER_VALIDATE_EMAIL)) {
+            $mName    = trim((string) ($sessionMember['full_name'] ?? ''));
+            $fbMember = ['name' => $mName !== '' ? $mName : 'Member', 'email' => $mEmail];
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// GET ?verify=TOKEN: stage the token and clean the URL. Nothing is redeemed here.
+// (Members never need a token, so for them the parameter is ignored and the form simply opens.)
+// ---------------------------------------------------------------------------------------------
+if (!$isPreview && !$fbMember && $_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['verify'])) {
     $t = is_string($_GET['verify']) ? $_GET['verify'] : '';
     if (preg_match('/^[a-f0-9]{64}$/', $t)) {
         $_SESSION['fb_pending'][$fbFormId] = $t;
@@ -58,7 +88,9 @@ if (!$isPreview && $_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['verify']
 
 // Currently verified person for this form (if any, and not stale).
 $fbVerified = null;
-if (!$isPreview) {
+if ($fbMember) {
+    $fbVerified = $fbMember;
+} elseif (!$isPreview) {
     $v = $_SESSION['fb_verified'][$fbFormId] ?? null;
     if (is_array($v) && (int) ($v['at'] ?? 0) > time() - FB_VERIFIED_TTL) {
         $fbVerified = ['name' => (string) $v['name'], 'email' => (string) $v['email']];
@@ -77,7 +109,8 @@ if (!$isPreview && $_SERVER['REQUEST_METHOD'] === 'POST') {
         die("Invalid CSRF token.");
     }
 
-    $fbAction = (string) ($_POST['fb_action'] ?? 'submit');
+    // A signed-in member can only ever submit feedback: the verification actions do not apply to them.
+    $fbAction = $fbMember ? 'submit' : (string) ($_POST['fb_action'] ?? 'submit');
 
     // Honeypot: real people never see this field. Pretend it worked, store nothing, send nothing.
     if (trim((string) ($_POST['hp_website'] ?? '')) !== '') {
@@ -175,7 +208,7 @@ if (!$isPreview && $_SERVER['REQUEST_METHOD'] === 'POST') {
                             app_log("Feedback mail failed for form '$formType': " . $mailEx->getMessage());
                         }
 
-                        // One verification, one submission. Post/Redirect/Get so a refresh cannot submit twice.
+                        // One verification, one submission (guests). Post/Redirect/Get so a refresh cannot submit twice.
                         unset($_SESSION['fb_verified'][$fbFormId]);
                         $_SESSION['fb_sent'][$fbFormId] = true;
                         header('Location: ' . $fbPath);
@@ -360,7 +393,7 @@ engage_header([
             </div>
 
             <p class="verified-line">
-                Verified as <strong><?= htmlspecialchars($fbVerified['name']) ?></strong>
+                <?= $fbMember ? 'Signed in as' : 'Verified as' ?> <strong><?= htmlspecialchars($fbVerified['name']) ?></strong>
                 (<?= htmlspecialchars($fbVerified['email']) ?>). A receipt will be sent to this address.
             </p>
 
