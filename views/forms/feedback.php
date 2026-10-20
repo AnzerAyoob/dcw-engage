@@ -28,6 +28,9 @@
  *   - the person gets a receipt email and nothing else
  *
  * The abuse limits (FeedbackModel::MAX_PER_EMAIL_PER_HOUR / MAX_PER_FORM_PER_10_MIN) apply to members too.
+ *
+ * Page frame: the slim hero (left-aligned heading, quiet "Home" back link, no breadcrumb pills), the same
+ * as the member dashboard. Signed-in members also get the shared member menu in the top bar.
  */
 require_once __DIR__ . '/../../includes/engage_page.php';
 require_once __DIR__ . '/../../includes/wikitext.php';
@@ -55,7 +58,10 @@ $fbEmail   = '';
 // Signed-in member? Their login already verified the email, so no verification step is needed.
 // Guarded so a problem with the member session can never break the public form: on any failure the
 // visitor is simply treated as a guest. Not used in preview mode.
+// $sessionMember is kept (not just $fbMember) because the page header needs the full session row
+// for the member menu and chapter theme.
 // ---------------------------------------------------------------------------------------------
+$sessionMember = null;
 $fbMember = null;
 if (!$isPreview) {
     try {
@@ -251,13 +257,19 @@ if (!empty($schema['unlisted'])) {
     header('X-Robots-Tag: noindex, nofollow');
 }
 
+// Same page frame as the member dashboard: the slim hero with a left-aligned heading.
+//   'back'   a quiet "← Home" link above the heading. It replaces the breadcrumb pills.
+//   'crumbs' [] switches the breadcrumb trail off. Without this the form title was printed twice:
+//            once as the big heading and again as the last breadcrumb.
+//   'tools'  signed-in members get the shared member menu (avatar + three lines) in the top bar.
 engage_header([
     'title'       => $fbTitle,
     'heading'     => $fbTitle,
-    'kicker'      => 'Feedback',
-    'lead'        => '',
-    'member'      => null,
-    'crumbs'      => [['Home', '/'], [$fbTitle]],
+    'slim'        => true,
+    'back'        => ['Home', '/'],
+    'crumbs'      => [],
+    'member'      => $fbMember ? $sessionMember : null,
+    'tools'       => $fbMember ? engage_member_menu($sessionMember) : null,
     'description' => MiniWikiText::stripToPlainText($schema['description'] ?? ''),
     'image'       => $schema['banner_image'] ?? null,
     'image_alt'   => $fbTitle,
@@ -266,7 +278,15 @@ engage_header([
 <style>
     /* Feedback form only. The shared look comes from /assets/css/engage.css; these few rules
        mirror the ones the application renderer defines inline. */
-    .hero h1 { max-width: 880px; margin-left: auto; margin-right: auto; text-wrap: balance; }
+
+    /* Long titles wrap evenly. The heading stays left-aligned (slim hero). */
+    .hero h1 { text-wrap: balance; }
+
+    /* The form card uses the full content width, so its left edge lines up with the heading and the
+       top bar, like the panels on the member dashboard. To keep a narrower form, use for example:
+       .fcard { max-width: 860px; margin-left: 0; } */
+    .fcard { max-width: none; }
+
     .banner-fig { margin: -30px -30px 26px; }
     .banner-img { display: block; width: 100%; height: auto; max-height: 260px; object-fit: cover; border-radius: 16px 16px 0 0; }
     .banner-credit { padding: 6px 30px 0; font-size: 12px; color: var(--muted); text-align: right; }
