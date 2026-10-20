@@ -31,6 +31,22 @@ class FeedbackModel {
         return is_array($schema) && ($schema['kind'] ?? '') === 'feedback';
     }
 
+    /**
+     * Is this forms row a feedback form? Works on any row that carries one of:
+     *   kind         (FormModel::getActiveForms())
+     *   schema       (decoded schema, e.g. from getFormById())
+     *   schema_json  (raw JSON, e.g. from SELECT * FROM forms)
+     * Use this wherever forms are listed as "programs" (home page, member dashboard)
+     * so feedback forms are kept out of them.
+     */
+    public static function isFeedbackRow(array $row): bool {
+        if (isset($row['kind']) && $row['kind'] !== '') {
+            return $row['kind'] === 'feedback';
+        }
+        $schema = $row['schema'] ?? (isset($row['schema_json']) ? json_decode((string) $row['schema_json'], true) : null);
+        return self::isFeedbackSchema($schema);
+    }
+
     public static function retentionMonths(): int {
         try {
             $config = require __DIR__ . '/../includes/config.php';

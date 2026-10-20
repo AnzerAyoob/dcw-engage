@@ -5,12 +5,15 @@ require_once __DIR__ . '/../../includes/wikitext.php';
 require_once __DIR__ . '/../../includes/app_log.php';
 require_once __DIR__ . '/../../includes/engage_page.php';
 require_once __DIR__ . '/../../models/FormModel.php';
+require_once __DIR__ . '/../../models/FeedbackModel.php';
 require_once __DIR__ . '/../../models/ApplicationModel.php';
 require_once __DIR__ . '/../../includes/mailer.php';   // Mailer::sendStatusUpdate() and Mailer::sendSentBack()
 
 /**
- * /admin/application-review: one queue for the responses to every ordinary (non-membership) form.
+ * /admin/application-review: one queue for the responses to every ordinary form.
  * Membership forms are deliberately left out: they are handled in Membership review.
+ * Feedback forms (schema "kind": "feedback") are left out too: their responses are not applications and
+ * are read in the Feedback tab (/admin/feedback-review).
  *
  * Status rules (same ones ApplicationModel::saveApplication() enforces):
  *   open       New, Submitted, Under Review   -> can be decided here
@@ -37,10 +40,13 @@ const BULK_MAX = 100;
 $model = new ApplicationModel();
 $formModel = new FormModel();
 
-// Forms this person may review: ordinary forms only, and only ones FormModel says they can open.
+// Forms this person may review: ordinary forms only (no membership, no feedback), and only ones FormModel
+// says they can open. getAllForms() returns schema_json, which FeedbackModel::isFeedbackRow() reads.
 $allForms = array_values(array_filter(
     $formModel->getAllForms(),
-    fn($f) => !FormModel::isMembershipType($f['form_type']) && FormModel::userCanOpen($f)
+    fn($f) => !FormModel::isMembershipType($f['form_type'])
+           && !FeedbackModel::isFeedbackRow($f)
+           && FormModel::userCanOpen($f)
 ));
 $allowed = [];   // form id => true
 foreach ($allForms as $f) $allowed[(int) $f['id']] = true;
@@ -68,6 +74,7 @@ if ($id) {
         http_response_code(404);
         die('Membership applications are reviewed in Membership review.');
     }
+    // A response to a feedback form is not in $allowed, so it lands here as "not found".
     if (!$app || !isset($allowed[(int) $app['form_id']])) { http_response_code(404); die('Application not found.'); }
 }
 
@@ -250,7 +257,7 @@ engage_header([
     'title'   => 'Application review',
     'heading' => 'Application review',
     'kicker'  => 'Organizer workspace',
-    'lead'    => 'Responses to program forms. Membership forms are handled in Membership review.',
+    'lead'    => 'Responses to program forms. Membership forms are handled in Membership review, feedback in the Feedback tab.',
     'tools'   => '',
     'wide'    => true,
     'crumbs'  => $crumbs,
