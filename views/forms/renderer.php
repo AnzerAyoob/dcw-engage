@@ -70,6 +70,15 @@ if (!empty($previewSchema)) {
 }
 
 $schema = $form['schema'];
+
+// Feedback forms (schema "kind": "feedback") are a different kind of form: no email verification gate,
+// drafts, magic links, tracking ID or applications row. They have their own view and their own table.
+// The closed / missing cases above have already been handled, so this only sees open forms (and previews).
+if (($schema['kind'] ?? 'application') === 'feedback') {
+    require __DIR__ . '/feedback.php';
+    exit;
+}
+
 $errors = [];
 $success = '';
 
