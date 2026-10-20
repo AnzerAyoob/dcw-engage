@@ -6,8 +6,18 @@
  * Runs in the renderer's scope, so it uses $form, $schema, $formType and $previewSchema from there.
  * The renderer has already dealt with closed / missing forms.
  *
- * What is different from an application:
- *   - no email verification gate (name and email are asked on the form itself)
+ * Flow (email verification happens BEFORE the form opens):
+ *   1. gate     name + email  -> POST fb_action=request  -> verification link emailed
+ *   2. check    "check your inbox" screen
+ *   3. confirm  link opens ?verify=TOKEN -> token is staged in the session and the URL is cleaned
+ *               -> a "Confirm" button (POST fb_action=confirm) redeems it. The token is never redeemed
+ *               on GET, so mail-security link scanners cannot burn it (see EmailVerificationModel::consume).
+ *   4. form     the feedback fields; POST fb_action=submit
+ *
+ * The name and email stored with the response are the VERIFIED ones from the session, never values
+ * posted with the final form, so a verified address cannot be swapped out at submit time.
+ *
+ * What is still different from an application:
  *   - no draft, no magic link, no tracking ID, no duplicate check, no member-ID logic
  *   - the response goes to feedback_responses, not applications
  *   - the person gets a receipt email and nothing else
@@ -17,78 +27,191 @@ require_once __DIR__ . '/../../includes/wikitext.php';
 require_once __DIR__ . '/../../includes/app_log.php';
 require_once __DIR__ . '/../../models/FormModel.php';
 require_once __DIR__ . '/../../models/FeedbackModel.php';
+require_once __DIR__ . '/../../models/EmailVerificationModel.php';
 require_once __DIR__ . '/../../includes/mail/feedback_mailer.php';
+
+/** How long a confirmed address may be used to submit before it has to be verified again. */
+const FB_VERIFIED_TTL = 3600;
 
 $isPreview = !empty($previewSchema);
 $fbFormId  = $form['id'] ?? null;
+$formIdInt = (int) $fbFormId;
 $fbPath    = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 $fbFields  = is_array($schema['fields'] ?? null) ? $schema['fields'] : [];
 $fbTitle   = (string) ($schema['title'] ?? 'Feedback');
 $fbErrors  = [];
-$fbName    = '';
+$fbName    = '';   // gate form values (kept when re-showing the gate with errors)
 $fbEmail   = '';
 
+// ---------------------------------------------------------------------------------------------
+// GET ?verify=TOKEN: stage the token and clean the URL. Nothing is redeemed here.
+// ---------------------------------------------------------------------------------------------
+if (!$isPreview && $_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['verify'])) {
+    $t = is_string($_GET['verify']) ? $_GET['verify'] : '';
+    if (preg_match('/^[a-f0-9]{64}$/', $t)) {
+        $_SESSION['fb_pending'][$fbFormId] = $t;
+    }
+    header('Referrer-Policy: no-referrer');
+    header('Location: ' . $fbPath);
+    exit;
+}
+
+// Currently verified person for this form (if any, and not stale).
+$fbVerified = null;
+if (!$isPreview) {
+    $v = $_SESSION['fb_verified'][$fbFormId] ?? null;
+    if (is_array($v) && (int) ($v['at'] ?? 0) > time() - FB_VERIFIED_TTL) {
+        $fbVerified = ['name' => (string) $v['name'], 'email' => (string) $v['email']];
+    } elseif ($v !== null) {
+        unset($_SESSION['fb_verified'][$fbFormId]);
+    }
+} else {
+    $fbVerified = ['name' => 'Preview Person', 'email' => 'preview@example.org'];
+}
+
+// ---------------------------------------------------------------------------------------------
+// POST
+// ---------------------------------------------------------------------------------------------
 if (!$isPreview && $_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!CSRF::validate($_POST['csrf_token'] ?? '')) {
         die("Invalid CSRF token.");
     }
 
+    $fbAction = (string) ($_POST['fb_action'] ?? 'submit');
+
     // Honeypot: real people never see this field. Pretend it worked, store nothing, send nothing.
     if (trim((string) ($_POST['hp_website'] ?? '')) !== '') {
-        $_SESSION['fb_sent'][$fbFormId] = true;
+        if ($fbAction === 'request') {
+            $_SESSION['fb_link_sent'][$fbFormId] = '';
+        } else {
+            $_SESSION['fb_sent'][$fbFormId] = true;
+        }
         header('Location: ' . $fbPath);
         exit;
     }
 
-    $fbName  = trim((string) preg_replace('/[\x00-\x1F\x7F]+/u', ' ', (string) ($_POST['respondent_name'] ?? '')));
-    $fbEmail = strtolower(trim((string) ($_POST['respondent_email'] ?? '')));
+    // ---- Step 1: ask for a verification link --------------------------------------------------
+    if ($fbAction === 'request') {
+        $fbName  = trim((string) preg_replace('/[\x00-\x1F\x7F]+/u', ' ', (string) ($_POST['respondent_name'] ?? '')));
+        $fbEmail = strtolower(trim((string) ($_POST['respondent_email'] ?? '')));
 
-    if ($fbName === '' || mb_strlen($fbName) > 100) {
-        $fbErrors['respondent_name'] = 'Please enter your name (maximum 100 characters).';
-    }
-    if ($fbEmail === '' || strlen($fbEmail) > 254 || !filter_var($fbEmail, FILTER_VALIDATE_EMAIL)) {
-        $fbErrors['respondent_email'] = 'Please enter a valid email address.';
-    }
+        if ($fbName === '' || mb_strlen($fbName) > 100) {
+            $fbErrors['respondent_name'] = 'Please enter your name (maximum 100 characters).';
+        }
+        if ($fbEmail === '' || strlen($fbEmail) > 254 || !filter_var($fbEmail, FILTER_VALIDATE_EMAIL)) {
+            $fbErrors['respondent_email'] = 'Please enter a valid email address.';
+        }
 
-    [$fbAnswers, $fbAnswerErrors] = FeedbackModel::collectAnswers($schema, $_POST);
-    $fbErrors = array_merge($fbErrors, $fbAnswerErrors);
+        if (!$fbErrors) {
+            try {
+                $issued = (new EmailVerificationModel())->request($formIdInt, $fbEmail, $fbName);
 
-    if (!$fbErrors) {
-        try {
-            $fbModel = new FeedbackModel();
-            $formIdInt = (int) $fbFormId;
-
-            if ($fbModel->recentCountForEmail($formIdInt, $fbEmail, 60) >= FeedbackModel::MAX_PER_EMAIL_PER_HOUR
-                || $fbModel->recentCountForForm($formIdInt, 10) >= FeedbackModel::MAX_PER_FORM_PER_10_MIN) {
-                $fbErrors['system'] = 'We are receiving a high volume of submissions at the moment. Please try again shortly.';
-            } else {
-                $fbModel->create($formIdInt, $fbName, $fbEmail, $fbAnswers);
-
-                // The response is saved; a mail problem must never turn that into an error for the person.
-                try {
-                    FeedbackMailer::sendReceipt($fbEmail, $fbName, $fbTitle);
-                    FeedbackMailer::sendOrganizerAlert($form['notify_emails'] ?? '', $fbTitle, $formIdInt);
-                } catch (Throwable $mailEx) {
-                    app_log("Feedback mail failed for form '$formType': " . $mailEx->getMessage());
+                // $issued is null when this address asked too often. Respond exactly the same either way.
+                if ($issued) {
+                    FeedbackMailer::sendVerification(
+                        $fbEmail,
+                        $fbName,
+                        $fbTitle,
+                        CoreMail::appUrl() . $fbPath . '?verify=' . $issued['token'],
+                        FormModel::formatIst($issued['expires_at'])
+                    );
                 }
 
-                // Post/Redirect/Get so a refresh cannot submit twice.
-                $_SESSION['fb_sent'][$fbFormId] = true;
+                $_SESSION['fb_link_sent'][$fbFormId] = $fbEmail;
                 header('Location: ' . $fbPath);
                 exit;
+            } catch (Throwable $ex) {
+                app_log("Feedback verification failed for form '$formType': " . $ex->getMessage());
+                $fbErrors['system'] = 'We could not send the verification email. Please try again.';
             }
+        }
+
+    // ---- Step 3: redeem the staged link on an explicit click ----------------------------------
+    } elseif ($fbAction === 'confirm') {
+        $token = (string) ($_SESSION['fb_pending'][$fbFormId] ?? '');
+        unset($_SESSION['fb_pending'][$fbFormId]);
+
+        try {
+            $who = (new EmailVerificationModel())->consume($formIdInt, $token);
         } catch (Throwable $ex) {
-            app_log("Feedback save failed for form '$formType': " . $ex->getMessage());
-            $fbErrors['system'] = 'An error occurred while saving your feedback. Please try again.';
+            app_log("Feedback verification consume failed for form '$formType': " . $ex->getMessage());
+            $who = null;
+        }
+
+        if ($who) {
+            $_SESSION['fb_verified'][$fbFormId] = [
+                'name'  => $who['name'] !== '' ? $who['name'] : 'Participant',
+                'email' => $who['email'],
+                'at'    => time(),
+            ];
+            header('Location: ' . $fbPath);
+            exit;
+        }
+        $fbErrors['system'] = 'This verification link is invalid, has expired or has already been used. Please request a new one below.';
+
+    // ---- Step 4: the feedback itself ----------------------------------------------------------
+    } else {
+        if (!$fbVerified) {
+            $fbErrors['system'] = 'Please verify your email address first.';
+        } else {
+            [$fbAnswers, $fbAnswerErrors] = FeedbackModel::collectAnswers($schema, $_POST);
+            $fbErrors = array_merge($fbErrors, $fbAnswerErrors);
+
+            if (!$fbErrors) {
+                try {
+                    $fbModel = new FeedbackModel();
+
+                    if ($fbModel->recentCountForEmail($formIdInt, $fbVerified['email'], 60) >= FeedbackModel::MAX_PER_EMAIL_PER_HOUR
+                        || $fbModel->recentCountForForm($formIdInt, 10) >= FeedbackModel::MAX_PER_FORM_PER_10_MIN) {
+                        $fbErrors['system'] = 'We are receiving a high volume of submissions at the moment. Please try again shortly.';
+                    } else {
+                        $fbModel->create($formIdInt, $fbVerified['name'], $fbVerified['email'], $fbAnswers);
+
+                        // The response is saved; a mail problem must never turn that into an error for the person.
+                        try {
+                            FeedbackMailer::sendReceipt($fbVerified['email'], $fbVerified['name'], $fbTitle);
+                            FeedbackMailer::sendOrganizerAlert($form['notify_emails'] ?? '', $fbTitle, $formIdInt);
+                        } catch (Throwable $mailEx) {
+                            app_log("Feedback mail failed for form '$formType': " . $mailEx->getMessage());
+                        }
+
+                        // One verification, one submission. Post/Redirect/Get so a refresh cannot submit twice.
+                        unset($_SESSION['fb_verified'][$fbFormId]);
+                        $_SESSION['fb_sent'][$fbFormId] = true;
+                        header('Location: ' . $fbPath);
+                        exit;
+                    }
+                } catch (Throwable $ex) {
+                    app_log("Feedback save failed for form '$formType': " . $ex->getMessage());
+                    $fbErrors['system'] = 'An error occurred while saving your feedback. Please try again.';
+                }
+            }
         }
     }
 }
 
+// ---------------------------------------------------------------------------------------------
+// Which screen to show
+// ---------------------------------------------------------------------------------------------
 $fbSent = false;
 if (!$isPreview && !empty($_SESSION['fb_sent'][$fbFormId])) {
     unset($_SESSION['fb_sent'][$fbFormId]);
     $fbSent = true;
 }
+
+$fbLinkSentTo = null;   // string (possibly '') when the "check your inbox" screen applies
+if (!$isPreview && isset($_SESSION['fb_link_sent'][$fbFormId])) {
+    $fbLinkSentTo = (string) $_SESSION['fb_link_sent'][$fbFormId];
+    unset($_SESSION['fb_link_sent'][$fbFormId]);
+}
+
+$fbPending = !$isPreview && !$fbVerified && !empty($_SESSION['fb_pending'][$fbFormId]);
+
+if ($fbSent)              { $fbScreen = 'sent'; }
+elseif ($fbVerified)      { $fbScreen = 'form'; }
+elseif ($fbPending)       { $fbScreen = 'confirm'; }
+elseif ($fbLinkSentTo !== null) { $fbScreen = 'check'; }
+else                      { $fbScreen = 'gate'; }
 
 // Link-only forms are kept out of search results (same as the application renderer).
 if (!empty($schema['unlisted'])) {
@@ -143,10 +266,10 @@ engage_header([
     <?php endif; ?>
 
     <?php if ($isPreview): ?>
-        <div class="action-banner" role="status">🔍 Preview — this is how the form will appear. Submissions are disabled in this mode.</div>
+        <div class="action-banner" role="status">🔍 Preview — this is how the form will appear after email verification. Submissions are disabled in this mode.</div>
     <?php endif; ?>
 
-    <?php if (!$fbSent): ?>
+    <?php if (in_array($fbScreen, ['gate', 'form'], true)): ?>
         <?php if (!empty($form['deadline_at'])): ?>
             <p class="verified-line">Feedback will remain open until <strong><?= htmlspecialchars(FormModel::formatIst($form['deadline_at'])) ?></strong>.</p>
         <?php endif; ?>
@@ -156,19 +279,44 @@ engage_header([
         <?php endif; ?>
     <?php endif; ?>
 
-    <?php if ($fbSent): ?>
+    <?php if (!empty($fbErrors['system'])): ?>
+        <div class="alert error"><strong>Notice:</strong> <?= htmlspecialchars($fbErrors['system']) ?></div>
+    <?php endif; ?>
+
+    <?php if ($fbScreen === 'sent'): ?>
         <div class="alert ok">
             <h3>Thank you for sharing your feedback!</h3>
             <p>We have emailed you a receipt. No further action is required on your part.</p>
         </div>
 
-    <?php else: ?>
-        <?php if (!empty($fbErrors['system'])): ?>
-            <div class="alert error"><strong>Notice:</strong> <?= htmlspecialchars($fbErrors['system']) ?></div>
-        <?php endif; ?>
+    <?php elseif ($fbScreen === 'check'): ?>
+        <div class="alert ok">
+            <h3>Check your inbox</h3>
+            <p>
+                <?php if ($fbLinkSentTo !== ''): ?>
+                    If <strong><?= htmlspecialchars($fbLinkSentTo) ?></strong> is correct, we have sent a verification link to it.
+                <?php else: ?>
+                    We have sent a verification link to the address you entered.
+                <?php endif; ?>
+                Open it to continue to the feedback form. The link works once and expires soon.
+            </p>
+            <p>Nothing arrived? Check your spam folder, or <a href="<?= htmlspecialchars($fbPath) ?>">go back</a> and try again.</p>
+        </div>
 
+    <?php elseif ($fbScreen === 'confirm'): ?>
+        <div class="boxed">
+            <p style="margin:0 0 14px;">Click the button below to confirm your email address and open the feedback form.</p>
+            <form method="POST">
+                <?= CSRF::getInputField() ?>
+                <input type="hidden" name="fb_action" value="confirm">
+                <button type="submit">Confirm email and continue</button>
+            </form>
+        </div>
+
+    <?php elseif ($fbScreen === 'gate'): ?>
         <form method="POST">
             <?= CSRF::getInputField() ?>
+            <input type="hidden" name="fb_action" value="request">
 
             <div class="hp-field" aria-hidden="true">
                 <label>Please leave this field blank <input type="text" name="hp_website" tabindex="-1" autocomplete="off"></label>
@@ -187,12 +335,34 @@ engage_header([
                     <label for="respondent_email">Email Address <span class="req-star">*</span></label>
                     <input type="email" name="respondent_email" id="respondent_email" maxlength="254" autocomplete="email"
                         value="<?= htmlspecialchars($fbEmail) ?>" required>
-                    <span class="hint">We will send a receipt to this email address.</span>
+                    <span class="hint">We will send a verification link to this address. The feedback form opens once you click it.</span>
                     <?php if (!empty($fbErrors['respondent_email'])): ?>
                         <span class="error-text"><?= htmlspecialchars($fbErrors['respondent_email']) ?></span>
                     <?php endif; ?>
                 </div>
             </div>
+
+            <button type="submit">Send Verification Link</button>
+
+            <p class="privacy-note">
+                Your name and email address are used to verify you, to send you a receipt and, if necessary, to follow up with you.
+                They are purged automatically after <?= (int) FeedbackModel::retentionMonths() ?> months.
+            </p>
+        </form>
+
+    <?php else: /* form */ ?>
+        <form method="POST">
+            <?= CSRF::getInputField() ?>
+            <input type="hidden" name="fb_action" value="submit">
+
+            <div class="hp-field" aria-hidden="true">
+                <label>Please leave this field blank <input type="text" name="hp_website" tabindex="-1" autocomplete="off"></label>
+            </div>
+
+            <p class="verified-line">
+                Verified as <strong><?= htmlspecialchars($fbVerified['name']) ?></strong>
+                (<?= htmlspecialchars($fbVerified['email']) ?>). A receipt will be sent to this address.
+            </p>
 
             <?php foreach ($fbFields as $field):
                 $name = (string) ($field['name'] ?? '');
