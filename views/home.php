@@ -29,20 +29,9 @@ $activeForms = array_values(array_filter($activeForms, fn($f) => empty($f['unlis
 // "Share your feedback" section further down, with "Give feedback" wording. A feedback form is
 // recognised by its id (FeedbackModel::feedbackForms()) or, when the row carries its schema, by the
 // schema itself. If the feedback table has not been created yet, nothing is pulled out.
-$feedbackIds = [];
-try {
-    foreach ((new FeedbackModel())->feedbackForms() as $fb) {
-        $feedbackIds[(int) $fb['id']] = true;
-    }
-} catch (Throwable $e) { /* migration not run yet */ }
 
-$isFeedbackForm = function (array $f) use ($feedbackIds): bool {
-    if (isset($f['id']) && isset($feedbackIds[(int) $f['id']])) return true;
-    $schema = $f['schema'] ?? (isset($f['schema_json']) ? json_decode((string) $f['schema_json'], true) : null);
-    return is_array($schema) && FeedbackModel::isFeedbackSchema($schema);
-};
-$feedbackForms = array_values(array_filter($activeForms, $isFeedbackForm));
-$activeForms = array_values(array_filter($activeForms, fn($f) => !$isFeedbackForm($f)));
+$feedbackForms = array_values(array_filter($activeForms, fn($f) => FeedbackModel::isFeedbackRow($f)));
+$activeForms   = array_values(array_filter($activeForms, fn($f) => !FeedbackModel::isFeedbackRow($f)));
 
 // Is a member signed in? Guarded so the public landing page can never break, for example
 // before sql/member_login.sql has been run.
