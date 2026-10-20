@@ -3,6 +3,7 @@ require_once __DIR__ . '/../../includes/init.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/engage_page.php';
 require_once __DIR__ . '/../../models/FormModel.php';
+require_once __DIR__ . '/../../models/FeedbackModel.php';
 require_once __DIR__ . '/../../models/ApplicationModel.php';
 require_once __DIR__ . '/../../models/MemberModel.php';
 require_once __DIR__ . '/../../models/TechIssueModel.php';
@@ -12,6 +13,7 @@ Auth::requireLogin();
 // Each flag mirrors the exact requireRole() call on the page it links to, so
 // a link only ever appears for someone who can actually get past its gate:
 //   application_review.php   -> requireRole(['organizer', 'owner'])   (program forms; membership forms are left out)
+//   feedback_review.php      -> requireRole(['owner', 'organizer'])   (responses to feedback forms)
 //   reimbursement_review.php -> requireRole(['support_reviewer', 'owner'])
 //   internet_review.php      -> requireRole(['support_reviewer', 'owner'])
 //   finance/queue.php        -> requireRole(['finance', 'owner'])   (combined: reimbursements + internet support)
@@ -26,6 +28,7 @@ Auth::requireLogin();
 // Auth::role() is only the PRIMARY role. An account can hold several, and
 // requireRole() grants access when ANY matches, so use hasAnyRole() here too.
 $canReviewApplications   = Auth::hasAnyRole(['organizer', 'owner']);
+$canReadFeedback         = Auth::hasAnyRole(['organizer', 'owner']);   // mirrors feedback_review.php
 $canReviewReimbursements = Auth::hasAnyRole(['support_reviewer', 'owner']);
 $canReviewInternet       = Auth::hasAnyRole(['support_reviewer', 'owner']);
 $canProcessFinance       = Auth::hasAnyRole(['finance', 'owner']);
@@ -66,6 +69,16 @@ $canSeeSupport = $canReviewAny || $canProcessFinance;
 // they could actually open (FormModel::userCanOpen, same rule as form_manager.php).
 $formModel = new FormModel();
 $forms = array_filter($formModel->getAllForms(), fn($f) => FormModel::userCanOpen($f));
+
+// Feedback forms keep their responses in feedback_responses, not applications, so getAllForms()'s
+// applicant_count is always 0 for them. Fetch the real counts here: form id => response count.
+// If the feedback table has not been created yet, the counts are simply left empty.
+$feedbackCounts = [];
+try {
+    foreach ((new FeedbackModel())->feedbackForms() as $fbForm) {
+        $feedbackCounts[(int) $fbForm['id']] = (int) $fbForm['response_count'];
+    }
+} catch (Throwable $e) { /* migration not run yet */ }
 
 // Open forms show by default; closed ones sit behind a toggle. "Open" means switched on AND not past its
 // deadline (FormModel::isOpen), so a form that closed by deadline moves to the closed group on its own.
@@ -117,12 +130,13 @@ if ($canReviewMembership) {
     } catch (Throwable $e) { $membershipWaiting = null; }
 }
 
-// The "Review" tab holds the review queues. Everything else is its own tab.
-$showReviewPanel = $canReviewApplications || $canReviewMembership || $canManageRecords;
+// The "Review" tab holds the review queues (and the feedback list: feedback is read, not decided on, so it
+// shows no "waiting" count). Everything else is its own tab.
+$showReviewPanel = $canReviewApplications || $canReadFeedback || $canReviewMembership || $canManageRecords;
 $reviewIntro = ($canReviewApplications && $canReviewMembership)
-    ? 'Decide on applications to our programs and on membership requests' . ($chapterLimited ? ' for your chapters' : '') . '.'
+    ? 'Decide on applications to our programs and on membership requests' . ($chapterLimited ? ' for your chapters' : '') . ', and read feedback.'
     : ($canReviewApplications
-        ? 'Decide on applications to our programs, across every form in one list.'
+        ? 'Decide on applications to our programs, across every form in one list, and read feedback.'
         : 'Review new applications and renewals' . ($chapterLimited ? ' for your chapters' : '') . '.');
 
 // One tab for member conversations and the technical tools.
@@ -146,7 +160,7 @@ $icons = [
 $vtabs = [];
 if ($showReviewPanel) $vtabs[] = ['review',  'Review',               'inbox', (int) $appsWaiting + (int) $membershipWaiting];
 if ($canSeeSupport)   $vtabs[] = ['support', 'Volunteer support',    'card',  0];
-if ($showFormsGrid)   $vtabs[] = ['forms',   'Application forms',    'doc',   0];
+if ($showFormsGrid)   $vtabs[] = ['forms',   'Forms',                'doc',   0];
 if ($showSupportTech) $vtabs[] = ['tech',    'Support & technical',  'chat',  (int) $techOpen];
 
 /**
@@ -179,26 +193,35 @@ function lrow(array $icons, string $tone, string $icon, string $title, string $d
 /**
  * Renders one form tile (open or closed). Shows when an open form closes, and
  * "Closed (deadline)" for a form that has run past its deadline.
+ *
+ * Feedback forms (schema "kind": "feedback") differ in three ways: the response count comes from
+ * $feedbackCounts (their responses are not in `applications`), the tile says "Feedback", and it opens
+ * the feedback page (/admin/feedback-review), which is also where they are edited, closed and reopened.
  */
-function form_tile(array $icons, array $form): void
+function form_tile(array $icons, array $form, array $feedbackCounts = []): void
 {
     $open       = FormModel::isOpen($form);
     $byDeadline = FormModel::closedByDeadline($form);
     $hasDeadline = !empty($form['deadline_at']);
-    $count      = (int) $form['applicant_count'];
+    $isFeedback = FeedbackModel::isFeedbackSchema(json_decode((string) ($form['schema_json'] ?? ''), true));
+    $count      = $isFeedback ? (int) ($feedbackCounts[(int) $form['id']] ?? 0) : (int) $form['applicant_count'];
     $tone       = $open ? 'var(--leaf-dark, #3E7A53)' : '#94a3b8';
 
     $pill = $open ? 'Active' : ($byDeadline ? 'Closed (deadline)' : 'Closed');
 
-    $sub = '/' . $form['form_type'] . ' · ' . $count . ' response' . ($count !== 1 ? 's' : '');
+    $sub = '/' . $form['form_type'] . ($isFeedback ? ' · Feedback' : '') . ' · ' . $count . ' response' . ($count !== 1 ? 's' : '');
     if ($open && $hasDeadline) {
         $sub .= ' · closes ' . FormModel::formatIst($form['deadline_at']);
     } elseif ($byDeadline) {
         $sub .= ' · closed ' . FormModel::formatIst($form['deadline_at']);
     }
+
+    $href = $isFeedback
+        ? '/admin/feedback-review?form=' . (int) $form['id']
+        : '/admin/form_manager?id=' . (int) $form['id'];
     ?>
-    <a class="tile" href="/admin/form_manager?id=<?= (int) $form['id'] ?>" style="--tone: <?= $tone ?>;">
-        <span class="tick"><svg viewBox="0 0 24 24" aria-hidden="true"><?= $icons['doc'] ?></svg></span>
+    <a class="tile" href="<?= htmlspecialchars($href) ?>" style="--tone: <?= $tone ?>;">
+        <span class="tick"><svg viewBox="0 0 24 24" aria-hidden="true"><?= $icons[$isFeedback ? 'chat' : 'doc'] ?></svg></span>
         <span>
             <h3><?= htmlspecialchars($form['title']) ?></h3>
             <p><?= htmlspecialchars($sub) ?></p>
@@ -274,6 +297,12 @@ engage_header([
                                 'Responses to every program form, grouped by program. Accept, reject or send back.',
                                 '/admin/application-review', $appsWaiting);
                         }
+                        if ($canReadFeedback) {
+                            // No count: feedback has no status, so nothing is ever "waiting".
+                            lrow($icons, 'var(--accent)', 'chat', 'Feedback',
+                                'Responses to feedback forms. Read them, email a respondent if needed, or delete one.',
+                                '/admin/feedback-review');
+                        }
                         if ($canReviewMembership) {
                             lrow($icons, 'var(--accent)', 'people', 'Membership review',
                                 'New applications and renewals, the member list and membership cards.',
@@ -323,9 +352,9 @@ engage_header([
                 <?php if ($showFormsGrid): ?>
                 <section class="vpanel" id="p-forms" role="tabpanel" aria-labelledby="t-forms" hidden>
                     <div class="panel-head">
-                        <h2>Application forms</h2>
+                        <h2>Forms</h2>
                         <p><?= $canCreateForms
-                            ? 'Open and close the forms volunteers apply through, and review responses.'
+                            ? 'Open and close the application and feedback forms people fill in, and review responses.'
                             : 'Review responses to membership forms.' ?></p>
                         <?php if ($canCreateForms): ?>
                             <a class="btn-ghost head-act" href="/admin/builder">+ New form</a>
@@ -333,7 +362,7 @@ engage_header([
                     </div>
                     <?php if ($activeForms): ?>
                         <div class="tiles">
-                            <?php foreach ($activeForms as $form) form_tile($icons, $form); ?>
+                            <?php foreach ($activeForms as $form) form_tile($icons, $form, $feedbackCounts); ?>
                         </div>
                     <?php else: ?>
                         <div class="empty-note">No forms are open right now.</div>
@@ -343,7 +372,7 @@ engage_header([
                         <details class="closed-forms">
                             <summary>Closed forms (<?= count($closedForms) ?>)</summary>
                             <div class="tiles">
-                                <?php foreach ($closedForms as $form) form_tile($icons, $form); ?>
+                                <?php foreach ($closedForms as $form) form_tile($icons, $form, $feedbackCounts); ?>
                             </div>
                         </details>
                     <?php endif; ?>
