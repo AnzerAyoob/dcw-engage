@@ -14,9 +14,10 @@ class FeedbackModel {
     const MAX_TEXT = 500;
     const MAX_LONG = 5000;
 
-    // Abuse limits. There is no email verification on feedback forms (so people are not
-    // asked to click anything), which means the receipt email goes to an unverified address.
-    // These caps keep that from being used to mail-bomb someone or to spam through us.
+    // Abuse limits. The receipt goes to an address that has been verified by link before the form
+    // opens (see views/forms/feedback.php), so these caps are no longer what stops a stranger being
+    // mailed. They only stop one verified address, or one form, from being flooded with submissions.
+    // Verification emails themselves are throttled by EmailVerificationModel::MAX_REQUESTS_PER_HOUR.
     const MAX_PER_EMAIL_PER_HOUR   = 3;
     const MAX_PER_FORM_PER_10_MIN  = 60;
 
