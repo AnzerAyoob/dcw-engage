@@ -177,4 +177,22 @@ class EmailVerificationModel {
             ? ['email' => $row['email'], 'name' => (string) ($row['name'] ?? '')]
             : null;
     }
+
+    /**
+     * Delete verification rows for feedback forms that expired more than $days ago.
+     * The rate limit only looks at the last hour, so older rows are never needed.
+     * Rows with form_id NULL (reimbursement flow) are not touched: the JOIN
+     * drops them.
+     * @return int rows deleted
+     */
+    public function purgeFeedbackRows(int $days = 1): int {
+        $stmt = $this->db->prepare(
+            "DELETE ev FROM email_verifications ev
+             JOIN forms f ON f.id = ev.form_id
+             WHERE JSON_UNQUOTE(JSON_EXTRACT(f.schema_json, '$.kind')) = 'feedback'
+               AND ev.expires_at < NOW() - INTERVAL ? DAY"
+        );
+        $stmt->execute([$days]);
+        return $stmt->rowCount();
+    }
 }
