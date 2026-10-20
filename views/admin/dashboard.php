@@ -12,8 +12,8 @@ Auth::requireLogin();
 
 // Each flag mirrors the exact requireRole() call on the page it links to, so
 // a link only ever appears for someone who can actually get past its gate:
-//   application_review.php   -> requireRole(['organizer', 'owner'])   (program forms; membership forms are left out)
-//   feedback_review.php      -> requireRole(['owner', 'organizer'])   (responses to feedback forms)
+//   application_review.php   -> requireRole(['organizer', 'owner'])   (program forms; membership and feedback forms are left out)
+//   feedback_review.php      -> requireRole(['owner', 'organizer'])   (responses to feedback forms; has its own Feedback tab here)
 //   reimbursement_review.php -> requireRole(['support_reviewer', 'owner'])
 //   internet_review.php      -> requireRole(['support_reviewer', 'owner'])
 //   finance/queue.php        -> requireRole(['finance', 'owner'])   (combined: reimbursements + internet support)
@@ -80,10 +80,20 @@ try {
     }
 } catch (Throwable $e) { /* migration not run yet */ }
 
+// Application forms and feedback forms are shown separately: feedback has responses, not applications.
+$isFeedbackForm = fn($f) => FeedbackModel::isFeedbackSchema(json_decode((string) ($f['schema_json'] ?? ''), true));
+$feedbackForms  = array_filter($forms, $isFeedbackForm);
+$appForms       = array_filter($forms, fn($f) => !$isFeedbackForm($f));
+
 // Open forms show by default; closed ones sit behind a toggle. "Open" means switched on AND not past its
 // deadline (FormModel::isOpen), so a form that closed by deadline moves to the closed group on its own.
-$activeForms = array_filter($forms, fn($f) => FormModel::isOpen($f));
-$closedForms = array_filter($forms, fn($f) => !FormModel::isOpen($f));
+$activeForms = array_filter($appForms, fn($f) => FormModel::isOpen($f));
+$closedForms = array_filter($appForms, fn($f) => !FormModel::isOpen($f));
+
+$fbActive = array_filter($feedbackForms, fn($f) => FormModel::isOpen($f));
+$fbClosed = array_filter($feedbackForms, fn($f) => !FormModel::isOpen($f));
+$fbTotal  = 0;
+foreach ($feedbackForms as $f) $fbTotal += (int) ($feedbackCounts[(int) $f['id']] ?? 0);
 
 // Programs that are not shown in the review queue: closed forms, and test forms.
 // A form counts as a test form when "test"/"testing"/"dummy" is a whole word in its title or URL slug
@@ -101,7 +111,7 @@ if (!function_exists('review_hidden_form')) {
 }
 
 // Applications waiting for a first decision (New or Submitted), across the program forms this person can open
-// (closed and test forms are left out, the same as in the review queue).
+// (closed, test, membership and feedback forms are left out, the same as in the review queue).
 // Shown as a count on the "Application review" row. Uses ApplicationModel::countAwaitingByForm();
 // if that method is not added yet, or the query fails, the count is simply left out.
 $appsWaiting = 0;
@@ -109,7 +119,10 @@ if ($canReviewApplications) {
     try {
         $reviewable = [];
         foreach ($forms as $f) {
-            if (!FormModel::isMembershipType($f['form_type']) && !review_hidden_form($f)) $reviewable[(int) $f['id']] = true;
+            if (FormModel::isMembershipType($f['form_type'])) continue;   // reviewed in Membership review
+            if ($isFeedbackForm($f)) continue;                            // read in the Feedback tab
+            if (review_hidden_form($f)) continue;
+            $reviewable[(int) $f['id']] = true;
         }
         foreach ((new ApplicationModel())->countAwaitingByForm() as $formId => $n) {
             if (isset($reviewable[(int) $formId])) $appsWaiting += (int) $n;
@@ -130,13 +143,13 @@ if ($canReviewMembership) {
     } catch (Throwable $e) { $membershipWaiting = null; }
 }
 
-// The "Review" tab holds the review queues (and the feedback list: feedback is read, not decided on, so it
-// shows no "waiting" count). Everything else is its own tab.
-$showReviewPanel = $canReviewApplications || $canReadFeedback || $canReviewMembership || $canManageRecords;
+// The "Review" tab holds the review queues: applications, membership and community records. Feedback is read,
+// not decided on, so it has its own tab. Everything else is its own tab too.
+$showReviewPanel = $canReviewApplications || $canReviewMembership || $canManageRecords;
 $reviewIntro = ($canReviewApplications && $canReviewMembership)
-    ? 'Decide on applications to our programs and on membership requests' . ($chapterLimited ? ' for your chapters' : '') . ', and read feedback.'
+    ? 'Decide on applications to our programs and on membership requests' . ($chapterLimited ? ' for your chapters' : '') . '.'
     : ($canReviewApplications
-        ? 'Decide on applications to our programs, across every form in one list, and read feedback.'
+        ? 'Decide on applications to our programs, across every form in one list.'
         : 'Review new applications and renewals' . ($chapterLimited ? ' for your chapters' : '') . '.');
 
 // One tab for member conversations and the technical tools.
@@ -154,14 +167,16 @@ $icons = [
     'chat'   => '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
     'alert'  => '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>',
     'pulse'  => '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>',
+    'star'   => '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>',
 ];
 
 // The vertical tabs, in order: [id, label, icon, number shown in a coral badge (0 = none)].
 $vtabs = [];
-if ($showReviewPanel) $vtabs[] = ['review',  'Review',               'inbox', (int) $appsWaiting + (int) $membershipWaiting];
-if ($canSeeSupport)   $vtabs[] = ['support', 'Volunteer support',    'card',  0];
-if ($showFormsGrid)   $vtabs[] = ['forms',   'Forms',                'doc',   0];
-if ($showSupportTech) $vtabs[] = ['tech',    'Support & technical',  'chat',  (int) $techOpen];
+if ($showReviewPanel) $vtabs[] = ['review',   'Review',               'inbox', (int) $appsWaiting + (int) $membershipWaiting];
+if ($canSeeSupport)   $vtabs[] = ['support',  'Volunteer support',    'card',  0];
+if ($showFormsGrid)   $vtabs[] = ['forms',    'Forms',                'doc',   0];
+if ($canReadFeedback) $vtabs[] = ['feedback', 'Feedback',             'star',  0];   // no badge: feedback has nothing "waiting"
+if ($showSupportTech) $vtabs[] = ['tech',     'Support & technical',  'chat',  (int) $techOpen];
 
 /**
  * Renders one list row (one per line). $count: a number > 0 shows a coral "7 waiting" chip, 0 shows a green
@@ -221,7 +236,7 @@ function form_tile(array $icons, array $form, array $feedbackCounts = []): void
         : '/admin/form_manager?id=' . (int) $form['id'];
     ?>
     <a class="tile" href="<?= htmlspecialchars($href) ?>" style="--tone: <?= $tone ?>;">
-        <span class="tick"><svg viewBox="0 0 24 24" aria-hidden="true"><?= $icons[$isFeedback ? 'chat' : 'doc'] ?></svg></span>
+        <span class="tick"><svg viewBox="0 0 24 24" aria-hidden="true"><?= $icons[$isFeedback ? 'star' : 'doc'] ?></svg></span>
         <span>
             <h3><?= htmlspecialchars($form['title']) ?></h3>
             <p><?= htmlspecialchars($sub) ?></p>
@@ -297,12 +312,6 @@ engage_header([
                                 'Responses to every program form, grouped by program. Accept, reject or send back.',
                                 '/admin/application-review', $appsWaiting);
                         }
-                        if ($canReadFeedback) {
-                            // No count: feedback has no status, so nothing is ever "waiting".
-                            lrow($icons, 'var(--accent)', 'chat', 'Feedback',
-                                'Responses to feedback forms. Read them, email a respondent if needed, or delete one.',
-                                '/admin/feedback-review');
-                        }
                         if ($canReviewMembership) {
                             lrow($icons, 'var(--accent)', 'people', 'Membership review',
                                 'New applications and renewals, the member list and membership cards.',
@@ -354,7 +363,7 @@ engage_header([
                     <div class="panel-head">
                         <h2>Forms</h2>
                         <p><?= $canCreateForms
-                            ? 'Open and close the application and feedback forms people fill in, and review responses.'
+                            ? 'Open and close the application forms people fill in, and review responses.'
                             : 'Review responses to membership forms.' ?></p>
                         <?php if ($canCreateForms): ?>
                             <a class="btn-ghost head-act" href="/admin/builder">+ New form</a>
@@ -373,6 +382,33 @@ engage_header([
                             <summary>Closed forms (<?= count($closedForms) ?>)</summary>
                             <div class="tiles">
                                 <?php foreach ($closedForms as $form) form_tile($icons, $form, $feedbackCounts); ?>
+                            </div>
+                        </details>
+                    <?php endif; ?>
+                </section>
+                <?php endif; ?>
+
+                <?php if ($canReadFeedback): ?>
+                <section class="vpanel" id="p-feedback" role="tabpanel" aria-labelledby="t-feedback" hidden>
+                    <div class="panel-head">
+                        <h2>Feedback</h2>
+                        <p>Read what people told us, email a respondent, or delete a response.
+                            <?= (int) $fbTotal ?> response<?= $fbTotal === 1 ? '' : 's' ?> across <?= count($feedbackForms) ?> form<?= count($feedbackForms) === 1 ? '' : 's' ?>.</p>
+                        <a class="btn-ghost head-act" href="/admin/builder?kind=feedback">+ New feedback form</a>
+                    </div>
+                    <?php if ($fbActive): ?>
+                        <div class="tiles">
+                            <?php foreach ($fbActive as $form) form_tile($icons, $form, $feedbackCounts); ?>
+                        </div>
+                    <?php else: ?>
+                        <div class="empty-note"><?= $feedbackForms ? 'No feedback forms are open right now.' : 'No feedback forms yet. Create one with the button above.' ?></div>
+                    <?php endif; ?>
+
+                    <?php if ($fbClosed): ?>
+                        <details class="closed-forms">
+                            <summary>Closed feedback forms (<?= count($fbClosed) ?>)</summary>
+                            <div class="tiles">
+                                <?php foreach ($fbClosed as $form) form_tile($icons, $form, $feedbackCounts); ?>
                             </div>
                         </details>
                     <?php endif; ?>
