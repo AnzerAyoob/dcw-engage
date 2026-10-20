@@ -318,5 +318,32 @@ engage_header([
         const existingSchema = <?= isset($existingSchema) && $existingSchema ? json_encode($existingSchema) : 'null' ?>;
         const existingFormType = <?= isset($existingFormType) ? json_encode($existingFormType) : 'null' ?>;
     </script>
+    <script>
+        // Preview: builder.js builds the schema, but "kind" and "unlisted" are written by the SERVER on
+        // save, so the preview payload would not carry them and a feedback form would preview with the
+        // application layout. Add them from the form-type select and the "Link only" checkbox just
+        // before the preview form is sent. Works whether builder.js calls submit() or requestSubmit().
+        (function () {
+            var pf = document.getElementById('previewForm');
+            var out = document.getElementById('preview_schema_json_input');
+            var kindSel = document.getElementById('form_kind');
+            var unl = document.getElementById('unlisted');
+            if (!pf || !out || !kindSel) return;
+
+            function patch() {
+                try {
+                    var s = JSON.parse(out.value);
+                    if (!s || typeof s !== 'object') return;
+                    if (kindSel.value === 'feedback') { s.kind = 'feedback'; } else { delete s.kind; }
+                    if (unl && unl.checked) { s.unlisted = true; } else { delete s.unlisted; }
+                    out.value = JSON.stringify(s);
+                } catch (e) { /* leave the value as builder.js set it */ }
+            }
+
+            var nativeSubmit = HTMLFormElement.prototype.submit;
+            pf.submit = function () { patch(); nativeSubmit.call(pf); };
+            pf.addEventListener('submit', patch);
+        })();
+    </script>
     <script src="/assets/js/builder.js?v=<?= filemtime(__DIR__ . '/../../assets/js/builder.js') ?>"></script>
 <?php engage_footer(); ?>
