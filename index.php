@@ -48,6 +48,13 @@ if ($route === '/' || $route === '/index.php') {
 } elseif ($route === '/admin/form_manager') {
     require __DIR__ . '/views/admin/form_manager.php';
 
+// Responses to feedback forms (forms whose schema has "kind": "feedback"). Feedback is not tracked and has
+// no review queue: this page only lists responses. Role check is inside the view: requireRole(['owner',
+// 'organizer']) plus FormModel::userCanOpen() for the form being viewed. Under /admin so
+// Auth::isSafeNext() lets the login redirect bring people back.
+} elseif ($route === '/admin/feedback-review') {
+    require __DIR__ . '/views/admin/feedback_review.php';
+
 // One queue for the responses to every ordinary (non-membership) form, the
 // counterpart of /admin/membership-review. Role check is inside the view:
 // requireRole(['organizer', 'owner']). Under /admin so Auth::isSafeNext()
