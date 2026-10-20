@@ -44,6 +44,17 @@ if ($formId) {
     }
 }
 
+// Close / reopen the form. Same permission as form_manager.php (anyone who can open the form).
+// A form that closed by deadline is reopened by extending the deadline in the builder, not here.
+if ($form && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'toggle') {
+    if (!CSRF::validate($_POST['csrf_token'] ?? '')) {
+        die("Invalid CSRF token.");
+    }
+    $formModel->toggleFormStatus($formId, !empty($_POST['activate']));
+    header('Location: /admin/feedback-review?form=' . $formId . '&toggled=1');
+    exit;
+}
+
 if ($form && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete') {
     if (!CSRF::validate($_POST['csrf_token'] ?? '')) {
         die("Invalid CSRF token.");
@@ -112,6 +123,29 @@ engage_header([
 <?php else: ?>
 
     <?php if (!empty($_GET['deleted'])): ?><div class="alert ok">Response deleted.</div><?php endif; ?>
+    <?php if (!empty($_GET['toggled'])): ?><div class="alert ok">Form status updated.</div><?php endif; ?>
+
+    <?php
+    $isActive   = !empty($form['is_active']);
+    $isOpenNow  = FormModel::isOpen($form);
+    $byDeadline = FormModel::closedByDeadline($form);
+    ?>
+    <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin:0 0 16px;">
+        <span class="chip <?= $isOpenNow ? 'clear' : 'attn' ?>">
+            <?= $isOpenNow ? 'Open' : ($byDeadline ? 'Closed (deadline)' : 'Closed') ?>
+        </span>
+        <a class="btn-outline btn-sm" href="/<?= htmlspecialchars(rawurlencode($form['form_type'])) ?>" target="_blank" rel="noopener">View public form</a>
+        <?php if (FormModel::userCanEdit($form)): ?>
+            <a class="btn-outline btn-sm" href="/admin/builder?edit=<?= (int) $formId ?>">Edit form<?= $byDeadline ? ' / extend deadline' : '' ?></a>
+        <?php endif; ?>
+        <form method="POST" style="margin:0;">
+            <?= CSRF::getInputField() ?>
+            <input type="hidden" name="action" value="toggle">
+            <input type="hidden" name="form_id" value="<?= (int) $formId ?>">
+            <input type="hidden" name="activate" value="<?= $isActive ? '' : '1' ?>">
+            <button type="submit" class="btn-outline btn-sm"><?= $isActive ? 'Close form' : 'Reopen form' ?></button>
+        </form>
+    </div>
 
     <p style="color:#64748b; margin:0 0 16px;">
         <?= (int) $total ?> response<?= $total === 1 ? '' : 's' ?>.
