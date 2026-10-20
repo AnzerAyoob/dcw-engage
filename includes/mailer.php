@@ -11,6 +11,8 @@
 //   MemberSupportMail.php    member conversations with DCW Support: "you have a reply" / "status changed"
 //                            notifications (never contain the message text or any staff name)
 //   membership_mailer.php    membership emails (class MembershipMailer): club-specific wording, From name and reply-to
+//   feedback_mailer.php      feedback forms (class FeedbackMailer): receipt to the respondent, alert to organizers.
+//                            No tracking ID and no link in the receipt.
 //
 // Every existing `Mailer::sendX(...)` call keeps working unchanged: this class
 // only forwards. New code can call the subject class directly. To add an email,
@@ -29,6 +31,7 @@ require_once __DIR__ . '/mail/ReimbursementMail.php';
 require_once __DIR__ . '/mail/InternetSupportMail.php';
 require_once __DIR__ . '/mail/MemberSupportMail.php';
 require_once __DIR__ . '/mail/membership_mailer.php';
+require_once __DIR__ . '/mail/feedback_mailer.php';
 
 class Mailer {
     public static function formatExpiryIST($utcDatetime) { return CoreMail::formatExpiryIST($utcDatetime); }
@@ -43,6 +46,14 @@ class Mailer {
     // Returns false when the email was not really sent, so the caller can show the link instead.
     public static function sendSentBack(...$a)            { return ApplicationMail::sentBack(...$a); }
     public static function sendOrganizerAlert(...$a)      { return ApplicationMail::organizerAlert(...$a); }
+
+    // --- Feedback forms -----------------------------------------------------
+    // ($email, $name, $formTitle)
+    // Receipt only: no tracking ID, no link. Returns true when sent (or in dev mode).
+    public static function sendFeedbackReceipt(...$a)     { return FeedbackMailer::sendReceipt(...$a); }
+    // ($notifyEmails, $formTitle, $formId)   $notifyEmails is the form's comma-separated notify_emails.
+    // Says feedback arrived and links to /admin/feedback-review; never repeats the feedback itself.
+    public static function sendFeedbackAlert(...$a)       { return FeedbackMailer::sendOrganizerAlert(...$a); }
 
     // --- Organizer accounts -------------------------------------------------
     public static function sendOrganizerInvite(...$a)     { return OrganizerAccountMail::invite(...$a); }
