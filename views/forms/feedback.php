@@ -60,7 +60,7 @@ if (!$isPreview && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if ($fbModel->recentCountForEmail($formIdInt, $fbEmail, 60) >= FeedbackModel::MAX_PER_EMAIL_PER_HOUR
                 || $fbModel->recentCountForForm($formIdInt, 10) >= FeedbackModel::MAX_PER_FORM_PER_10_MIN) {
-                $fbErrors['system'] = 'We are receiving a lot of submissions right now. Please try again a little later.';
+                $fbErrors['system'] = 'We are receiving a high volume of submissions at the moment. Please try again shortly.';
             } else {
                 $fbModel->create($formIdInt, $fbName, $fbEmail, $fbAnswers);
 
@@ -148,7 +148,7 @@ engage_header([
 
     <?php if (!$fbSent): ?>
         <?php if (!empty($form['deadline_at'])): ?>
-            <p class="verified-line">Feedback is open until <strong><?= htmlspecialchars(FormModel::formatIst($form['deadline_at'])) ?></strong>.</p>
+            <p class="verified-line">Feedback will remain open until <strong><?= htmlspecialchars(FormModel::formatIst($form['deadline_at'])) ?></strong>.</p>
         <?php endif; ?>
 
         <?php if (!empty($schema['description'])): ?>
@@ -158,8 +158,8 @@ engage_header([
 
     <?php if ($fbSent): ?>
         <div class="alert ok">
-            <h3>Thank you for your feedback!</h3>
-            <p>We have emailed you a receipt. No further action is needed.</p>
+            <h3>Thank you for sharing your feedback!</h3>
+            <p>We have emailed you a receipt. No further action is required on your part.</p>
         </div>
 
     <?php else: ?>
@@ -171,12 +171,12 @@ engage_header([
             <?= CSRF::getInputField() ?>
 
             <div class="hp-field" aria-hidden="true">
-                <label>Leave this empty <input type="text" name="hp_website" tabindex="-1" autocomplete="off"></label>
+                <label>Please leave this field blank <input type="text" name="hp_website" tabindex="-1" autocomplete="off"></label>
             </div>
 
             <div class="boxed">
                 <div class="field">
-                    <label for="respondent_name">Your name <span class="req-star">*</span></label>
+                    <label for="respondent_name">Your Name <span class="req-star">*</span></label>
                     <input type="text" name="respondent_name" id="respondent_name" maxlength="100" autocomplete="name"
                         value="<?= htmlspecialchars($fbName) ?>" required>
                     <?php if (!empty($fbErrors['respondent_name'])): ?>
@@ -184,10 +184,10 @@ engage_header([
                     <?php endif; ?>
                 </div>
                 <div class="field">
-                    <label for="respondent_email">Email address <span class="req-star">*</span></label>
+                    <label for="respondent_email">Email Address <span class="req-star">*</span></label>
                     <input type="email" name="respondent_email" id="respondent_email" maxlength="254" autocomplete="email"
                         value="<?= htmlspecialchars($fbEmail) ?>" required>
-                    <span class="hint">We will send a receipt to this address.</span>
+                    <span class="hint">We will send a receipt to this email address.</span>
                     <?php if (!empty($fbErrors['respondent_email'])): ?>
                         <span class="error-text"><?= htmlspecialchars($fbErrors['respondent_email']) ?></span>
                     <?php endif; ?>
@@ -237,7 +237,7 @@ engage_header([
 
                         <?php if ($type === 'select'): ?>
                             <select name="<?= $safeName ?>" id="<?= $safeName ?>" <?= $required ?>>
-                                <option value="">-- Please select --</option>
+                                <option value="">-- Please select an option --</option>
                                 <?php foreach (($field['options'] ?? []) as $opt): ?>
                                     <option value="<?= htmlspecialchars($opt) ?>" <?= $rawValue === $opt ? 'selected' : '' ?>>
                                         <?= htmlspecialchars($opt) ?></option>
@@ -261,11 +261,11 @@ engage_header([
                 </div>
             <?php endforeach; ?>
 
-            <button type="submit" <?= $isPreview ? 'disabled title="Disabled in preview mode"' : '' ?>>Send feedback</button>
+            <button type="submit" <?= $isPreview ? 'disabled title="Disabled in preview mode"' : '' ?>>Submit Feedback</button>
 
             <p class="privacy-note">
-                Your name and email are used to send you a receipt and, only if needed, to follow up with you.
-                They are removed automatically after <?= (int) FeedbackModel::retentionMonths() ?> months.
+                Your name and email address are used to send you a receipt and, if necessary, to follow up with you.
+                They are purged automatically after <?= (int) FeedbackModel::retentionMonths() ?> months.
             </p>
         </form>
     <?php endif; ?>
