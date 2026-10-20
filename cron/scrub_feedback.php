@@ -7,8 +7,6 @@
  * unless SCRUB_DROP_ANSWERS is true.
  *
  * Run daily from cron, e.g.:   17 3 * * *  php /path/to/cron/scrub_feedback.php
- *
- * NOTE: bootstrap below is a guess. Match whatever the existing scripts in cron/ do.
  */
 if (PHP_SAPI !== 'cli') {
     http_response_code(403);
@@ -24,3 +22,7 @@ $months = FeedbackModel::retentionMonths();
 $count  = (new FeedbackModel())->scrubOlderThan($months, SCRUB_DROP_ANSWERS);
 
 echo date('c') . " feedback scrub: $count response(s) older than $months months anonymised.\n";
+
+require_once __DIR__ . '/../models/EmailVerificationModel.php';
+$vCount = (new EmailVerificationModel())->purgeFeedbackRows();
+echo date('c') . " feedback scrub: $vCount verification row(s) deleted.\n";
