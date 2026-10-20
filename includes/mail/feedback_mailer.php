@@ -7,6 +7,38 @@ require_once __DIR__ . '/CoreMail.php';
 
 class FeedbackMailer {
     /**
+     * Verification link, sent BEFORE the feedback form opens. The link only opens a confirmation
+     * page on the form; the address is not verified until the person clicks the button there.
+     */
+    public static function sendVerification($email, $name, $formTitle, $url, $expiresAtText = '') {
+        $title  = CoreMail::e($formTitle);
+        $expiry = $expiresAtText !== '' ? ' This link works once and expires on ' . CoreMail::e($expiresAtText) . '.' : '';
+        $expiryAlt = $expiresAtText !== '' ? " This link works once and expires on $expiresAtText." : '';
+
+        $html = '<p>' . CoreMail::greeting($name) . '</p>'
+              . "<p>Please confirm your email address to open the feedback form for <strong>$title</strong>.</p>"
+              . CoreMail::button($url, 'Verify Email and Continue')
+              . "<p>$expiry</p>"
+              . '<p>If you did not ask for this, you can ignore this email. Nothing will be submitted.</p>';
+
+        $alt = CoreMail::greeting($name, false) . "\n\n"
+             . "Please confirm your email address to open the feedback form for $formTitle.\n\n"
+             . "Verify: $url\n\n"
+             . ltrim($expiryAlt) . "\n"
+             . "If you did not ask for this, you can ignore this email. Nothing will be submitted.\n";
+
+        return CoreMail::send([
+            'to'         => $email,
+            'to_name'    => (string) $name,
+            'subject'    => 'Verify your email to give feedback: ' . $formTitle,
+            'html'       => $html,
+            'alt'        => $alt,
+            'dev_result' => true,
+            'dev_log'    => "Feedback verification link to $email ($formTitle): $url",
+        ]);
+    }
+
+    /**
      * Receipt to the person who sent feedback. It is a receipt and nothing more: no tracking ID,
      * no link, nothing to click.
      */
