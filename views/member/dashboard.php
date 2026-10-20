@@ -146,34 +146,22 @@ try {
     $reimbursementOpen = $rs && !empty($rs['is_active']);
 } catch (Throwable $e) { $reimbursementOpen = false; }
 
-// Feedback forms (schema "kind": "feedback") are not applications, so they are kept out of
-// "More from DCW" and listed in their own "Share your feedback" panel. A feedback form is
-// recognised by its id (FeedbackModel::feedbackForms()) or, when the row carries its schema, by the
-// schema itself. Guarded on its own: if the feedback table has not been created yet, nothing is
-// pulled out and the programs list below still works.
-$feedbackIds = [];
+// Open forms, split into programs ("More from DCW") and feedback forms ("Share your feedback").
+// Membership forms have their own tile and link-only forms (schema "unlisted": true) are shared by
+// link only, so neither is listed here. Feedback forms (schema "kind": "feedback") are not
+// applications, so they never appear under programs. FormModel::getActiveForms() returns each row's
+// `kind`, which FeedbackModel::isFeedbackRow() reads.
+$programs = [];
+$feedbackPrograms = [];
 try {
-    foreach ((new FeedbackModel())->feedbackForms() as $fb) {
-        $feedbackIds[(int) $fb['id']] = true;
-    }
-} catch (Throwable $e) { }
-
-$isFeedbackForm = function (array $f) use ($feedbackIds): bool {
-    if (isset($f['id']) && isset($feedbackIds[(int) $f['id']])) return true;
-    $schema = $f['schema'] ?? (isset($f['schema_json']) ? json_decode((string) $f['schema_json'], true) : null);
-    return is_array($schema) && FeedbackModel::isFeedbackSchema($schema);
-};
-
-try {
-    // Membership forms have their own tile, link-only forms (schema "unlisted": true) are
-    // shared by link only, and feedback forms are not applications, so none of these are listed here.
-    $programs = array_values(array_filter(
+    $listedForms = array_values(array_filter(
         (new FormModel())->getActiveForms(),
         fn($f) => !str_starts_with((string) $f['form_type'], 'membership-')
                && empty($f['unlisted'])
-               && !$isFeedbackForm($f)
     ));
-} catch (Throwable $e) { $programs = []; }
+    $feedbackPrograms = array_values(array_filter($listedForms, fn($f) => FeedbackModel::isFeedbackRow($f)));
+    $programs         = array_values(array_filter($listedForms, fn($f) => !FeedbackModel::isFeedbackRow($f)));
+} catch (Throwable $e) { /* leave both lists empty */ }
 
 // ---- The member's own requests -----------------------------------------------------------------
 // Needs InternetSupportModel::listForMember() and ReimbursementModel::listForMember().
@@ -281,6 +269,7 @@ $icons = [
     'alert'    => '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>',
     'bell'     => '<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>',
     'user'     => '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+    'star'     => '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>',
 ];
 
 /** Small inline icon for the dashboard blocks. */
@@ -592,6 +581,25 @@ cert_rows_css();   // icons, buttons and certificate rows shared with /member/ce
             ?>
         </div>
     </section>
+
+    <!-- Share your feedback: feedback forms are not applications. Members open them without email verification. -->
+    <?php if (!empty($feedbackPrograms)): ?>
+    <section class="panel" id="feedback">
+        <div class="panel-head">
+            <h2>Share your feedback</h2>
+            <p>Tell us what you think. Signed-in members skip email verification.</p>
+        </div>
+        <div class="tiles">
+            <?php
+            foreach ($feedbackPrograms as $p) {
+                $title = $p['title'] ?: ucwords(str_replace(['-', '_'], ' ', $p['form_type']));
+                $desc = !empty($p['description']) ? MiniWikiText::stripToPlainText($p['description']) : 'Tell us what you think.';
+                dash_tile($icons, '#97161b', 'star', $title, mb_strimwidth($desc, 0, 90, '…'), '/' . $p['form_type'], 'Give feedback');
+            }
+            ?>
+        </div>
+    </section>
+    <?php endif; ?>
 
 </div>
 
