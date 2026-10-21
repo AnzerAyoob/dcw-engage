@@ -1,5 +1,5 @@
 -- Internet support requests, their messages, and settings.
--- Schema only. Safe to run on an install that already has these tables
+-- Schema only (plus the default settings row at the end). Safe to run on an install that already has these tables
 -- (CREATE TABLE IF NOT EXISTS). Needs admin_users / forms / members from
 -- database.sql or earlier migrations where foreign keys point at them.
 
@@ -68,3 +68,8 @@ CREATE TABLE IF NOT EXISTS `internet_settings` (
   `max_amount_paise` int(11) NOT NULL DEFAULT 100000,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Default settings row (id = 1), switched off. The app reads this row, and
+-- nothing else creates it. INSERT IGNORE leaves an existing row untouched.
+INSERT IGNORE INTO `internet_settings` (`id`, `is_active`, `max_amount_paise`)
+VALUES (1, 0, 100000);
