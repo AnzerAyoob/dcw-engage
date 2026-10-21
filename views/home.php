@@ -34,7 +34,7 @@ $feedbackForms = array_values(array_filter($activeForms, fn($f) => FeedbackModel
 $activeForms   = array_values(array_filter($activeForms, fn($f) => !FeedbackModel::isFeedbackRow($f)));
 
 // Is a member signed in? Guarded so the public landing page can never break, for example
-// before sql/member_login.sql has been run.
+// before the members tables exist.
 try {
     $signedInMember = MemberSession::current();
 } catch (Throwable $e) {
