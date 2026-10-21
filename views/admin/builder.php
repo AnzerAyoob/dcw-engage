@@ -288,13 +288,11 @@ engage_header([
                 })();
             </script>
 
-            <!-- Dynamic Fields Container -->
-            <div id="fields_container">
-                <!-- Visual Cards will be injected here via JS -->
-            </div>
+            <!-- Sections contain their own title, optional introduction, and ordered questions. -->
+            <div id="sections_container"></div>
 
-            <div style="text-align: center; margin-top: 30px;">
-                <button type="button" class="btn-outline" id="add_field_btn" style="border-radius: 50px; padding: 12px 30px;">+ Add Question</button>
+            <div style="text-align: center; margin-top: 24px;">
+                <button type="button" class="btn-outline" id="add_section_btn" style="border-radius: 50px; padding: 12px 30px;">+ Add Section</button>
             </div>
 
             <!-- Floating Save Actions -->
