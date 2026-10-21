@@ -1,9 +1,9 @@
-const fieldsContainer = document.getElementById('fields_container');
+const sectionsContainer = document.getElementById('sections_container');
 const addFieldBtn = document.getElementById('add_field_btn');
 const builderForm = document.getElementById('builderForm');
 let fieldCounter = 0;
 
-function createFieldCard(fieldData = null) {
+function createFieldCard(fieldData = null, targetContainer = null) {
     fieldCounter++;
     const card = document.createElement('div');
     card.className = 'field-card';
@@ -55,7 +55,7 @@ function createFieldCard(fieldData = null) {
         </div>
     `;
 
-    fieldsContainer.appendChild(card);
+    (targetContainer || document.querySelector('.section-fields')).appendChild(card);
 }
 
 // Toggle options visibility if select is chosen
@@ -77,6 +77,7 @@ window.removeField = function (id) {
 window.moveField = function (id, direction) {
     const card = document.getElementById(`field_${id}`);
     if (!card) return;
+    const fieldsContainer = card.parentElement;
 
     if (direction === -1) {
         const prev = card.previousElementSibling;
@@ -93,7 +94,7 @@ window.moveField = function (id, direction) {
 // constructs that don't make sense inside a single-line question label.
 // Delegated on fieldsContainer since cards are added/removed dynamically,
 // so one listener covers every card without rebinding per-card.
-fieldsContainer.addEventListener('click', function(e) {
+sectionsContainer.addEventListener('click', function(e) {
     const wrapBtn = e.target.closest('.label-fmt-btn');
     const linkBtn = e.target.closest('.label-fmt-link');
     if (!wrapBtn && !linkBtn) return;
@@ -228,7 +229,51 @@ if (descriptionToolbar) {
     window.addEventListener('load', autoGrowDescription);
 }
 
+let sectionCounter = 0;
 let slugEdited = false;
+
+function createSection(sectionData = {}) {
+    sectionCounter++;
+    const section = document.createElement('section');
+    section.className = 'form-section-card';
+    section.dataset.sectionId = sectionData.id || ('section_' + sectionCounter);
+    section.style.cssText = 'border:1px solid var(--border); border-radius:14px; padding:20px; margin:22px 0; background:var(--surface, #fff);';
+    section.innerHTML = `
+        <div class="row" style="justify-content:space-between; align-items:center;">
+            <strong style="font-size:18px;">Section ${sectionCounter}</strong>
+            <button type="button" class="btn-danger remove-section-btn">Remove section</button>
+        </div>
+        <label>Section title</label>
+        <input type="text" class="section-title" placeholder="e.g. Personal Details" value="${String(sectionData.title || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}">
+        <label>Section introduction (optional)</label>
+        <textarea class="section-description" rows="2" placeholder="Briefly explain this section to applicants" style="width:100%; padding:12px; border:1.5px solid var(--border); border-radius:10px;">${String(sectionData.description || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</textarea>
+        <div class="section-fields"></div>
+        <button type="button" class="btn-outline btn-sm add-section-field" style="margin-top:12px;">+ Add Question to Section</button>
+    `;
+    sectionsContainer.appendChild(section);
+    const fieldContainer = section.querySelector('.section-fields');
+    if (Array.isArray(sectionData.fields) && sectionData.fields.length) {
+        sectionData.fields.forEach(field => createFieldCard(field, fieldContainer));
+    }
+    return section;
+}
+
+sectionsContainer.addEventListener('click', function (e) {
+    const add = e.target.closest('.add-section-field');
+    if (add) {
+        createFieldCard(null, add.closest('.form-section-card').querySelector('.section-fields'));
+        return;
+    }
+    const remove = e.target.closest('.remove-section-btn');
+    if (remove) {
+        const all = sectionsContainer.querySelectorAll('.form-section-card');
+        if (all.length <= 1) {
+            window.alert('A form must have at least one section.');
+            return;
+        }
+        remove.closest('.form-section-card').remove();
+    }
+});
 
 if (typeof existingSchema !== 'undefined' && existingSchema) {
     document.getElementById('form_title').value = existingSchema.title || '';
@@ -237,20 +282,36 @@ if (typeof existingSchema !== 'undefined' && existingSchema) {
     document.getElementById('form_type').value = typeof existingFormType !== 'undefined' ? existingFormType : '';
     slugEdited = true;
 
-    if (existingSchema.fields && existingSchema.fields.length > 0) {
-        existingSchema.fields.forEach(field => {
-            createFieldCard(field);
-        });
+    if (Array.isArray(existingSchema.sections) && existingSchema.sections.length) {
+        existingSchema.sections.forEach(sectionData => createSection(sectionData));
     } else {
-        createFieldCard();
+        const section = createSection({title: '', description: ''});
+        const container = section.querySelector('.section-fields');
+        if (Array.isArray(existingSchema.fields) && existingSchema.fields.length) {
+            existingSchema.fields.forEach(field => createFieldCard(field, container));
+        } else {
+            createFieldCard(null, container);
+        }
     }
 } else {
-    // Add initial field
-    createFieldCard();
+    const section = createSection({title: '', description: ''});
+    createFieldCard(null, section.querySelector('.section-fields'));
 }
 
 if (addFieldBtn) {
-    addFieldBtn.addEventListener('click', () => createFieldCard());
+    addFieldBtn.addEventListener('click', () => {
+        const section = createSection({title: '', description: ''});
+        section.querySelector('.section-title').focus();
+        createFieldCard(null, section.querySelector('.section-fields'));
+    });
+}
+
+const addSectionBtn = document.getElementById('add_section_btn');
+if (addSectionBtn) {
+    addSectionBtn.addEventListener('click', () => {
+        const section = createSection({title: '', description: ''});
+        section.querySelector('.section-title').focus();
+    });
 }
 
 // Auto-generate URL Slug from Title
@@ -281,37 +342,27 @@ function buildSchemaFromForm() {
     const description = document.getElementById('form_description').value;
     const bannerImage = document.getElementById('banner_image').value;
 
-    const schema = {
-        title: title,
-        description: description,
-        banner_image: bannerImage,
-        fields: []
-    };
-
-    const cards = document.querySelectorAll('.field-card');
-    cards.forEach(card => {
-        const label = card.querySelector('.field-label').value;
-        const type = card.querySelector('.field-type').value;
-        const isRequired = card.querySelector('.field-required').checked;
-
-        // Auto generate an internal database name from the label
-        const name = label.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
-
-        const fieldData = {
-            name: name || 'field_' + Math.floor(Math.random() * 1000),
-            label: label,
-            type: type,
-            required: isRequired
+    const schema = {title, description, banner_image: bannerImage, sections: []};
+    document.querySelectorAll('.form-section-card').forEach((section, sectionIndex) => {
+        const sectionData = {
+            id: section.dataset.sectionId || ('section_' + (sectionIndex + 1)),
+            title: section.querySelector('.section-title').value.trim(),
+            description: section.querySelector('.section-description').value.trim(),
+            fields: []
         };
-
-        if (type === 'select' || type === 'checkbox_group') {
-            const optionsRaw = card.querySelector('.field-options').value;
-            fieldData.options = optionsRaw.split(',').map(opt => opt.trim()).filter(opt => opt.length > 0);
-        }
-
-        schema.fields.push(fieldData);
+        section.querySelectorAll('.field-card').forEach(card => {
+            const label = card.querySelector('.field-label').value;
+            const type = card.querySelector('.field-type').value;
+            const isRequired = card.querySelector('.field-required').checked;
+            const name = label.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
+            const fieldData = {name: name || 'field_' + Math.floor(Math.random() * 1000), label, type, required: isRequired};
+            if (type === 'select' || type === 'checkbox_group') {
+                fieldData.options = card.querySelector('.field-options').value.split(',').map(opt => opt.trim()).filter(opt => opt.length > 0);
+            }
+            sectionData.fields.push(fieldData);
+        });
+        schema.sections.push(sectionData);
     });
-
     return schema;
 }
 
@@ -331,7 +382,7 @@ const previewForm = document.getElementById('previewForm');
 if (previewFormBtn && previewForm) {
     previewFormBtn.addEventListener('click', function () {
         const schema = buildSchemaFromForm();
-        if (!schema.fields.length) {
+        if (!schema.sections.some(section => section.fields.length)) {
             window.alert('Add at least one question before previewing.');
             return;
         }
