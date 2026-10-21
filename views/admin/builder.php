@@ -136,7 +136,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $decodedSchema = json_decode($schemaJson, true);
         if (json_last_error() !== JSON_ERROR_NONE || !is_array($decodedSchema)) {
             $error = "Invalid JSON schema format generated.";
-        } elseif ($kind === 'feedback' && in_array('file', array_column($decodedSchema['fields'] ?? [], 'type'), true)) {
+        } elseif ($kind === 'feedback' && in_array('file', array_column(FormModel::schemaFields($decodedSchema), 'type'), true)) {
             // Feedback responses are stored without any upload handling, so a file question could never work.
             $error = "Feedback forms cannot include file upload questions.";
         } else {
