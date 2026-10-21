@@ -13,9 +13,12 @@
  * Guest flow (email verification happens BEFORE the form opens):
  *   1. gate     name + email  -> POST fb_action=request  -> verification link emailed
  *   2. check    "check your inbox" screen
- *   3. confirm  link opens ?verify=TOKEN -> token is staged in the session and the URL is cleaned
- *               -> a "Confirm" button (POST fb_action=confirm) redeems it. The token is never redeemed
- *               on GET, so mail-security link scanners cannot burn it (see EmailVerificationModel::consume).
+ *   3. confirm  link opens ?verify=TOKEN -> the SAME request shows a "Confirm" button, with the token in a
+ *               hidden field (POST fb_action=confirm). The token is never redeemed on GET, so mail-security
+ *               link scanners cannot burn it (see EmailVerificationModel::consume). It is deliberately NOT
+ *               stored in the session or redirected: that made the confirm screen depend on the session
+ *               cookie surviving a redirect that starts in an email app, and the visitor was dropped back
+ *               to the gate. This is the same approach the application form uses.
  *   4. form     the feedback fields; POST fb_action=submit
  *
  * The name and email stored with the response are the VERIFIED ones (from the member session, or from
@@ -79,17 +82,18 @@ if (!$isPreview) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// GET ?verify=TOKEN: stage the token and clean the URL. Nothing is redeemed here.
-// (Members never need a token, so for them the parameter is ignored and the form simply opens.)
+// GET ?verify=TOKEN: do NOT redeem it, and do NOT store it or redirect. Just remember it for this
+// request so the confirm screen can carry it in a hidden field. (Members never need a token, so for
+// them the parameter is ignored and the form simply opens.)
 // ---------------------------------------------------------------------------------------------
+$fbPendingToken = null;
 if (!$isPreview && !$fbMember && $_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['verify'])) {
     $t = is_string($_GET['verify']) ? $_GET['verify'] : '';
     if (preg_match('/^[a-f0-9]{64}$/', $t)) {
-        $_SESSION['fb_pending'][$fbFormId] = $t;
+        $fbPendingToken = $t;
     }
+    // Keep the token out of the Referer header of anything this page links to.
     header('Referrer-Policy: no-referrer');
-    header('Location: ' . $fbPath);
-    exit;
 }
 
 // Currently verified person for this form (if any, and not stale).
@@ -165,13 +169,15 @@ if (!$isPreview && $_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-    // ---- Step 3: redeem the staged link on an explicit click ----------------------------------
+    // ---- Step 3: redeem the link on an explicit click -----------------------------------------
     } elseif ($fbAction === 'confirm') {
-        $token = (string) ($_SESSION['fb_pending'][$fbFormId] ?? '');
-        unset($_SESSION['fb_pending'][$fbFormId]);
+        $token = is_string($_POST['verify_token'] ?? null) ? $_POST['verify_token'] : '';
+        if (!preg_match('/^[a-f0-9]{64}$/', $token)) {
+            $token = '';
+        }
 
         try {
-            $who = (new EmailVerificationModel())->consume($formIdInt, $token);
+            $who = $token !== '' ? (new EmailVerificationModel())->consume($formIdInt, $token) : null;
         } catch (Throwable $ex) {
             app_log("Feedback verification consume failed for form '$formType': " . $ex->getMessage());
             $who = null;
@@ -186,6 +192,7 @@ if (!$isPreview && $_SERVER['REQUEST_METHOD'] === 'POST') {
             header('Location: ' . $fbPath);
             exit;
         }
+        // Falls through to the gate screen below, with this message above it.
         $fbErrors['system'] = 'This verification link is invalid, has expired or has already been used. Please request a new one below.';
 
     // ---- Step 4: the feedback itself ----------------------------------------------------------
@@ -244,7 +251,9 @@ if (!$isPreview && isset($_SESSION['fb_link_sent'][$fbFormId])) {
     unset($_SESSION['fb_link_sent'][$fbFormId]);
 }
 
-$fbPending = !$isPreview && !$fbVerified && !empty($_SESSION['fb_pending'][$fbFormId]);
+// The confirm screen shows only on the request that opened the emailed link, and only for someone who is
+// not already verified.
+$fbPending = !$isPreview && !$fbVerified && $fbPendingToken !== null;
 
 if ($fbSent)              { $fbScreen = 'sent'; }
 elseif ($fbVerified)      { $fbScreen = 'form'; }
@@ -359,15 +368,17 @@ engage_header([
     <?php elseif ($fbScreen === 'confirm'): ?>
         <div class="boxed">
             <p style="margin:0 0 14px;">Click the button below to confirm your email address and open the feedback form.</p>
-            <form method="POST">
+            <?php /* action is the clean path, so the token never stays in the address bar after this step */ ?>
+            <form method="POST" action="<?= htmlspecialchars($fbPath) ?>">
                 <?= CSRF::getInputField() ?>
                 <input type="hidden" name="fb_action" value="confirm">
+                <input type="hidden" name="verify_token" value="<?= htmlspecialchars((string) $fbPendingToken) ?>">
                 <button type="submit">Confirm email and continue</button>
             </form>
         </div>
 
     <?php elseif ($fbScreen === 'gate'): ?>
-        <form method="POST">
+        <form method="POST" action="<?= htmlspecialchars($fbPath) ?>">
             <?= CSRF::getInputField() ?>
             <input type="hidden" name="fb_action" value="request">
 
@@ -404,7 +415,7 @@ engage_header([
         </form>
 
     <?php else: /* form */ ?>
-        <form method="POST">
+        <form method="POST" action="<?= htmlspecialchars($fbPath) ?>">
             <?= CSRF::getInputField() ?>
             <input type="hidden" name="fb_action" value="submit">
 
