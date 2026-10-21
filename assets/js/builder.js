@@ -1,5 +1,4 @@
 const sectionsContainer = document.getElementById('sections_container');
-const addFieldBtn = document.getElementById('add_field_btn');
 const builderForm = document.getElementById('builderForm');
 let fieldCounter = 0;
 
@@ -70,10 +69,7 @@ window.removeField = function (id) {
     document.getElementById(`field_${id}`).remove();
 };
 
-// Move a field card up (-1) or down (+1). Field order on submit is read
-// straight off the DOM (see the submit handler below), so swapping the
-// cards' position in fields_container is the whole fix — no separate
-// "order" value to track or persist.
+// Move a field card within its own section. Field order is read from the DOM.
 window.moveField = function (id, direction) {
     const card = document.getElementById(`field_${id}`);
     if (!card) return;
@@ -92,8 +88,7 @@ window.moveField = function (id, direction) {
 // Same Bold/Italic/Link syntax as the description toolbar below, but
 // deliberately without heading/indent/list — those are block-level
 // constructs that don't make sense inside a single-line question label.
-// Delegated on fieldsContainer since cards are added/removed dynamically,
-// so one listener covers every card without rebinding per-card.
+// Delegated on the sections container so dynamic field cards share one listener.
 sectionsContainer.addEventListener('click', function(e) {
     const wrapBtn = e.target.closest('.label-fmt-btn');
     const linkBtn = e.target.closest('.label-fmt-link');
@@ -296,14 +291,6 @@ if (typeof existingSchema !== 'undefined' && existingSchema) {
 } else {
     const section = createSection({title: '', description: ''});
     createFieldCard(null, section.querySelector('.section-fields'));
-}
-
-if (addFieldBtn) {
-    addFieldBtn.addEventListener('click', () => {
-        const section = createSection({title: '', description: ''});
-        section.querySelector('.section-title').focus();
-        createFieldCard(null, section.querySelector('.section-fields'));
-    });
 }
 
 const addSectionBtn = document.getElementById('add_section_btn');
