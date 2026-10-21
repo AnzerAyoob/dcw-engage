@@ -48,13 +48,15 @@
 --
 -- GOOD TO KNOW
 --
---   * Schema only. There are no data rows, no AUTO_INCREMENT counters, no
---     DEFINER clauses and no credentials. Real configuration lives in the
---     git-ignored includes/config.php (and, if you use them,
+--   * Schema only, apart from two default settings rows at the very end of
+--     the file (see "Default settings rows"). There are no AUTO_INCREMENT
+--     counters, no DEFINER clauses and no credentials. Real configuration
+--     lives in the git-ignored includes/config.php (and, if you use them,
 --     includes/certs_db.php and includes/events_db.php).
 --
---   * Safe to re-run. Every table uses CREATE TABLE IF NOT EXISTS, so
---     importing again will not touch tables (or data) that already exist.
+--   * Safe to re-run. Every table uses CREATE TABLE IF NOT EXISTS and the
+--     default rows use INSERT IGNORE, so importing again will not touch
+--     tables (or data) that already exist.
 --
 --   * Portable. Tables use the utf8mb4_unicode_ci collation and JSON
 --     columns, which work on MySQL 8.0+ and MariaDB 10.4+.
@@ -511,7 +513,7 @@ CREATE TABLE IF NOT EXISTS `reimbursement_requests` (
   `bank_account_name` varchar(255) DEFAULT NULL,
   `bank_account_number_enc` varbinary(512) DEFAULT NULL,
   `bank_ifsc` varchar(11) DEFAULT NULL,
-  `status` enum('Submitted','Under Review','Rejected','Approved for Payment','Paid','Payment Failed','Discarded') NOT NULL DEFAULT 'Submitted',
+  `status` enum('Submitted','Under Review','Rejected','Approved for Payment','Paid','Payment Failed','Discarded','Info Requested') NOT NULL DEFAULT 'Submitted',
   `tracking_id` varchar(20) NOT NULL,
   `admin_notes` text DEFAULT NULL,
   `decided_by` varchar(255) DEFAULT NULL,
@@ -672,3 +674,20 @@ CREATE TABLE IF NOT EXISTS `tech_contributors` (
   PRIMARY KEY (`id`),
   KEY `idx_member` (`member_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
+-- Default settings rows
+--
+-- internet_settings and reimbursement_settings each hold a single row
+-- (id = 1) that the app reads. Nothing else creates it, so a fresh install
+-- would otherwise have both programmes stuck closed with no way to switch
+-- them on. Both rows start SWITCHED OFF (is_active = 0); an organizer turns
+-- them on from the admin workspace. INSERT IGNORE leaves any existing row
+-- untouched.
+-- ============================================================
+
+INSERT IGNORE INTO `internet_settings` (`id`, `is_active`, `max_amount_paise`)
+VALUES (1, 0, 100000);
+
+INSERT IGNORE INTO `reimbursement_settings` (`id`, `is_active`, `cash_threshold_paise`, `expense_categories`, `instructions`)
+VALUES (1, 0, 80000, JSON_ARRAY('Travel', 'Accommodation', 'Food', 'Other'), NULL);
