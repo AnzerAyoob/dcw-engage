@@ -1,5 +1,5 @@
 -- Reimbursement settings, global eligibility, and request messages (extends 2026_09_27_reimbursements.sql).
--- Schema only. Safe to run on an install that already has these tables
+-- Schema only (plus the default settings row at the end). Safe to run on an install that already has these tables
 -- (CREATE TABLE IF NOT EXISTS). Needs admin_users / forms / members from
 -- database.sql or earlier migrations where foreign keys point at them.
 
@@ -32,3 +32,8 @@ CREATE TABLE IF NOT EXISTS `reimbursement_request_messages` (
   KEY `idx_request` (`request_id`),
   CONSTRAINT `fk_reimb_msg_request` FOREIGN KEY (`request_id`) REFERENCES `reimbursement_requests` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Default settings row (id = 1), switched off. The app reads this row, and
+-- nothing else creates it. INSERT IGNORE leaves an existing row untouched.
+INSERT IGNORE INTO `reimbursement_settings` (`id`, `is_active`, `cash_threshold_paise`, `expense_categories`, `instructions`)
+VALUES (1, 0, 80000, JSON_ARRAY('Travel', 'Accommodation', 'Food', 'Other'), NULL);
