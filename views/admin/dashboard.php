@@ -246,21 +246,8 @@ function form_tile(array $icons, array $form, array $feedbackCounts = []): void
     <?php
 }
 
-// The top-bar buttons. Owner-only housekeeping lives up here, out of the way of the day-to-day work.
-ob_start(); ?>
-<span class="who"><?= htmlspecialchars(Auth::email()) ?></span>
-<?php if ($canManageTeam): ?>
-    <a href="/admin/team" class="chip-btn">Team</a>
-    <a href="/admin/audit" class="chip-btn">Audit log</a>
-    <a href="/admin/chapter-themes" class="chip-btn">Chapter themes</a>
-<?php endif; ?>
-<form method="POST" action="/admin/logout">
-    <?= CSRF::getInputField() ?>
-    <button type="submit" class="chip-btn">Sign out</button>
-</form>
-<?php
-$topTools = ob_get_clean();
-
+// The top bar (email, Team, Audit log, Chapter themes, Sign out, and the phone hamburger) comes from
+// engage_staff_menu(), which engage_header() adds on every staff page, so 'tools' is left empty here.
 // engage_header() adds the staff stylesheet, the "admin" body class, noindex and the shared footer for /admin pages.
 engage_header([
     'title'   => 'Organizer workspace',
@@ -269,7 +256,7 @@ engage_header([
     'slim'    => true,
     'wide'    => true,
     'crumbs'  => [],
-    'tools'   => $topTools,
+    'tools'   => '',
 ]);
 ?>
 
