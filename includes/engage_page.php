@@ -48,7 +48,8 @@ function engage_logo_url(string $chapter = ''): string {
  *
  * Staff pages (/admin, /finance) automatically get the staff scheme ("Logo Blue, Green & Crimson"): the <body> gets
  * class="admin", assets/css/staff.css is loaded after engage.css, the page is marked noindex, and the brand
- * link goes to the workspace.
+ * link goes to the workspace. A staff page that passes no 'tools' also gets the shared staff menu
+ * (engage_staff_menu()): chips on wide screens, one hamburger on phones.
  *
  * Member pages that pass 'member' get that member's chapter colors and chapter logo (see
  * includes/chapter_theme.php). Staff pages and pages with no member keep the default DCW look.
@@ -65,7 +66,7 @@ function engage_logo_url(string $chapter = ''): string {
  *   lead     optional sentence under the heading (plain text)
  *   lead_html optional trusted, already-escaped HTML shown under the lead (for example a link)
  *   member   MemberSession::current() row, or null
- *   tools    raw, already-escaped HTML for the top-bar buttons (overrides the member links)
+ *   tools    raw, already-escaped HTML for the top-bar buttons (overrides the member links and the staff menu)
  *   wide     true for wide layouts (finance queue and tables)
  *   home     true for the public home page: a slim hero with a left-aligned heading and lead, no big
  *            logo, no kicker pill, and no breadcrumbs unless 'crumbs' is given
@@ -101,6 +102,13 @@ function engage_header(array $o) {
     $leadHtml = (string) ($o['lead_html'] ?? '');
     $member   = $o['member'] ?? null;
     $tools    = $o['tools'] ?? null;
+
+    // Staff pages with no top-bar tools of their own get the shared staff menu.
+    if (engage_is_staff_path() && ($tools === null || trim((string) $tools) === '')) {
+        $staffMenu = engage_staff_menu();
+        if ($staffMenu !== '') $tools = $staffMenu;
+    }
+
     $wide     = !empty($o['wide']);
     $home     = !empty($o['home']);
     $bare     = !empty($o['bare']);
@@ -412,6 +420,71 @@ function engage_member_menu(array $member, array $o = []): string {
     return ob_get_clean();
 }
 
+/**
+ * The staff top-bar menu, used automatically by engage_header() on every /admin and /finance page
+ * that does not pass its own 'tools'. Wide screens get chips; phones get one hamburger with the
+ * same links (the switch is in engage.css: .tools-wide / .tools-narrow).
+ * Returns '' when nobody is signed in, so sign-in pages are unaffected.
+ * Sign out posts to /admin/logout (POST only, CSRF checked there).
+ */
+function engage_staff_menu(): string {
+    if (!class_exists('Auth')) return '';
+    try {
+        $email   = trim((string) Auth::email());
+        $isOwner = (bool) Auth::isOwner();
+    } catch (Throwable $ex) {
+        return '';
+    }
+    if ($email === '') return '';
+
+    $e       = fn($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
+    $path    = (string) parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
+    $initial = mb_strtoupper(mb_substr($email, 0, 1)) ?: 'A';
+    $csrf    = class_exists('CSRF') ? CSRF::getInputField() : '';
+
+    // [label, href, owner only]
+    $links = [
+        ['Workspace',        '/admin/dashboard',      false],
+        ['Team',             '/admin/team',           true],
+        ['Audit log',        '/admin/audit',          true],
+        ['Chapter themes',   '/admin/chapter-themes', true],
+        ['Report a problem', '/admin/report-problem', false],
+    ];
+    $links = array_values(array_filter($links, fn($l) => !$l[2] || $isOwner));
+
+    ob_start(); ?>
+    <div class="tools-wide">
+        <span class="who"><?= $e($email) ?></span>
+        <?php foreach ($links as [$label, $href]): ?>
+            <?php if ($label === 'Report a problem' || $href === $path) continue; /* in the footer / already here */ ?>
+            <a class="chip-btn" href="<?= $e($href) ?>"><?= $e($label) ?></a>
+        <?php endforeach; ?>
+        <form method="POST" action="/admin/logout"><?= $csrf ?><button type="submit" class="chip-btn">Sign out</button></form>
+    </div>
+
+    <nav class="mnav tools-narrow" aria-label="Account menu">
+        <details class="mmenu burger">
+            <summary aria-label="Open menu">
+                <span class="mav" aria-hidden="true"><?= $e($initial) ?></span>
+                <span class="bars" aria-hidden="true"><i></i><i></i><i></i></span>
+            </summary>
+            <div class="mpop">
+                <div class="mwho">
+                    <span class="mav lg" aria-hidden="true"><?= $e($initial) ?></span>
+                    <span><strong>Signed in</strong><em><?= $e($email) ?></em></span>
+                </div>
+                <?php foreach ($links as [$label, $href]): $cur = $href === $path; ?>
+                    <a href="<?= $e($href) ?>"<?= $cur ? ' class="cur" aria-current="page"' : '' ?>><?= $e($label) ?></a>
+                <?php endforeach; ?>
+                <div class="msep"></div>
+                <form method="POST" action="/admin/logout"><?= $csrf ?><button type="submit" class="out">Sign out</button></form>
+            </div>
+        </details>
+    </nav>
+    <?php
+    return ob_get_clean();
+}
+
 function engage_footer() {
     $c   = engage_footer_config();
     $e   = fn($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
@@ -479,7 +552,7 @@ function engage_footer() {
     .site-footer ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 9px; }
     .site-footer a { color: var(--ink); text-decoration: none; font-size: 14.5px; }
     .site-footer a:hover { color: var(--accent); text-decoration: underline; }
-    .site-footer .sf-cta { display: inline-block; margin-top: 4px; padding: 8px 16px; border-radius: 999px; background: var(--accent); color: #fff; font-weight: 600; font-size: 14px; box-shadow: 0 8px 14px rgba(35, 112, 161, .16); }
+    .site-footer .sf-cta { display: inline-block; margin-top: 4px; padding: 8px 16px; border-radius: 999px; background: var(--accent); color: #fff; font-weight: 600; font-size: 14px; box-shadow: 0 3px 0 var(--accent-dark); }
     .site-footer .sf-cta:hover { background: var(--accent-dark); color: #fff; text-decoration: none; }
     .site-footer .sf-social { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
     .site-footer .sf-social a { padding: 5px 12px; border: 1.5px solid var(--border); border-radius: 999px; background: #fff; font-size: 13px; font-weight: 600; }
