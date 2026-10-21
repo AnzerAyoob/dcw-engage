@@ -381,4 +381,298 @@ function engage_member_menu(array $member, array $o = []): string {
                 <div class="mwho">
                     <span class="mav lg" aria-hidden="true"><?= $e($initial) ?></span>
                     <span>
-                        <strong><?=
+                        <strong><?= $e($display) ?></strong>
+                        <?php if ($id !== ''): ?><em><?= $e($id) ?></em><?php endif; ?>
+                    </span>
+                </div>
+
+                <?php if ($home): ?>
+                    <?php if (!empty($o['programs'])): ?><a href="#programs">Programs</a><?php endif; ?>
+                    <?php if (!empty($o['events'])):   ?><a href="#events">Events</a><?php endif; ?>
+                <?php else: ?>
+                    <?= $link('Home', '/') ?>
+                <?php endif; ?>
+                <?= $link('Track Application', '/track') ?>
+
+                <div class="msep"></div>
+                <?= $link('My Dashboard', '/member/dashboard') ?>
+                <?= $link('My Profile', '/member/profile') ?>
+                <?= $link('My Certificates', '/member/certificates') ?>
+                <?= $link('Support', '/member/support') ?>
+                <?= $link('Talk to DCW Support', '/member/talk') ?>
+                <?= $link('Report a problem', '/member/report-problem') ?>
+
+                <?php $aboutLinks = engage_about_links(true); ?>
+                <?php if ($aboutLinks): ?>
+                    <div class="msep"></div>
+                    <div class="mlabel">About DCW</div>
+                    <?php foreach ($aboutLinks as [$name, $href]): ?>
+                        <a href="<?= $e($href) ?>" rel="noopener"><?= $e($name) ?></a>
+                    <?php endforeach; ?>
+                <?php endif; ?>
+
+                <div class="msep"></div>
+                <?= $link('Sign out', '/member/logout', 'out') ?>
+            </div>
+        </details>
+    </nav>
+    <?php
+    return ob_get_clean();
+}
+
+/**
+ * The staff top-bar menu, used automatically by engage_header() on every /admin and /finance page
+ * that does not pass its own 'tools'. Wide screens get chips; phones get one hamburger with the
+ * same links (the switch is in engage.css: .tools-wide / .tools-narrow).
+ * Returns '' when nobody is signed in, so sign-in pages are unaffected.
+ * Sign out posts to /admin/logout (POST only, CSRF checked there).
+ */
+function engage_staff_menu(): string {
+    if (!class_exists('Auth')) return '';
+    try {
+        $email   = trim((string) Auth::email());
+        $isOwner = (bool) Auth::isOwner();
+    } catch (Throwable $ex) {
+        return '';
+    }
+    if ($email === '') return '';
+
+    $e       = fn($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
+    $path    = (string) parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
+    $initial = mb_strtoupper(mb_substr($email, 0, 1)) ?: 'A';
+    $csrf    = class_exists('CSRF') ? CSRF::getInputField() : '';
+
+    // [label, href, owner only]
+    $links = [
+        ['Workspace',        '/admin/dashboard',      false],
+        ['Team',             '/admin/team',           true],
+        ['Audit log',        '/admin/audit',          true],
+        ['Chapter themes',   '/admin/chapter-themes', true],
+        ['Report a problem', '/admin/report-problem', false],
+    ];
+    $links = array_values(array_filter($links, fn($l) => !$l[2] || $isOwner));
+
+    ob_start(); ?>
+    <div class="tools-wide">
+        <span class="who"><?= $e($email) ?></span>
+        <?php foreach ($links as [$label, $href]): ?>
+            <?php if ($label === 'Report a problem' || $href === $path) continue; /* in the footer / already here */ ?>
+            <a class="chip-btn" href="<?= $e($href) ?>"><?= $e($label) ?></a>
+        <?php endforeach; ?>
+        <form method="POST" action="/admin/logout"><?= $csrf ?><button type="submit" class="chip-btn">Sign out</button></form>
+    </div>
+
+    <nav class="mnav tools-narrow" aria-label="Account menu">
+        <details class="mmenu burger">
+            <summary aria-label="Open menu">
+                <span class="mav" aria-hidden="true"><?= $e($initial) ?></span>
+                <span class="bars" aria-hidden="true"><i></i><i></i><i></i></span>
+            </summary>
+            <div class="mpop">
+                <div class="mwho">
+                    <span class="mav lg" aria-hidden="true"><?= $e($initial) ?></span>
+                    <span><strong>Signed in</strong><em><?= $e($email) ?></em></span>
+                </div>
+                <?php foreach ($links as [$label, $href]): $cur = $href === $path; ?>
+                    <a href="<?= $e($href) ?>"<?= $cur ? ' class="cur" aria-current="page"' : '' ?>><?= $e($label) ?></a>
+                <?php endforeach; ?>
+                <div class="msep"></div>
+                <form method="POST" action="/admin/logout"><?= $csrf ?><button type="submit" class="out">Sign out</button></form>
+            </div>
+        </details>
+    </nav>
+    <?php
+    return ob_get_clean();
+}
+
+function engage_footer() {
+    $c   = engage_footer_config();
+    $e   = fn($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
+    $url = fn($u) => engage_safe_url($u);
+    $pairs = function (array $list) use ($url) {
+        $out = [];
+        foreach ($list as $p) {
+            $u = $url($p[1] ?? '');
+            if ($u !== '' && !empty($p[0])) $out[] = [(string) $p[0], $u];
+        }
+        return $out;
+    };
+
+    $site      = $url($c['site']) ?: 'https://dcwwiki.org';
+    $email     = filter_var($c['contact_email'], FILTER_VALIDATE_EMAIL) ? (string) $c['contact_email'] : '';
+    $subscribe = $url($c['subscribe_url']);
+    $contactUrl = $url($c['contact_url'] ?? '');
+    $community = $pairs($c['community']);
+    $social    = $pairs($c['social']);
+    $legal     = array_values(array_filter([
+        $url($c['help_url'])    ? ['Help', $url($c['help_url'])] : null,
+        $url($c['privacy_url']) ? ['Privacy', $url($c['privacy_url'])] : null,
+        $url($c['conduct_url']) ? [(string) ($c['conduct_label'] ?? 'Code of conduct'), $url($c['conduct_url'])] : null,
+    ]));
+    // Staff pages (/admin, /finance) get a short footer: the member-facing links are not for them.
+    $isStaff    = engage_is_staff_path();
+    $aboutLinks = engage_about_links();
+
+    // Support is a members-only service, so its links are shown only to a signed-in member.
+    // This reads the member session only if the page has already loaded and started it (the footer
+    // runs after output, so it must never start a session itself). A page that has not done so
+    // simply shows the signed-out links.
+    $isMember = false;
+    if (!$isStaff && class_exists('MemberSession') && session_status() === PHP_SESSION_ACTIVE) {
+        try {
+            $isMember = (bool) MemberSession::current();
+        } catch (Throwable $ex) {
+            $isMember = false;
+        }
+    }
+    ?>
+</main>
+<style>
+    /* Site footer. Self-contained so it works on every page; colors come from the tokens in engage.css
+       (and staff.css on staff pages).
+       The top edge is a three-color stripe taken from the DCW logo: blue, crimson, green. */
+    footer.site-footer {
+        display: block; text-align: left; margin: 48px 0 0; padding: 0;
+        background: var(--bg); color: var(--ink);
+        border-top: 4px solid transparent;
+        border-image: linear-gradient(90deg, var(--primary) 0 40%, var(--accent) 40% 70%, var(--leaf) 70% 100%) 1;
+    }
+    /* Staff pages: the same three logo colours (blue, green, crimson), to match the header band. */
+    body.admin footer.site-footer {
+        border-image: linear-gradient(90deg, var(--primary-light) 0 40%, var(--leaf) 40% 70%, var(--accent) 70% 100%) 1;
+    }
+    .site-footer .sf-inner { max-width: 1100px; margin: 0 auto; padding: 40px 24px 20px; }
+    .site-footer .sf-inner.sf-staff { padding-top: 22px; }
+    .site-footer .sf-grid { display: grid; grid-template-columns: 1.4fr repeat(3, 1fr); gap: 32px 28px; }
+    .site-footer .sf-org { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 16px; letter-spacing: -.01em; }
+    .site-footer .sf-org img { width: 34px; height: 34px; object-fit: contain; }
+    .site-footer .sf-about { margin: 12px 0 0; font-size: 14px; line-height: 1.65; color: var(--muted); max-width: 40ch; }
+    .site-footer .sf-about strong { color: var(--ink); }
+    .site-footer h2 { margin: 0 0 12px; font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--primary); }
+    .site-footer ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 9px; }
+    .site-footer a { color: var(--ink); text-decoration: none; font-size: 14.5px; }
+    .site-footer a:hover { color: var(--accent); text-decoration: underline; }
+    .site-footer .sf-cta { display: inline-block; margin-top: 4px; padding: 8px 16px; border-radius: 999px; background: var(--accent); color: #fff; font-weight: 600; font-size: 14px; box-shadow: 0 3px 0 var(--accent-dark); }
+    .site-footer .sf-cta:hover { background: var(--accent-dark); color: #fff; text-decoration: none; }
+    .site-footer .sf-social { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+    .site-footer .sf-social a { padding: 5px 12px; border: 1.5px solid var(--border); border-radius: 999px; background: #fff; font-size: 13px; font-weight: 600; }
+    .site-footer .sf-social a:hover { border-color: var(--primary); background: var(--primary-tint); color: var(--primary); text-decoration: none; }
+    .site-footer .sf-bottom { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px 20px; margin-top: 32px; padding-top: 18px; border-top: 1px solid var(--border); font-size: 13px; color: var(--muted); }
+    .site-footer .sf-staff .sf-bottom { margin-top: 0; padding-top: 0; border-top: 0; }
+    .site-footer .sf-bottom a { font-size: 13px; color: var(--muted); }
+    .site-footer .sf-bottom a:hover { color: var(--accent); }
+    .site-footer .sf-bottom nav { display: flex; flex-wrap: wrap; gap: 6px 18px; }
+    @media (max-width: 860px) { .site-footer .sf-grid { grid-template-columns: 1fr 1fr; } .site-footer .sf-brand { grid-column: 1 / -1; } }
+    @media (max-width: 520px) { .site-footer .sf-grid { grid-template-columns: 1fr; } }
+</style>
+<?php if ($isStaff): ?>
+<footer class="site-footer">
+    <div class="sf-inner sf-staff">
+        <div class="sf-bottom">
+            <span>&copy; <?= date('Y') ?> Deoband Community Wikimedia &middot; <a href="<?= $e($site) ?>" rel="noopener"><?= $e($c['site_label']) ?></a></span>
+            <nav aria-label="Staff">
+                <a href="/admin/report-problem">Report a problem</a>
+                <a href="/admin/dashboard">Workspace</a>
+            </nav>
+        </div>
+    </div>
+</footer>
+<?php else: ?>
+<footer class="site-footer">
+    <div class="sf-inner">
+        <div class="sf-grid">
+            <div class="sf-brand">
+                <div class="sf-org">
+                    <img src="<?= $e(engage_logo_url()) ?>" alt="">
+                    <span>Deoband Community Wikimedia</span>
+                </div>
+                <p class="sf-about"><strong>DCW Engage</strong> serves as the central administrative hub for Deoband Community Wikimedia, connecting members to community governance, program applications, and support infrastructure.</p>
+                <?php if ($social): ?>
+                    <div class="sf-social">
+                        <?php foreach ($social as [$name, $href]): ?>
+                            <a href="<?= $e($href) ?>" rel="noopener"><?= $e($name) ?></a>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
+            </div>
+
+            <nav aria-label="Engage">
+                <h2>Engage</h2>
+                <ul>
+                    <li><a href="/">All programs</a></li>
+                    <li><a href="/membership">Join or renew</a></li>
+                    <li><a href="/track">Track an application</a></li>
+                    <?php if ($isMember): ?>
+                        <li><a href="/member/dashboard">My dashboard</a></li>
+                        <li><a href="/member/profile">My profile</a></li>
+                        <li><a href="/member/support">Request support</a></li>
+                    <?php else: ?>
+                        <li><a href="/member/login">Member sign in</a></li>
+                    <?php endif; ?>
+                </ul>
+            </nav>
+
+            <nav aria-label="DCW">
+                <h2>DCW</h2>
+                <ul>
+                    <?php foreach ($aboutLinks as [$name, $href]): ?>
+                        <li><a href="<?= $e($href) ?>" rel="noopener"><?= $e($name) ?></a></li>
+                    <?php endforeach; ?>
+                    <?php foreach ($community as [$name, $href]): ?>
+                        <li><a href="<?= $e($href) ?>" rel="noopener"><?= $e($name) ?></a></li>
+                    <?php endforeach; ?>
+                </ul>
+            </nav>
+
+            <div>
+                <h2>Contact &amp; updates</h2>
+                <ul>
+                    <?php if ($contactUrl): ?><li><a href="<?= $e($contactUrl) ?>" rel="noopener">Contact us</a></li><?php endif; ?>
+                    <?php if ($email): ?><li><a href="mailto:<?= $e($email) ?>"><?= $e($email) ?></a></li><?php endif; ?>
+                    <?php if ($isMember): ?>
+                        <li><a href="/member/talk">Talk to DCW Support</a></li>
+                        <li><a href="/member/report-problem">Report a problem</a></li>
+                    <?php endif; ?>
+                </ul>
+                <?php if ($subscribe): ?>
+                    <p style="margin:14px 0 0;"><a class="sf-cta" href="<?= $e($subscribe) ?>" rel="noopener">Join our mailing list</a></p>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        <div class="sf-bottom">
+            <span>&copy; <?= date('Y') ?> Deoband Community Wikimedia</span>
+            <nav aria-label="Legal">
+                <?php foreach ($legal as [$name, $href]): ?>
+                    <a href="<?= $e($href) ?>" rel="noopener"><?= $e($name) ?></a>
+                <?php endforeach; ?>
+                <?php if (!empty($c['staff_login'])): ?><a href="/admin/login">Staff sign in</a><?php endif; ?>
+            </nav>
+        </div>
+    </div>
+</footer>
+<?php endif; ?>
+<script>
+    // Top-bar menus (the site menu and the member menu): close on a click outside, on Esc, or after
+    // choosing a link; opening one closes the other.
+    (function () {
+        var menus = document.querySelectorAll('.topbar details');
+        if (!menus.length) return;
+        document.addEventListener('click', function (e) {
+            menus.forEach(function (d) { if (d.open && !d.contains(e.target)) d.open = false; });
+            var a = e.target.closest ? e.target.closest('.topbar details a') : null;
+            if (a) { var d = a.closest('details'); if (d) d.open = false; }
+        });
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') menus.forEach(function (d) { d.open = false; });
+        });
+        menus.forEach(function (d) {
+            d.addEventListener('toggle', function () {
+                if (d.open) menus.forEach(function (o) { if (o !== d) o.open = false; });
+            });
+        });
+    })();
+</script>
+</body>
+</html>
+<?php }
