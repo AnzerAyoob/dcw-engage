@@ -46,19 +46,19 @@ class FeedbackMailer {
         $title = CoreMail::e($formTitle);
 
         $html = '<p>' . CoreMail::greeting($name) . '</p>'
-              . "<p>Thank you. We have received your feedback regarding <strong>$title</strong>.</p>"
+              . "<p>Thank you. We have received your input regarding <strong>$title</strong>.</p>"
               . '<p>No further action is required on your part. We do not issue a tracking ID for feedback, '
               . 'and we will only reach out to you if we need any further clarification.</p>';
 
         $alt = CoreMail::greeting($name, false) . "\n\n"
-             . "Thank you. We have received your feedback regarding $formTitle.\n\n"
+             . "Thank you. We have received your input regarding $formTitle.\n\n"
              . "No further action is required on your part. We do not issue a tracking ID for feedback, "
              . "and we will only reach out to you if we need any further clarification.\n";
 
         return CoreMail::send([
             'to'         => $email,
             'to_name'    => (string) $name,
-            'subject'    => 'We have received your feedback: ' . $formTitle,
+            'subject'    => 'We have received your input: ' . $formTitle,
             'html'       => $html,
             'alt'        => $alt,
             'dev_result' => true,
