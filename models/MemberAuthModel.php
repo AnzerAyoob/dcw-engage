@@ -12,7 +12,7 @@
  * Community row, then the oldest row, is used. It is the row used for login, password reset and
  * set-password links, so joining another chapter later never moves or loses the password.
  *
- * Needs sql/member_login.sql (extra columns on members + member_password_tokens).
+ * Needs the password columns on `members` and the `member_password_tokens` table (both in database.sql).
  * This class only deals with credentials; sessions, pages and CSRF belong in the views.
  */
 class MemberAuthModel {
