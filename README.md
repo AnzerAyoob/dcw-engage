@@ -107,7 +107,7 @@ Important: `includes/config.php` is local-only and should never be committed.
 
 ### 3. Prepare the database
 
-Create an empty database and import the schema. **A fresh install needs only `database.sql`**. It creates every table the app uses (schema only, no data):
+Create an empty database and import the schema. **A fresh install needs only `database.sql`**. It creates every table the app uses, plus a switched-off default settings row for Internet Support and Reimbursements:
 
 ```bash
 mysql -u root -p your_database_name < database.sql
@@ -119,8 +119,8 @@ Do **not** run `migrations/` on a fresh database. Those files are for upgrading 
 
 Two features read from external sources and are optional. If they are not configured, the related section is simply left out:
 
-- **"My certificates" panel:** copy `includes/certs_db.php.example` to `includes/certs_db.php` and fill in the certificates database credentials.
-- **"What's on" events section:** reads the wiki's public API, so it needs no credentials. Copy `includes/events_db.php.example` to `includes/events_db.php` only if you need to change the API URL or Cargo table name.
+- **"My certificates" panel:** copy `includes/certs_db.example.php` to `includes/certs_db.php` and fill in the certificates database credentials.
+- **"What's on" events section:** reads the wiki's public API, so it needs no credentials. Copy `includes/events_db.example.php` to `includes/events_db.php` only if you need to change the API URL or Cargo table name.
 
 Both real files are gitignored; never commit them.
 
