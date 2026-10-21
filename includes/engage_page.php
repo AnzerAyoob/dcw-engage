@@ -479,7 +479,7 @@ function engage_footer() {
     .site-footer ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 9px; }
     .site-footer a { color: var(--ink); text-decoration: none; font-size: 14.5px; }
     .site-footer a:hover { color: var(--accent); text-decoration: underline; }
-    .site-footer .sf-cta { display: inline-block; margin-top: 4px; padding: 8px 16px; border-radius: 999px; background: var(--accent); color: #fff; font-weight: 600; font-size: 14px; box-shadow: 0 3px 0 var(--accent-dark); }
+    .site-footer .sf-cta { display: inline-block; margin-top: 4px; padding: 8px 16px; border-radius: 999px; background: var(--accent); color: #fff; font-weight: 600; font-size: 14px; box-shadow: 0 8px 14px rgba(35, 112, 161, .16); }
     .site-footer .sf-cta:hover { background: var(--accent-dark); color: #fff; text-decoration: none; }
     .site-footer .sf-social { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
     .site-footer .sf-social a { padding: 5px 12px; border: 1.5px solid var(--border); border-radius: 999px; background: #fff; font-size: 13px; font-weight: 600; }
