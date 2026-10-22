@@ -1,268 +1,699 @@
--- DCW Engage Portal - Database Schema
--- Architecture for vanilla PHP + PDO
-
--- Organizer accounts for the /admin workspace.
--- No rows are seeded here on purpose, a committed password hash is a
--- password everyone has. After importing this file, create the first
--- account from the terminal:
+-- ============================================================================
+-- DCW Engage Portal - complete database schema
+-- ============================================================================
 --
---     php bin/create_admin.php
+-- This file creates every table the application uses. For a fresh install
+-- it is the only SQL file you need:
 --
-CREATE TABLE `admin_users` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `email` VARCHAR(255) NOT NULL UNIQUE,
-    `password_hash` VARCHAR(255) NOT NULL,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `last_login` TIMESTAMP NULL
-);
-
-CREATE TABLE `forms` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `form_type` VARCHAR(100) NOT NULL UNIQUE, -- e.g., 'scholarship', 'fellowship'
-    `schema_json` JSON NOT NULL, -- Defines the fields, types, and validation rules
-    `is_active` TINYINT(1) DEFAULT 1,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE `applications` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    -- Public-facing identifier, e.g. 'DCW-7K4N9XQ2'. Deliberately unrelated
-    -- to `id` (see #32) — a sequential 'DCW-00001' both reveals how many
-    -- applications exist and lets anyone walk the whole set by guessing
-    -- neighbouring IDs. Assigned once at INSERT by
-    -- ApplicationModel::generateTrackingId() and never changes across a
-    -- Draft -> New edit. NULL only for rows that predate this column on an
-    -- existing install — see the backfill note below.
-    `tracking_id` VARCHAR(12) NULL UNIQUE,
-    `form_id` INT NOT NULL,
-    `email` VARCHAR(255) NOT NULL,
-    `applicant_name` VARCHAR(255),
-    `status` ENUM('Draft', 'New', 'Under Review', 'Accepted', 'Rejected') DEFAULT 'New',
-    `form_data` JSON, -- Store dynamic answers securely
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    -- One application per email per form. The application layer checks for a
-    -- duplicate before inserting, but that check-then-insert has a race under
-    -- a double submit; this constraint is the actual guarantee.
-    UNIQUE KEY `uniq_form_email` (`form_id`, `email`),
-    FOREIGN KEY (`form_id`) REFERENCES `forms`(`id`) ON DELETE CASCADE
-);
-
--- ============================================================
--- Note for installs that predate `tracking_id` (see #32): a fresh import
--- of this file already has the column, inline, on `applications` above —
--- do NOT run the ALTER below against a fresh install, it will fail with
--- "Duplicate column name 'tracking_id'".
+--     mysql -u root -p your_database_name < database.sql
 --
--- Only run this by hand, once, against an existing database that was
--- created before this column existed:
+-- (Create the empty database first. On shared hosting you can import this
+-- file through phpMyAdmin instead.)
 --
---   ALTER TABLE `applications`
---       ADD COLUMN `tracking_id` VARCHAR(12) NULL UNIQUE AFTER `id`;
+-- WHAT IS IN HERE
 --
--- That leaves every existing row's tracking_id as NULL (multiple NULLs
--- don't violate a UNIQUE constraint in MySQL/MariaDB, so this is safe to
--- run without downtime). Assign real codes to those rows with:
+--   1. Organizer accounts, roles and security   admin_users, admin_user_roles,
+--                                               admin_invites, password_resets,
+--                                               audit_log
+--   2. Forms and applications                   forms, applications,
+--                                               application_notes, magic_links,
+--                                               email_verifications,
+--                                               feedback_responses
+--   3. Membership                               members, member_password_tokens,
+--                                               member_profile, member_strikes,
+--                                               membership_scopes,
+--                                               membership_decisions,
+--                                               membership_id_links
+--   4. Membership cards                         member_cards, member_card_hits
+--   5. Member support                           member_tickets,
+--                                               member_ticket_messages,
+--                                               internal_notes
+--   6. Internet support                         internet_requests,
+--                                               internet_request_messages,
+--                                               internet_settings
+--   7. Reimbursements                           reimbursement_forms,
+--                                               reimbursement_eligibility,
+--                                               reimbursement_requests,
+--                                               reimbursement_line_items,
+--                                               reimbursement_settings,
+--                                               reimbursement_global_eligibility,
+--                                               reimbursement_request_messages
+--   8. Tech issues                              tech_issues, tech_issue_messages
+--   9. Community records                        ch_sessions, ch_attendance,
+--                                               ch_eligibility_snapshots,
+--                                               tech_contributors
 --
---   php bin/backfill_tracking_ids.php
--- ============================================================
+-- Tables are ordered so that every foreign key points at a table created
+-- earlier in the file.
+--
+-- GOOD TO KNOW
+--
+--   * Schema only, apart from two default settings rows at the very end of
+--     the file (see "Default settings rows"). There are no AUTO_INCREMENT
+--     counters, no DEFINER clauses and no credentials. Real configuration
+--     lives in the git-ignored includes/config.php (and, if you use them,
+--     includes/certs_db.php and includes/events_db.php).
+--
+--   * Safe to re-run. Every table uses CREATE TABLE IF NOT EXISTS and the
+--     default rows use INSERT IGNORE, so importing again will not touch
+--     tables (or data) that already exist.
+--
+--   * Portable. Tables use the utf8mb4_unicode_ci collation and JSON
+--     columns, which work on MySQL 8.0+ and MariaDB 10.4+.
+--
+--   * No organizer account is seeded: a committed password hash is a
+--     password everyone has. After importing, create the first owner from
+--     the terminal:
+--
+--         php bin/create_admin.php admin@example.com
+--
+--   * migrations/ is for UPGRADING an install that was set up before a table
+--     or column existed. Do not run it on a database you just created from
+--     this file.
+--
+-- ============================================================================
 
-CREATE TABLE `magic_links` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `application_id` INT NOT NULL,
-    `token` VARCHAR(128) NOT NULL UNIQUE,
-    `expires_at` TIMESTAMP NOT NULL,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (`application_id`) REFERENCES `applications`(`id`) ON DELETE CASCADE
-);
-
--- ============================================================
--- Notify Emails: Added to route submission alerts to the
--- organizer(s) in charge of a specific form. Supports a single
--- email or multiple comma-separated emails.
--- ============================================================
-ALTER TABLE `forms`
-    ADD COLUMN `notify_emails` VARCHAR(500) NULL AFTER `schema_json`;
+SET NAMES utf8mb4;
 
 -- ============================================================
--- Internal Organizer Notes: Append-only thread of private notes
--- left by admins on a specific application. Never edited/deleted
--- individually — full audit trail.
--- Notes are preserved even if the admin account is later removed;
--- admin_email_snapshot keeps a record of who wrote it.
--- ============================================================
-CREATE TABLE `application_notes` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `application_id` INT NOT NULL,
-    `admin_id` INT NULL,
-    `admin_email_snapshot` VARCHAR(255) NOT NULL,
-    `note_text` TEXT NOT NULL,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (`application_id`) REFERENCES `applications`(`id`) ON DELETE CASCADE,
-    FOREIGN KEY (`admin_id`) REFERENCES `admin_users`(`id`) ON DELETE SET NULL
-);
-
--- ============================================================
--- Note for installs that predate `uniq_form_email`: a fresh import of
--- this file already has the constraint, inline, on `applications` above
--- — do NOT run the ALTER below against a fresh install, it will fail
--- with "Duplicate key name 'uniq_form_email'" (see #22).
---
--- Only run this by hand, once, against an existing database that was
--- created before the UNIQUE KEY was added to the CREATE TABLE:
---
---   ALTER TABLE `applications`
---       ADD UNIQUE KEY `uniq_form_email` (`form_id`, `email`);
---
--- If that errors with "Duplicate entry", the table already has
--- duplicate (form_id, email) rows from before the fix. Clear them
--- first, keeping the earliest of each pair, then re-run the ALTER:
---
---   DELETE a1 FROM applications a1
---   JOIN applications a2
---     ON a1.form_id = a2.form_id AND a1.email = a2.email
---    AND a1.id > a2.id;
+-- Organizer accounts, roles and security
 -- ============================================================
 
--- Note: Data retention cron should periodically delete applications with status 'Rejected' or stale 'Draft' records.
+CREATE TABLE IF NOT EXISTS `admin_users` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `email` varchar(255) NOT NULL,
+  `password_hash` varchar(255) NOT NULL,
+  `role` varchar(50) NOT NULL DEFAULT 'organizer',
+  `password_changed_at` datetime DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `last_login` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `email` (`email`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `admin_user_roles` (
+  `admin_id` int(11) NOT NULL,
+  `role` varchar(50) NOT NULL,
+  PRIMARY KEY (`admin_id`,`role`),
+  KEY `idx_role` (`role`),
+  CONSTRAINT `fk_admin_user_roles_admin` FOREIGN KEY (`admin_id`) REFERENCES `admin_users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ============================================================
--- Organizer roles and invitations
---
--- `role` splits the workspace into two levels:
---   owner     - everything an organizer can do, plus inviting other
---               organizers and revoking pending invitations
---   organizer - normal workspace access, no team management
---
--- Both statements below are live, and run top-to-bottom on a fresh import
--- (same pattern as `notify_emails` above). On a database created before
--- this block existed, run these two by hand, once, then promote yourself:
---
---   UPDATE admin_users SET role = 'owner' WHERE email = 'you@example.org';
---
--- Without at least one owner, nobody can send invitations and the only way
--- to add an account stays `php bin/create_admin.php`.
--- ============================================================
-ALTER TABLE `admin_users`
-    ADD COLUMN `role` ENUM('owner','organizer') NOT NULL DEFAULT 'organizer' AFTER `password_hash`;
+CREATE TABLE IF NOT EXISTS `admin_invites` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `email` varchar(255) NOT NULL,
+  `token_hash` char(64) NOT NULL,
+  `role` varchar(50) NOT NULL DEFAULT 'organizer',
+  `roles` varchar(255) NOT NULL DEFAULT '',
+  `chapters` varchar(255) NOT NULL DEFAULT '',
+  `invited_by` int(11) DEFAULT NULL,
+  `invited_by_email` varchar(255) NOT NULL,
+  `expires_at` datetime NOT NULL,
+  `accepted_at` datetime DEFAULT NULL,
+  `revoked_at` datetime DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `token_hash` (`token_hash`),
+  KEY `idx_invite_email` (`email`),
+  KEY `invited_by` (`invited_by`),
+  CONSTRAINT `admin_invites_ibfk_1` FOREIGN KEY (`invited_by`) REFERENCES `admin_users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Pending invitations to join the organizer workspace.
---
--- Only the SHA-256 of the token is stored, never the token itself. The raw
--- value exists in exactly one place: the email we send. A leaked database
--- backup therefore cannot be replayed into a new organizer account.
--- (`magic_links` above still stores raw tokens; those are applicant-scoped
--- and short lived, but this table is the pattern to follow for anything new.)
-CREATE TABLE `admin_invites` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `email` VARCHAR(255) NOT NULL,
-    `token_hash` CHAR(64) NOT NULL UNIQUE,
-    `role` ENUM('owner','organizer') NOT NULL DEFAULT 'organizer',
-    -- Snapshot kept for the audit trail even if the inviting account is
-    -- later deleted, mirroring application_notes.admin_email_snapshot.
-    `invited_by` INT NULL,
-    `invited_by_email` VARCHAR(255) NOT NULL,
-    -- DATETIME, not TIMESTAMP. MySQL/MariaDB give the first NOT NULL TIMESTAMP
-    -- column an implicit `DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`,
-    -- which would silently reset the expiry every time the row is marked
-    -- accepted or revoked. The value is always computed in PHP anyway.
-    `expires_at` DATETIME NOT NULL,
-    `accepted_at` DATETIME NULL,
-    `revoked_at` DATETIME NULL,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    KEY `idx_invite_email` (`email`),
-    FOREIGN KEY (`invited_by`) REFERENCES `admin_users`(`id`) ON DELETE SET NULL
-);
+CREATE TABLE IF NOT EXISTS `password_resets` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `admin_id` int(11) NOT NULL,
+  `token_hash` char(64) NOT NULL,
+  `expires_at` datetime NOT NULL,
+  `used_at` datetime DEFAULT NULL,
+  `invalidated_at` datetime DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `token_hash` (`token_hash`),
+  KEY `idx_reset_admin` (`admin_id`),
+  CONSTRAINT `password_resets_ibfk_1` FOREIGN KEY (`admin_id`) REFERENCES `admin_users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ============================================================
--- Password resets
---
--- Both statements are live and run on a fresh import. On a database created
--- before this block existed, run them by hand, once.
---
--- password_changed_at is what lets a reset log out sessions that are already
--- open elsewhere. Auth stamps the session with this value at login and
--- rechecks it on each request, so a stolen session dies the moment its
--- account changes password — which is the main reason people reset one.
--- ============================================================
-ALTER TABLE `admin_users`
-    ADD COLUMN `password_changed_at` DATETIME NULL AFTER `role`;
-
--- Same design as admin_invites: only the SHA-256 of the token is stored, the
--- raw value exists solely in the email. Expiry is deliberately much shorter
--- than an invitation, because a reset link is a live key to an existing
--- account rather than an offer to create one.
-CREATE TABLE `password_resets` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `admin_id` INT NOT NULL,
-    `token_hash` CHAR(64) NOT NULL UNIQUE,
-    -- DATETIME, not TIMESTAMP: the first NOT NULL TIMESTAMP column would pick
-    -- up an implicit ON UPDATE CURRENT_TIMESTAMP and reset its own expiry.
-    `expires_at` DATETIME NOT NULL,
-    `used_at` DATETIME NULL,
-    `invalidated_at` DATETIME NULL,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    KEY `idx_reset_admin` (`admin_id`),
-    FOREIGN KEY (`admin_id`) REFERENCES `admin_users`(`id`) ON DELETE CASCADE
-);
+CREATE TABLE IF NOT EXISTS `audit_log` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `actor_id` int(11) DEFAULT NULL,
+  `actor_email` varchar(255) NOT NULL,
+  `action` varchar(64) NOT NULL,
+  `target` varchar(255) DEFAULT NULL,
+  `detail` varchar(500) DEFAULT NULL,
+  `ip_address` varchar(45) DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_audit_created` (`created_at`),
+  KEY `idx_audit_action` (`action`),
+  KEY `actor_id` (`actor_id`),
+  CONSTRAINT `audit_log_ibfk_1` FOREIGN KEY (`actor_id`) REFERENCES `admin_users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
--- Audit log
---
--- Append-only history of sensitive workspace actions: who invited or removed
--- whom, who accepted an invitation, who reset a password. The application only
--- ever inserts and reads here — nothing edits or deletes a row — so the record
--- stays trustworthy months later when someone asks "who did this".
---
--- actor_email is a snapshot (same reasoning as application_notes and
--- admin_invites): the log must still name the person after their account is
--- removed, which is exactly the moment it matters most. actor_id is kept as a
--- soft link and set NULL if that account is later deleted.
---
--- Live on a fresh import. On a database created before this block existed, run
--- the CREATE TABLE below by hand, once.
+-- Forms and applications
 -- ============================================================
-CREATE TABLE `audit_log` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `actor_id` INT NULL,
-    `actor_email` VARCHAR(255) NOT NULL,
-    `action` VARCHAR(64) NOT NULL,
-    `target` VARCHAR(255) NULL,
-    `detail` VARCHAR(500) NULL,
-    `ip_address` VARCHAR(45) NULL,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    KEY `idx_audit_created` (`created_at`),
-    KEY `idx_audit_action` (`action`),
-    FOREIGN KEY (`actor_id`) REFERENCES `admin_users`(`id`) ON DELETE SET NULL
-);
+
+CREATE TABLE IF NOT EXISTS `forms` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `form_type` varchar(100) NOT NULL,
+  `schema_json` JSON NOT NULL,
+  `notify_emails` varchar(500) DEFAULT NULL,
+  `is_active` tinyint(1) DEFAULT 1,
+  `deadline_at` datetime DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `form_type` (`form_type`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `applications` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `tracking_id` varchar(12) DEFAULT NULL,
+  `form_id` int(11) NOT NULL,
+  `email` varchar(255) NOT NULL,
+  `applicant_name` varchar(255) DEFAULT NULL,
+  `status` enum('Draft','New','Under Review','Accepted','Rejected','Discarded') DEFAULT 'New',
+  `form_data` JSON DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uniq_form_email` (`form_id`,`email`),
+  UNIQUE KEY `tracking_id` (`tracking_id`),
+  CONSTRAINT `applications_ibfk_1` FOREIGN KEY (`form_id`) REFERENCES `forms` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `application_notes` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `application_id` int(11) NOT NULL,
+  `admin_id` int(11) DEFAULT NULL,
+  `admin_email_snapshot` varchar(255) NOT NULL,
+  `note_text` text NOT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `application_id` (`application_id`),
+  KEY `admin_id` (`admin_id`),
+  CONSTRAINT `application_notes_ibfk_1` FOREIGN KEY (`application_id`) REFERENCES `applications` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `application_notes_ibfk_2` FOREIGN KEY (`admin_id`) REFERENCES `admin_users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `magic_links` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `application_id` int(11) NOT NULL,
+  `token` varchar(128) NOT NULL,
+  `expires_at` timestamp NOT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `token` (`token`),
+  KEY `application_id` (`application_id`),
+  CONSTRAINT `magic_links_ibfk_1` FOREIGN KEY (`application_id`) REFERENCES `applications` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Email verification codes (8-character OTP typed into the page the visitor has open).
+-- token_hash holds an HMAC-SHA256 of (form|email|code), 64 hex chars.
+-- attempts counts wrong guesses spent against a code; the cap is enforced in
+-- EmailVerificationModel::consume().
+CREATE TABLE IF NOT EXISTS `email_verifications` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `form_id` int(11) DEFAULT NULL,
+  `email` varchar(255) NOT NULL,
+  `name` varchar(150) DEFAULT NULL,
+  `token_hash` char(64) NOT NULL,
+  `attempts` tinyint(3) UNSIGNED NOT NULL DEFAULT 0,
+  `expires_at` datetime NOT NULL,
+  `used_at` datetime DEFAULT NULL,
+  `invalidated_at` datetime DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `token_hash` (`token_hash`),
+  KEY `idx_verify_form_email` (`form_id`,`email`),
+  CONSTRAINT `email_verifications_ibfk_1` FOREIGN KEY (`form_id`) REFERENCES `forms` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `feedback_responses` (
+  `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `form_id` int(11) NOT NULL,
+  `name` varchar(100) DEFAULT NULL,
+  `email` varchar(254) DEFAULT NULL,
+  `answers_json` longtext DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `scrubbed_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_form_created` (`form_id`,`created_at`),
+  KEY `idx_form_email_created` (`form_id`,`email`,`created_at`),
+  KEY `idx_scrub` (`scrubbed_at`,`created_at`),
+  CONSTRAINT `fk_feedback_form` FOREIGN KEY (`form_id`) REFERENCES `forms` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
--- Applicant email verification (#67)
---
--- Every applicant must prove they control their email address before the form
--- opens, whether they go on to submit or only save a draft. Nothing is written
--- to `applications` before that, so abandoned or junk entries never create
--- rows.
---
--- Same design as admin_invites / password_resets: only the SHA-256 of the token
--- is stored, the raw value exists solely in the email, and a link works once.
---
--- Live on a fresh import. On a database created before this block existed, run
--- the CREATE TABLE below by hand, once — it adds a table and changes no
--- existing data.
+-- Membership
 -- ============================================================
-CREATE TABLE `email_verifications` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `form_id` INT NOT NULL,
-    `email` VARCHAR(255) NOT NULL,
-    `token_hash` CHAR(64) NOT NULL UNIQUE,
-    -- DATETIME, not TIMESTAMP: the first NOT NULL TIMESTAMP column would pick
-    -- up an implicit ON UPDATE CURRENT_TIMESTAMP and reset its own expiry.
-    `expires_at` DATETIME NOT NULL,
-    `used_at` DATETIME NULL,
-    `invalidated_at` DATETIME NULL,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    KEY `idx_verify_form_email` (`form_id`, `email`),
-    FOREIGN KEY (`form_id`) REFERENCES `forms`(`id`) ON DELETE CASCADE
-);
+
+CREATE TABLE IF NOT EXISTS `members` (
+  `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `member_id` varchar(20) NOT NULL,
+  `email` varchar(190) NOT NULL,
+  `full_name` varchar(190) NOT NULL,
+  `chapter` enum('generic','amu','jamia','photographers') NOT NULL,
+  `status` enum('active','expired') NOT NULL DEFAULT 'active',
+  `joined_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `expires_at` datetime NOT NULL,
+  `application_id` int(10) UNSIGNED DEFAULT NULL,
+  `password_hash` varchar(255) DEFAULT NULL,
+  `password_set_at` datetime DEFAULT NULL,
+  `failed_logins` tinyint(3) UNSIGNED NOT NULL DEFAULT 0,
+  `locked_until` datetime DEFAULT NULL,
+  `last_login_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uniq_member_chapter` (`email`,`chapter`),
+  UNIQUE KEY `uq_member_id_chapter` (`member_id`,`chapter`),
+  KEY `idx_expiry` (`expires_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `member_password_tokens` (
+  `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `member_row_id` int(10) UNSIGNED NOT NULL,
+  `token_hash` char(64) NOT NULL,
+  `purpose` enum('set','reset') NOT NULL,
+  `expires_at` datetime NOT NULL,
+  `used_at` datetime DEFAULT NULL,
+  `created_at` datetime NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uniq_token_hash` (`token_hash`),
+  KEY `idx_member` (`member_row_id`),
+  CONSTRAINT `fk_mpt_member` FOREIGN KEY (`member_row_id`) REFERENCES `members` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `member_profile` (
+  `member_id` varchar(32) NOT NULL,
+  `wikimedia_username` varchar(255) DEFAULT NULL,
+  `username_key` varchar(255) DEFAULT NULL,
+  `username_verified_at` datetime DEFAULT NULL,
+  `username_verified_by` varchar(255) DEFAULT NULL,
+  `bio` varchar(280) DEFAULT NULL,
+  `languages` varchar(500) DEFAULT NULL,
+  `contribution_areas` varchar(255) DEFAULT NULL,
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `updated_by` varchar(255) DEFAULT NULL,
+  `card_title` varchar(120) DEFAULT NULL,
+  PRIMARY KEY (`member_id`),
+  UNIQUE KEY `uq_member_profile_username` (`username_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `member_strikes` (
+  `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `member_id` varchar(16) NOT NULL,
+  `reason` text NOT NULL,
+  `struck_by` varchar(190) NOT NULL,
+  `struck_at` datetime NOT NULL,
+  `lifted_at` datetime DEFAULT NULL,
+  `lifted_by` varchar(190) DEFAULT NULL,
+  `lift_reason` text DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_member_strikes_member` (`member_id`,`lifted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `membership_scopes` (
+  `email` varchar(190) NOT NULL,
+  `chapter` enum('generic','amu','jamia','photographers') NOT NULL,
+  PRIMARY KEY (`email`,`chapter`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `membership_decisions` (
+  `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `application_id` int(10) UNSIGNED NOT NULL,
+  `decision` enum('approved','rejected','under_review','info_requested') NOT NULL,
+  `reason` text DEFAULT NULL,
+  `decided_by` varchar(190) NOT NULL,
+  `decided_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_app` (`application_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `membership_id_links` (
+  `application_id` int(10) UNSIGNED NOT NULL,
+  `member_id` varchar(20) NOT NULL,
+  `linked_by` varchar(255) NOT NULL,
+  `linked_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`application_id`),
+  KEY `idx_member` (`member_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
+-- Membership cards
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS `member_cards` (
+  `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `member_id` varchar(16) NOT NULL,
+  `token` char(32) NOT NULL,
+  `created_at` datetime NOT NULL,
+  `replaced_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_member_cards_token` (`token`),
+  KEY `idx_member_cards_member` (`member_id`,`replaced_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `member_card_hits` (
+  `ip_hash` char(64) NOT NULL,
+  `window_start` datetime NOT NULL,
+  `hits` smallint(5) UNSIGNED NOT NULL DEFAULT 1,
+  PRIMARY KEY (`ip_hash`,`window_start`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
+-- Member support (conversations and internal notes)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS `member_tickets` (
+  `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `tracking_id` varchar(12) NOT NULL,
+  `member_id` varchar(16) NOT NULL,
+  `member_email` varchar(255) NOT NULL,
+  `member_name` varchar(255) NOT NULL DEFAULT '',
+  `type` enum('complaint','suggestion','question') NOT NULL,
+  `subject` varchar(160) NOT NULL,
+  `status` varchar(32) NOT NULL,
+  `about_staff` tinyint(1) NOT NULL DEFAULT 0,
+  `hide_name` tinyint(1) NOT NULL DEFAULT 0,
+  `last_sender` enum('member','staff') NOT NULL DEFAULT 'member',
+  `assigned_to` varchar(255) DEFAULT NULL,
+  `created_at` datetime NOT NULL,
+  `updated_at` datetime NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `tracking_id` (`tracking_id`),
+  KEY `idx_member` (`member_id`,`updated_at`),
+  KEY `idx_staff` (`about_staff`,`status`,`updated_at`),
+  KEY `idx_assigned` (`assigned_to`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `member_ticket_messages` (
+  `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `ticket_id` int(10) UNSIGNED NOT NULL,
+  `sender` enum('member','staff','note') NOT NULL,
+  `author` varchar(255) NOT NULL,
+  `body` text NOT NULL,
+  `created_at` datetime NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_ticket` (`ticket_id`,`id`),
+  CONSTRAINT `fk_mtm_ticket` FOREIGN KEY (`ticket_id`) REFERENCES `member_tickets` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `internal_notes` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `queue` enum('reimbursement','internet') NOT NULL,
+  `request_id` int(11) NOT NULL,
+  `author_email` varchar(255) NOT NULL,
+  `body` text NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_queue_request` (`queue`,`request_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
+-- Internet support
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS `internet_requests` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `tracking_id` varchar(20) NOT NULL,
+  `email` varchar(255) NOT NULL,
+  `applicant_name` varchar(255) NOT NULL,
+  `phone_enc` varbinary(512) NOT NULL,
+  `operator` varchar(50) NOT NULL,
+  `package_name` varchar(120) NOT NULL,
+  `package_price_paise` int(11) NOT NULL,
+  `package_validity_days` int(11) DEFAULT NULL,
+  `reason` text NOT NULL,
+  `status` varchar(30) NOT NULL DEFAULT 'Submitted',
+  `decided_by` varchar(255) DEFAULT NULL,
+  `decided_at` datetime DEFAULT NULL,
+  `admin_notes` text DEFAULT NULL,
+  `recharged_by` varchar(255) DEFAULT NULL,
+  `recharged_at` datetime DEFAULT NULL,
+  `recharge_reference` varchar(255) DEFAULT NULL,
+  `recharge_notes` text DEFAULT NULL,
+  `receipt_path` varchar(255) NOT NULL DEFAULT '',
+  `receipt_submitted_at` datetime DEFAULT NULL,
+  `finance_notes` text DEFAULT NULL,
+  `closed_by` varchar(255) DEFAULT NULL,
+  `closed_at` datetime DEFAULT NULL,
+  `receipts_downloaded_at` datetime DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `wikimedia_username` varchar(255) DEFAULT NULL,
+  `edits_80` tinyint(1) DEFAULT NULL,
+  `attended_ch` tinyint(1) DEFAULT NULL,
+  `tech_contributor` tinyint(1) DEFAULT NULL,
+  `contributions` text DEFAULT NULL,
+  `plans` text DEFAULT NULL,
+  `approved_amount_paise` int(10) UNSIGNED DEFAULT NULL,
+  `approved_amount_note` varchar(500) DEFAULT NULL,
+  `paid_amount_paise` int(10) UNSIGNED DEFAULT NULL,
+  `paid_amount_note` varchar(500) DEFAULT NULL,
+  `sent_back_by` varchar(255) DEFAULT NULL,
+  `sent_back_at` datetime DEFAULT NULL,
+  `sent_back_note` varchar(1000) DEFAULT NULL,
+  `current_pack_ends_on` date DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `tracking_id` (`tracking_id`),
+  KEY `idx_internet_status` (`status`),
+  KEY `idx_internet_email` (`email`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `internet_request_messages` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `request_id` int(11) NOT NULL,
+  `sender` enum('reviewer','applicant') NOT NULL,
+  `author` varchar(255) DEFAULT NULL,
+  `body` text NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_request` (`request_id`,`id`),
+  CONSTRAINT `fk_irm_request` FOREIGN KEY (`request_id`) REFERENCES `internet_requests` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `internet_settings` (
+  `id` tinyint(4) NOT NULL,
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  `max_amount_paise` int(11) NOT NULL DEFAULT 100000,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
+-- Reimbursements
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS `reimbursement_forms` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `form_id` int(11) NOT NULL,
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  `cash_threshold_paise` int(11) NOT NULL DEFAULT 80000,
+  `expense_categories` JSON NOT NULL,
+  `instructions` text DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `form_id` (`form_id`),
+  CONSTRAINT `reimbursement_forms_ibfk_1` FOREIGN KEY (`form_id`) REFERENCES `forms` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `reimbursement_eligibility` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `reimbursement_form_id` int(11) NOT NULL,
+  `email` varchar(255) NOT NULL,
+  `added_by` varchar(255) NOT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `reimbursement_form_id` (`reimbursement_form_id`,`email`),
+  CONSTRAINT `reimbursement_eligibility_ibfk_1` FOREIGN KEY (`reimbursement_form_id`) REFERENCES `reimbursement_forms` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `reimbursement_requests` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `reimbursement_form_id` int(11) DEFAULT NULL,
+  `email` varchar(255) NOT NULL,
+  `applicant_name` varchar(255) NOT NULL,
+  `event_name` varchar(255) NOT NULL DEFAULT '',
+  `event_date` date DEFAULT NULL,
+  `total_amount_paise` int(11) NOT NULL,
+  `payment_method` enum('upi','bank') NOT NULL,
+  `upi_id` varchar(100) DEFAULT NULL,
+  `bank_account_name` varchar(255) DEFAULT NULL,
+  `bank_account_number_enc` varbinary(512) DEFAULT NULL,
+  `bank_ifsc` varchar(11) DEFAULT NULL,
+  `status` enum('Submitted','Under Review','Rejected','Approved for Payment','Paid','Payment Failed','Discarded','Info Requested') NOT NULL DEFAULT 'Submitted',
+  `tracking_id` varchar(20) NOT NULL,
+  `admin_notes` text DEFAULT NULL,
+  `decided_by` varchar(255) DEFAULT NULL,
+  `decided_at` datetime DEFAULT NULL,
+  `payment_notes` text DEFAULT NULL,
+  `payment_reference` varchar(255) DEFAULT NULL,
+  `paid_by` varchar(255) DEFAULT NULL,
+  `paid_at` datetime DEFAULT NULL,
+  `receipts_downloaded_at` datetime DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `approved_amount_paise` int(10) UNSIGNED DEFAULT NULL,
+  `approved_amount_note` varchar(500) DEFAULT NULL,
+  `paid_amount_paise` int(10) UNSIGNED DEFAULT NULL,
+  `paid_amount_note` varchar(500) DEFAULT NULL,
+  `sent_back_by` varchar(255) DEFAULT NULL,
+  `sent_back_at` datetime DEFAULT NULL,
+  `sent_back_note` varchar(1000) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `tracking_id` (`tracking_id`),
+  KEY `idx_reimb_requests_form_email` (`reimbursement_form_id`,`email`),
+  KEY `idx_reimb_requests_status` (`reimbursement_form_id`,`status`),
+  CONSTRAINT `reimbursement_requests_ibfk_1` FOREIGN KEY (`reimbursement_form_id`) REFERENCES `reimbursement_forms` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `reimbursement_line_items` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `request_id` int(11) NOT NULL,
+  `category` varchar(100) NOT NULL,
+  `description` varchar(500) NOT NULL,
+  `amount_paise` int(11) NOT NULL,
+  `receipt_path` varchar(500) NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `request_id` (`request_id`),
+  CONSTRAINT `reimbursement_line_items_ibfk_1` FOREIGN KEY (`request_id`) REFERENCES `reimbursement_requests` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `reimbursement_settings` (
+  `id` tinyint(3) UNSIGNED NOT NULL,
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  `cash_threshold_paise` int(11) NOT NULL DEFAULT 80000,
+  `expense_categories` JSON NOT NULL,
+  `instructions` text DEFAULT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `reimbursement_global_eligibility` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `email` varchar(255) NOT NULL,
+  `added_by` varchar(255) NOT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `email` (`email`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `reimbursement_request_messages` (
+  `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `request_id` int(11) NOT NULL,
+  `sender` enum('reviewer','applicant') NOT NULL,
+  `author` varchar(255) DEFAULT NULL,
+  `body` text NOT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_request` (`request_id`),
+  CONSTRAINT `fk_reimb_msg_request` FOREIGN KEY (`request_id`) REFERENCES `reimbursement_requests` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
+-- Tech issues
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS `tech_issues` (
+  `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `tracking_id` varchar(16) NOT NULL,
+  `reporter_type` varchar(10) NOT NULL,
+  `reporter_ref` varchar(190) NOT NULL,
+  `reporter_label` varchar(190) NOT NULL,
+  `category` varchar(20) NOT NULL,
+  `severity` varchar(10) NOT NULL,
+  `title` varchar(160) NOT NULL,
+  `page_url` varchar(255) DEFAULT NULL,
+  `user_agent` varchar(255) DEFAULT NULL,
+  `status` varchar(30) NOT NULL DEFAULT 'Open',
+  `last_sender` varchar(10) NOT NULL DEFAULT 'reporter',
+  `created_at` datetime NOT NULL,
+  `updated_at` datetime NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_tech_tracking` (`tracking_id`),
+  KEY `idx_tech_status` (`status`,`updated_at`),
+  KEY `idx_tech_reporter` (`reporter_type`,`reporter_ref`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `tech_issue_messages` (
+  `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `issue_id` int(10) UNSIGNED NOT NULL,
+  `sender` varchar(10) NOT NULL,
+  `body` text NOT NULL,
+  `author_email` varchar(190) DEFAULT NULL,
+  `is_internal` tinyint(1) NOT NULL DEFAULT 0,
+  `created_at` datetime NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_msg_issue` (`issue_id`,`id`),
+  CONSTRAINT `fk_msg_issue` FOREIGN KEY (`issue_id`) REFERENCES `tech_issues` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
+-- Community records (Conversation Hour attendance, tech contributors)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS `ch_sessions` (
+  `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `title` varchar(255) NOT NULL,
+  `held_on` date NOT NULL,
+  `created_by` varchar(255) NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `edited_by` varchar(255) DEFAULT NULL,
+  `edited_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_held_on` (`held_on`,`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `ch_attendance` (
+  `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `session_id` int(10) UNSIGNED NOT NULL,
+  `person_key` varchar(300) NOT NULL,
+  `member_id` varchar(20) DEFAULT NULL,
+  `wikimedia_username` varchar(255) NOT NULL DEFAULT '',
+  `status` enum('present','excused') NOT NULL DEFAULT 'present',
+  `note` varchar(500) NOT NULL DEFAULT '',
+  `logged_by` varchar(255) NOT NULL,
+  `logged_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_session_person` (`session_id`,`person_key`),
+  KEY `idx_member` (`member_id`),
+  KEY `idx_username` (`wikimedia_username`),
+  CONSTRAINT `fk_ch_att_session` FOREIGN KEY (`session_id`) REFERENCES `ch_sessions` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `ch_eligibility_snapshots` (
+  `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `tracking_id` varchar(40) NOT NULL,
+  `member_id` varchar(20) NOT NULL,
+  `snapshot_json` mediumtext NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_tracking` (`tracking_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `tech_contributors` (
+  `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `member_id` varchar(20) NOT NULL,
+  `added_by` varchar(255) NOT NULL,
+  `added_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `reason` varchar(500) NOT NULL,
+  `confirmed_until` date DEFAULT NULL,
+  `removed_by` varchar(255) DEFAULT NULL,
+  `removed_at` datetime DEFAULT NULL,
+  `removed_reason` varchar(500) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_member` (`member_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
+-- Default settings rows
+--
+-- internet_settings and reimbursement_settings each hold a single row
+-- (id = 1) that the app reads. Nothing else creates it, so a fresh install
+-- would otherwise have both programmes stuck closed with no way to switch
+-- them on. Both rows start SWITCHED OFF (is_active = 0); an organizer turns
+-- them on from the admin workspace. INSERT IGNORE leaves any existing row
+-- untouched.
+-- ============================================================
+
+INSERT IGNORE INTO `internet_settings` (`id`, `is_active`, `max_amount_paise`)
+VALUES (1, 0, 100000);
+
+INSERT IGNORE INTO `reimbursement_settings` (`id`, `is_active`, `cash_threshold_paise`, `expense_categories`, `instructions`)
+VALUES (1, 0, 80000, JSON_ARRAY('Travel', 'Accommodation', 'Food', 'Other'), NULL);

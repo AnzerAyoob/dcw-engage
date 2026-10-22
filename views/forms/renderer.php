@@ -5,6 +5,7 @@ require_once __DIR__ . '/../../includes/app_log.php';
 require_once __DIR__ . '/../../includes/engage_page.php';
 require_once __DIR__ . '/../../includes/wiki_username.php';
 require_once __DIR__ . '/../../models/FormModel.php';
+require_once __DIR__ . '/../../models/EmailVerificationModel.php';
 
 // $formType should be passed from the router in index.php
 global $formType;
@@ -121,56 +122,29 @@ if ($loggedMember !== null && $isMembershipForm && !$isRenewalForm) {
 // Email verification takes precedence (#67). No user — whether intending to submit
 // or simply save a draft — can access the form until they have proven ownership of
 // the email address, preventing junk entries from creating database records or triggering magic links to
-// unverified addresses. Proof of verification is maintained in the session on a per-form basis
-// and redeemed via the emailed verification link (?verify=<token>).
+// unverified addresses. Proof of verification is maintained in the session on a per-form basis.
 //
-// IMPORTANT: token redemption must never occur via a plain GET request. Mail
-// security scanners (such as Outlook Safe Links, Proofpoint URL Defense, Mimecast,
-// and Gmail's link proxy) automatically issue GET requests to every link in an incoming email
-// prior to human review to check for malicious content. If a GET request consumed the one-time token,
-// that automated prefetch would exhaust it first, causing the genuine applicant — arriving
-// seconds or minutes later — to be redirected back to this gate with an error stating
-// "expired or already used." Consequently, GET requests only *stage* the token; only an
-// explicit POST request (which scanners do not issue) actually redeems it.
+// Verification is a ONE-TIME CODE (OTP), not a link:
+//   1. gate   name + email  -> POST action=request_verification -> an 8-character code is emailed
+//   2. code   the person types it on the page they already have open -> POST action=verify_code
+//   3. form   the application fields
+// The email being verified is kept in the SESSION ($_SESSION['otp_pending']), not in a hidden field, so it
+// cannot be swapped between steps. There is no link to click, so mail-security link scanners (Safe Links,
+// Proofpoint, ...) have nothing to burn, and old ?verify=<token> URLs still in inboxes are simply ignored.
+// Wrong guesses are capped per code inside EmailVerificationModel::consume().
+//
+// The code screen looks the same whether or not a code was really issued (rate limit hit, or the address
+// already holds this membership), so the page does not reveal what the system knows about an address.
 $verifiedEmail = '';
-$verifiedName = '';   // name entered at the gate, carried forward via the emailed link
+$verifiedName = '';   // name entered at the gate, carried forward with the verified code
 $verifyName = '';     // name entered in the current gate request (to repopulate the field)
-$verifySent = false;
-$pendingVerifyToken = null;
+$otpPending = null;   // ['email', 'name', 'at', 'sent_at'] while the "enter your code" screen applies
+$otpNotice = '';      // one-off notice on the code screen (for example after "Resend")
+
+/** How long the "enter your code" screen stays available before the visitor has to start again. */
+const OTP_SCREEN_TTL = 1800;
 
 if (empty($previewSchema)) {
-    // Evaluated in this specific order: the confirmation-step form below submits
-    // back to this exact URL without stripping the query string, meaning
-    // $_GET['verify'] remains set on that POST request as well. If the isset($_GET[...])
-    // check were evaluated first, it would take precedence on every request — whether GET or POST — and the
-    // branch responsible for calling consume() would never execute, leaving the
-    // "Continue to application" button trapped in a loop re-rendering the same
-    // confirmation screen indefinitely. Checking for the confirmation POST first
-    // avoids this issue regardless of any leftover query parameters.
-    if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'confirm_verification') {
-        if (!CSRF::validate($_POST['csrf_token'] ?? '')) {
-            die("Invalid CSRF token.");
-        }
-
-        require_once __DIR__ . '/../../models/EmailVerificationModel.php';
-        $verified = (new EmailVerificationModel())->consume($form['id'], (string) ($_POST['verify_token'] ?? ''));
-
-        if ($verified) {
-            $_SESSION['verified_emails'][$form['id']] = $verified['email'];
-            $_SESSION['verified_names'][$form['id']] = $verified['name'];
-            // Remove the token from the URL to prevent bookmarking or sharing.
-            header('Location: ' . parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH));
-            exit;
-        }
-
-        // Provide a unified message for all failure scenarios — whether unknown, expired, used, or for a different form.
-        $errors['verify'] = "That verification link has expired or has already been used. Please enter your email below to receive a new one.";
-    } elseif (isset($_GET['verify'])) {
-        // Side-effect-free: simply pass the token forward to the confirmation
-        // step. No database modifications occur here.
-        $pendingVerifyToken = (string) $_GET['verify'];
-    }
-
     $verifiedEmail = $memberAutoVerified
         ? (string) $loggedMember['email']
         : ($_SESSION['verified_emails'][$form['id']] ?? '');
@@ -179,10 +153,60 @@ if (empty($previewSchema)) {
     $verifiedName = $memberAutoVerified
         ? ''
         : (string) ($_SESSION['verified_names'][$form['id']] ?? '');
+
+    if (!$memberAutoVerified && $verifiedEmail === '') {
+        $o = $_SESSION['otp_pending'][$form['id']] ?? null;
+        if (is_array($o) && (int) ($o['at'] ?? 0) > time() - OTP_SCREEN_TTL) {
+            $otpPending = $o;
+        } elseif ($o !== null) {
+            unset($_SESSION['otp_pending'][$form['id']]);
+        }
+    }
 }
 
-if (empty($previewSchema) && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') !== 'confirm_verification') {
-    if (!CSRF::validate($_POST['csrf_token'])) {
+/**
+ * Send a verification for this address, whichever way applies. Used by the gate and by "Resend".
+ *
+ *  - Membership JOIN form and the address already holds THIS chapter: no application is needed, so no code is
+ *    issued; the person gets the "account details" email instead (sign in or renew).
+ *  - Membership JOIN form and the address holds ANOTHER chapter: a code is issued as usual, and the email
+ *    also explains their existing Member ID will be kept.
+ *  - Everything else: the normal verification-code email.
+ * A rate-limited address (cooldown / hourly cap) simply gets no new code; the caller shows the same screen.
+ */
+$sendVerification = function (string $email, string $name) use ($form, $formType, $schema, $isMembershipForm, $isRenewalForm) {
+    require_once __DIR__ . '/../../includes/mailer.php';
+    $formTitle = $schema['title'] ?? $formType;
+
+    $held = [];
+    $joinChapter = null;
+    if ($isMembershipForm && !$isRenewalForm) {
+        require_once __DIR__ . '/../../models/MemberModel.php';
+        require_once __DIR__ . '/../../includes/mail/membership_mailer.php';
+        $joinChapter = MemberModel::chapterOfSlug((string) $formType);
+        $held = (new MemberModel())->membershipsForEmail($email);
+    }
+    $holdsThis = !empty($held) && $joinChapter !== null
+        && in_array($joinChapter, array_column($held, 'chapter'), true);
+
+    if ($holdsThis) {
+        MembershipMailer::sendExistingAccount($email, $held, $joinChapter, $formTitle);
+        return;
+    }
+
+    $issued = (new EmailVerificationModel())->request($form['id'], $email, $name);
+    if (!$issued) {
+        return;
+    }
+    if (!empty($held)) {
+        MembershipMailer::sendExistingAccount($email, $held, $joinChapter, $formTitle, $issued['code'], $issued['expires_at']);
+    } else {
+        Mailer::sendEmailVerification($email, $formTitle, $issued['code'], $issued['expires_at'], $name);
+    }
+};
+
+if (empty($previewSchema) && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!CSRF::validate($_POST['csrf_token'] ?? '')) {
         die("Invalid CSRF token.");
     }
 
@@ -190,7 +214,7 @@ if (empty($previewSchema) && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['a
     $postAction = $_POST['action'] ?? '';
     $gatePassed = false;
 
-    if ($memberAutoVerified && in_array($postAction, ['request_verification', 'change_email'], true)) {
+    if ($memberAutoVerified && in_array($postAction, ['request_verification', 'verify_code', 'resend_verification', 'change_email'], true)) {
         // A signed-in member does not use an email gate and cannot switch to an alternate address.
         $email = $verifiedEmail;
     } elseif ($postAction === 'request_verification') {
@@ -204,58 +228,78 @@ if (empty($previewSchema) && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['a
             $errors['email'] = "Kindly enter a valid email address.";
         } else {
             try {
-                require_once __DIR__ . '/../../models/EmailVerificationModel.php';
-                require_once __DIR__ . '/../../includes/mailer.php';
-                $config = require __DIR__ . '/../../includes/config.php';
                 $email = strtolower($email);
-                $formTitle = $schema['title'] ?? $formType;
+                $sendVerification($email, $verifyName);
 
-                // Applicable only to membership JOIN forms (the renewal form is intended for individuals who already
-                // hold an active membership). If this email address is already associated with a member, notify them via
-                // email rather than sending a standard verification link. The displayed screen remains identical
-                // in both cases, ensuring the page does not disclose whether an account exists.
-                $held = [];
-                $joinChapter = null;
-                if ($isMembershipForm && !$isRenewalForm) {
-                    require_once __DIR__ . '/../../models/MemberModel.php';
-                    require_once __DIR__ . '/../../includes/mail/membership_mailer.php';
-                    $joinChapter = MemberModel::chapterOfSlug((string) $formType);
-                    $held = (new MemberModel())->membershipsForEmail($email);
-                }
-                $holdsThis = !empty($held) && $joinChapter !== null
-                    && in_array($joinChapter, array_column($held, 'chapter'), true);
-
-                if ($holdsThis) {
-                    // Already a member of this chapter: no application is required, so no
-                    // verification link is dispatched. They are directed to sign in or renew.
-                    MembershipMailer::sendExistingAccount($email, $held, $joinChapter, $formTitle);
-                } else {
-                    $issued = (new EmailVerificationModel())->request($form['id'], $email, $verifyName);
-
-                    if ($issued) {
-                        $verifyUrl = rtrim($config['app']['url'], '/') . '/' . rawurlencode($formType)
-                            . '?verify=' . urlencode($issued['token']);
-                        if (!empty($held)) {
-                            // Member of another chapter: shares the same verification link flow, but the email
-                            // clarifies that their existing Member ID will be retained.
-                            MembershipMailer::sendExistingAccount($email, $held, $joinChapter, $formTitle, $verifyUrl, $issued['expires_at']);
-                        } else {
-                            Mailer::sendEmailVerification($email, $formTitle, $verifyUrl, $issued['expires_at'], $verifyName);
-                        }
-                    }
-                }
-                // Maintain the same screen appearance regardless of whether a link was successfully dispatched (handling rate limits
+                // Maintain the same screen appearance regardless of whether a code was successfully dispatched (handling rate limits
                 // or mail delivery failures): the interface must not reveal the underlying outcome.
-                $verifySent = true;
+                $otpPending = ['email' => $email, 'name' => $verifyName, 'at' => time(), 'sent_at' => time()];
+                $_SESSION['otp_pending'][$form['id']] = $otpPending;
             } catch (Exception $e) {
                 app_log("Email verification request failed for form '$formType' <$email>: " . $e->getMessage());
                 $errors['system'] = "An error occurred while dispatching your verification email. Kindly try again.";
             }
         }
+    } elseif ($postAction === 'verify_code') {
+        // The address comes from the session, never from the request.
+        if ($otpPending === null || ($otpPending['email'] ?? '') === '') {
+            $errors['system'] = "Your verification session has expired. Kindly start again.";
+            unset($_SESSION['otp_pending'][$form['id']]);
+            $otpPending = null;
+        } else {
+            try {
+                $verified = (new EmailVerificationModel())->consume(
+                    $form['id'],
+                    (string) $otpPending['email'],
+                    is_string($_POST['otp_code'] ?? null) ? $_POST['otp_code'] : ''
+                );
+            } catch (Throwable $e) {
+                app_log("Email verification consume failed for form '$formType': " . $e->getMessage());
+                $verified = null;
+            }
+
+            if ($verified) {
+                $_SESSION['verified_emails'][$form['id']] = $verified['email'];
+                $_SESSION['verified_names'][$form['id']] = $verified['name'];
+                unset($_SESSION['otp_pending'][$form['id']]);
+                header('Location: ' . parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH));
+                exit;
+            }
+
+            // One message for every failure: wrong, expired, already used, superseded or too many attempts.
+            $errors['verify'] = "That code is not correct, or it has expired. Check the code in your email, or request a new one below.";
+        }
+    } elseif ($postAction === 'resend_verification') {
+        if ($otpPending === null || ($otpPending['email'] ?? '') === '') {
+            $errors['system'] = "Your verification session has expired. Kindly start again.";
+            unset($_SESSION['otp_pending'][$form['id']]);
+            $otpPending = null;
+        } else {
+            // The cooldown is tracked in the session so it behaves the same for every address (including ones
+            // that hold this membership and have no code on file). EmailVerificationModel enforces its own
+            // cooldown and hourly cap on top of this.
+            $left = EmailVerificationModel::RESEND_COOLDOWN_SECONDS - (time() - (int) ($otpPending['sent_at'] ?? 0));
+            if ($left > 0) {
+                $errors['system'] = "Kindly wait a moment before requesting another code.";
+            } else {
+                try {
+                    $sendVerification((string) $otpPending['email'], (string) $otpPending['name']);
+                    $otpPending['at'] = time();
+                    $otpPending['sent_at'] = time();
+                    $_SESSION['otp_pending'][$form['id']] = $otpPending;
+                    // Same notice whether or not the hourly cap let a new code through.
+                    $otpNotice = "If the address is correct, a new code is on its way.";
+                } catch (Exception $e) {
+                    app_log("Email verification resend failed for form '$formType' <" . $otpPending['email'] . ">: " . $e->getMessage());
+                    $errors['system'] = "An error occurred while dispatching your verification email. Kindly try again.";
+                }
+            }
+        }
     } elseif ($postAction === 'change_email') {
-        unset($_SESSION['verified_emails'][$form['id']], $_SESSION['verified_names'][$form['id']]);
+        unset($_SESSION['verified_emails'][$form['id']], $_SESSION['verified_names'][$form['id']], $_SESSION['otp_pending'][$form['id']]);
         $verifiedEmail = '';
         $verifiedName = '';
+        $otpPending = null;
     } elseif ($verifiedEmail === '') {
         $errors['system'] = "Kindly verify your email address first.";
     } else {
@@ -433,7 +477,7 @@ if (empty($previewSchema) && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['a
                 // final submissions rather than every incomplete draft save.
                 // The verification address is consumed once recorded against an
                 // application; subsequent submissions require fresh verification.
-                unset($_SESSION['verified_emails'][$form['id']], $_SESSION['verified_names'][$form['id']]);
+                unset($_SESSION['verified_emails'][$form['id']], $_SESSION['verified_names'][$form['id']], $_SESSION['otp_pending'][$form['id']]);
 
                 if (!$isDraft) {
                     // $form is retrieved directly from FormModel::getFormByType(),
@@ -465,17 +509,21 @@ if (empty($previewSchema) && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['a
     }
 }
 
-// Until the email address is verified, only the verification step (or,
-// if a token was provided via GET, the confirmation step) is
-// displayed. Previews lack session/database connectivity and therefore always display the form.
-$showConfirm = empty($success) && $pendingVerifyToken !== null && $verifiedEmail === '';
-$showGate = empty($success) && empty($previewSchema) && $verifiedEmail === '' && !$showConfirm;
+// Until the email address is verified, only the verification steps are displayed: the gate, then (once a
+// code has been sent) the code-entry screen. Previews lack session/database connectivity and therefore
+// always display the form.
+$showCode = empty($success) && empty($previewSchema) && $verifiedEmail === '' && $otpPending !== null;
+$showGate = empty($success) && empty($previewSchema) && $verifiedEmail === '' && !$showCode;
 $isDraftPost = ($_POST['intent'] ?? '') === 'draft';
 
+// Seconds until another code may be requested, for the Resend countdown (0 = available now).
+$otpWait = $showCode
+    ? max(0, EmailVerificationModel::RESEND_COOLDOWN_SECONDS - (time() - (int) ($otpPending['sent_at'] ?? 0)))
+    : 0;
+
 // The banner, deadline line and program description appear on the first screen only.
-// Both short follow-up screens omit them: "Check your inbox" (a link has just been sent)
-// and "Confirm your email" (the applicant opened the link).
-$hideIntro = $showConfirm || (!empty($verifySent) && $showGate);
+// The short "enter your code" screen omits them.
+$hideIntro = $showCode;
 
 // Signed-in members have their name displayed in the top bar (consistent with /membership).
 $member = $loggedMember;
@@ -546,6 +594,13 @@ engage_header([
     .alert h3 { margin: 0 0 6px; padding: 0; border: 0; font-size: 17px; }
     .alert p { margin: 8px 0 0; font-size: 14px; }
 
+    /* Code entry */
+    .otp-input { width: 100%; max-width: 320px; padding: 14px 16px; font: inherit; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 24px; font-weight: 700; letter-spacing: 4px; text-transform: uppercase; text-align: center; background: #fff; color: var(--ink); border: 1px solid var(--border); border-radius: 10px; }
+    .otp-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 0; }
+    .otp-actions form { margin: 0; }
+    .fcard .otp-actions button { width: auto; padding: 8px 18px; font-size: 14px; }
+    .fcard .otp-actions button[disabled] { opacity: .55; cursor: not-allowed; }
+
     /* Input types not yet styled by engage.css */
     .field input[type=url], .field input[type=time] { width: 100%; padding: 12px 14px; background: #fff; color: var(--ink); border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 15px; }
     .field input[type=url]:focus, .field input[type=time]:focus { outline: 2px solid var(--primary); outline-offset: -1px; border-color: transparent; }
@@ -572,7 +627,7 @@ engage_header([
 </style>
 
 <div class="fcard">
-    <?php /* "Check your inbox" and "Confirm your email" render only their own message: omitting the banner, deadline, and program description. */ ?>
+    <?php /* The "enter your code" screen renders only its own message: omitting the banner, deadline, and program description. */ ?>
     <?php if (!$hideIntro): ?>
         <?php if (!empty($schema['banner_image'])): ?>
             <figure class="banner-fig">
@@ -619,29 +674,66 @@ engage_header([
             </div>
         <?php endif; ?>
 
-        <?php if ($showConfirm): ?>
-            <div class="alert ok">
-                <h3>Confirm your email address</h3>
-                Kindly click below to complete verification and open the application. This additional step prevents automated
-                email-safety scanners from consuming your verification link before you access it.
-            </div>
-            <form method="POST" action="<?= htmlspecialchars(parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH)) ?>">
-                <?= CSRF::getInputField() ?>
-                <input type="hidden" name="action" value="confirm_verification">
-                <input type="hidden" name="verify_token" value="<?= htmlspecialchars($pendingVerifyToken) ?>">
-                <button type="submit">Proceed to application</button>
-            </form>
-
-        <?php elseif ($showGate): ?>
-            <?php if ($verifySent): ?>
-                <div class="alert ok">
-                    <h3>Kindly check your inbox</h3>
-                    If <strong><?= htmlspecialchars($email) ?></strong> can receive incoming mail, a verification link is on its
-                    way. Open it within this browser session to commence your application. The link is single-use and will expire shortly.
-                    <p>Not received yet? Kindly check your spam folder, or request a new link below (limited to 3 requests per hour).</p>
-                </div>
+        <?php if ($showCode): ?>
+            <?php if ($otpNotice !== ''): ?>
+                <div class="alert ok"><?= htmlspecialchars($otpNotice) ?></div>
             <?php endif; ?>
 
+            <div class="boxed">
+                <h3 style="margin:0 0 8px; font-size:17px;">Enter your verification code</h3>
+                <p style="margin:0 0 14px; font-size:14.5px;">
+                    If <strong><?= htmlspecialchars((string) $otpPending['email']) ?></strong> can receive incoming mail, a verification code is on its
+                    way. Enter it below to commence your application. The code is single-use and will expire shortly.
+                </p>
+                <form method="POST">
+                    <?= CSRF::getInputField() ?>
+                    <input type="hidden" name="action" value="verify_code">
+                    <div class="field">
+                        <label for="otp_code">Verification code <span class="req-star">*</span></label>
+                        <input type="text" class="otp-input" name="otp_code" id="otp_code" maxlength="12" required autofocus
+                            autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" placeholder="ABCD-EFGH">
+                    </div>
+                    <button type="submit" style="margin-top:14px;">Verify and continue</button>
+                </form>
+            </div>
+
+            <p style="margin:0 0 10px; font-size:14px; color:var(--muted);">Not received yet? Kindly check your spam folder, or request a new code.</p>
+            <div class="otp-actions">
+                <form method="POST">
+                    <?= CSRF::getInputField() ?>
+                    <input type="hidden" name="action" value="resend_verification">
+                    <button type="submit" class="btn-outline" id="resend-btn" data-wait="<?= (int) $otpWait ?>"<?= $otpWait > 0 ? ' disabled' : '' ?>>
+                        Resend code<span id="resend-count"></span></button>
+                </form>
+                <form method="POST">
+                    <?= CSRF::getInputField() ?>
+                    <input type="hidden" name="action" value="change_email">
+                    <button type="submit" formnovalidate class="btn-outline">Use a different email address</button>
+                </form>
+            </div>
+            <script>
+                // Convenience only: the server enforces the resend cooldown and the hourly limit.
+                (function () {
+                    var btn = document.getElementById('resend-btn');
+                    var out = document.getElementById('resend-count');
+                    if (!btn) return;
+                    var left = parseInt(btn.getAttribute('data-wait'), 10) || 0;
+                    function fmt(s) { return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2); }
+                    function tick() {
+                        if (left > 0) {
+                            out.textContent = ' (' + fmt(left) + ')';
+                            left--;
+                            setTimeout(tick, 1000);
+                        } else {
+                            out.textContent = '';
+                            btn.disabled = false;
+                        }
+                    }
+                    tick();
+                })();
+            </script>
+
+        <?php elseif ($showGate): ?>
             <form method="POST">
                 <?= CSRF::getInputField() ?>
                 <input type="hidden" name="action" value="request_verification">
@@ -653,9 +745,9 @@ engage_header([
                 <div class="field">
                     <label for="verify_email">Email address <span class="req-star">*</span></label>
                     <input type="email" name="email" id="verify_email" value="<?= htmlspecialchars($email ?? '') ?>" required>
-                    <span class="hint">Expect a one-time verification link in your inbox shortly. Opening this link gives you access to the application form, where you can either finalise your submission or pause to save a draft for later.</span>
+                    <span class="hint">Expect a one-time verification code in your inbox shortly. Entering this code gives you access to the application form, where you can either finalise your submission or pause to save a draft for later.</span>
                 </div>
-                <button type="submit"><?= $verifySent ? 'Request a new link' : 'Send verification link' ?></button>
+                <button type="submit">Send verification code</button>
             </form>
 
         <?php else: ?>
