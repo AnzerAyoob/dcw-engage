@@ -5,9 +5,14 @@
  * Two jobs, run in order:
  *   1. Scrub personal data from applications that have aged out of the
  *      retention window (Rejected or Accepted, older than 6 months).
- *   2. Sweep /uploads for orphaned files — anything on disk that no
- *      application row references. These are left behind by rejected or
- *      errored submissions and would otherwise never be cleaned up.
+ *      Membership applications are skipped: staff look members up through
+ *      them for as long as the membership runs (MemberModel::TERM), which is
+ *      longer than this window.
+ *   2. Sweep /uploads for orphaned files — anything on disk that no row
+ *      references. These are left behind by rejected or errored submissions
+ *      and would otherwise never be cleaned up. Applications, reimbursement
+ *      receipts and internet support receipts all share /uploads, so all
+ *      three count as references.
  *
  * Terminal / cron only.
  */
@@ -16,6 +21,7 @@ if (php_sapi_name() !== 'cli') {
 }
 
 require_once __DIR__ . '/../includes/init.php';
+require_once __DIR__ . '/../models/FormModel.php';
 
 $db = DB::getInstance()->getConnection();
 $uploadDir = realpath(__DIR__ . '/../uploads');
@@ -48,46 +54,78 @@ function resolveUploadPath($value, $uploadDir) {
 // ---------------------------------------------------------------------------
 // 1. Scrub aged-out applications
 // ---------------------------------------------------------------------------
-$targetDate = date('Y-m-d H:i:s', strtotime('-6 months'));
-
 try {
-    $stmt = $db->prepare("SELECT id, form_data FROM applications WHERE status IN ('Rejected', 'Accepted') AND updated_at < :target");
-    $stmt->execute(['target' => $targetDate]);
+    // The cut-off is computed by the database, so it uses the same clock as
+    // updated_at. Rows that were already scrubbed are skipped: scrubbing
+    // touches updated_at, so they would otherwise come back every 6 months.
+    $stmt = $db->query(
+        "SELECT a.id, a.form_data, f.form_type
+           FROM applications a
+           JOIN forms f ON f.id = a.form_id
+          WHERE a.status IN ('Rejected', 'Accepted')
+            AND a.updated_at < NOW() - INTERVAL 6 MONTH
+            AND a.email NOT LIKE '[REDACTED]%'"
+    );
     $applications = $stmt->fetchAll();
 
+    $updateStmt = $db->prepare(
+        "UPDATE applications SET email = :email, applicant_name = '[REDACTED]', form_data = :data WHERE id = :id"
+    );
+
     $scrubbedCount = 0;
+    $failedCount = 0;
 
     foreach ($applications as $app) {
-        $formData = json_decode($app['form_data'], true);
-
-        if (is_array($formData)) {
-            foreach ($formData as $key => $value) {
-                // File path: delete the file, then mark it gone.
-                $filePath = resolveUploadPath($value, $uploadDir);
-                if ($filePath !== null) {
-                    @unlink($filePath);
-                    $formData[$key] = '[FILE_DELETED]';
-                    continue;
-                }
-
-                // Every other answer is treated as potential PII and redacted.
-                // Redacting by value rather than by a hardcoded list of field
-                // names means a personal field the organizer named something
-                // unexpected (father_name, dob, city, ...) is still cleaned.
-                $formData[$key] = '[REDACTED_PII]';
-            }
+        if (FormModel::isMembershipType($app['form_type'])) {
+            continue;
         }
 
-        $updateStmt = $db->prepare("UPDATE applications SET email = '[REDACTED]', applicant_name = '[REDACTED]', form_data = :data WHERE id = :id");
-        $updateStmt->execute([
-            'data' => json_encode($formData),
-            'id' => $app['id']
-        ]);
+        // One row at a time, so a problem with one application never stops
+        // the rest from being scrubbed.
+        try {
+            $formData = json_decode($app['form_data'], true);
+            $filesToDelete = [];
 
-        $scrubbedCount++;
+            if (is_array($formData)) {
+                foreach ($formData as $key => $value) {
+                    // File path: mark it gone; the file is deleted once the row is saved.
+                    $filePath = resolveUploadPath($value, $uploadDir);
+                    if ($filePath !== null) {
+                        $filesToDelete[] = $filePath;
+                        $formData[$key] = '[FILE_DELETED]';
+                        continue;
+                    }
+
+                    // Every other answer is treated as potential PII and redacted.
+                    // Redacting by value rather than by a hardcoded list of field
+                    // names means a personal field the organizer named something
+                    // unexpected (father_name, dob, city, ...) is still cleaned.
+                    $formData[$key] = '[REDACTED_PII]';
+                }
+            }
+
+            // The email must stay unique per form (UNIQUE form_id + email), so the
+            // row id goes into the placeholder. A plain '[REDACTED]' would collide
+            // with the second scrubbed application on the same form.
+            $updateStmt->execute([
+                'email' => '[REDACTED]-' . $app['id'],
+                'data'  => json_encode($formData),
+                'id'    => $app['id'],
+            ]);
+
+            // Only now that the row no longer points at them are the files removed.
+            foreach ($filesToDelete as $filePath) {
+                @unlink($filePath);
+            }
+
+            $scrubbedCount++;
+        } catch (Exception $e) {
+            $failedCount++;
+            echo "[-] Could not scrub application {$app['id']}: " . $e->getMessage() . "\n";
+        }
     }
 
-    echo "[+] Scrubbed PII from $scrubbedCount application(s).\n";
+    echo "[+] Scrubbed PII from $scrubbedCount application(s)" . ($failedCount ? ", $failedCount failed" : '') . ".\n";
 
 } catch (Exception $e) {
     echo "[-] FATAL ERROR during scrub: " . $e->getMessage() . "\n";
@@ -100,8 +138,10 @@ try {
     if ($uploadDir === false || !is_dir($uploadDir)) {
         echo "[*] No uploads directory to sweep.\n";
     } else {
-        // Build the set of files still referenced by ANY application, not just
-        // the ones scrubbed above — an orphan is a file referenced by none.
+        // Build the set of files still referenced by ANY row, not just the
+        // applications scrubbed above — an orphan is a file referenced by none.
+        // If any of these lookups fails, the exception skips the whole sweep:
+        // with an incomplete set, live files would look like orphans.
         $referenced = [];
         $allStmt = $db->query("SELECT form_data FROM applications");
         foreach ($allStmt->fetchAll() as $row) {
@@ -112,6 +152,19 @@ try {
                     if ($filePath !== null) {
                         $referenced[$filePath] = true;
                     }
+                }
+            }
+        }
+
+        // Reimbursement and internet support receipts live in the same folder.
+        foreach ([
+            "SELECT receipt_path FROM reimbursement_line_items WHERE receipt_path <> ''",
+            "SELECT receipt_path FROM internet_requests WHERE receipt_path <> ''",
+        ] as $sql) {
+            foreach ($db->query($sql)->fetchAll() as $row) {
+                $filePath = resolveUploadPath($row['receipt_path'], $uploadDir);
+                if ($filePath !== null) {
+                    $referenced[$filePath] = true;
                 }
             }
         }
