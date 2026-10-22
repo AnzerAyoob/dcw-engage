@@ -123,9 +123,12 @@ class CommunityRecordsModel
      * Turn pasted text into a preview. One person per line, or several on a line
      * separated by commas:
      *     D48213977
+     *     A48213977
      *     SomeUser
-     *     SomeUser, OtherUser, D48213977
+     *     SomeUser, OtherUser, J48213977
      *     SomeUser | excused | exam that day
+     * A Member ID is one letter (D, A, J or P: see MemberModel::ID_PREFIX) followed by digits;
+     * the format is checked by MemberModel::chapterFromMemberId(), so it is defined in one place.
      * A line containing "|" is kept whole, because the reason after "excused" can contain commas.
      * Each result: kind (member | username | bad), member_id, username, status, note, label, key.
      * Duplicates inside the paste are merged and counted in $dupes.
@@ -162,8 +165,10 @@ class CommunityRecordsModel
             if ($row['status'] === 'excused' && $row['note'] === '') { $row['label'] = 'Excused needs a note (use: name | excused | reason)'; $out[] = $row; continue; }
             if (mb_strlen($row['note']) > 500) { $row['label'] = 'Note is too long'; $out[] = $row; continue; }
 
-            if (preg_match('/^D\d{' . MemberModel::MEMBER_ID_DIGITS . '}$/i', $ident)) {
-                $mid = strtoupper($ident);
+            // chapterFromMemberId() is case-sensitive, so upper-case first (IDs are typed in any case).
+            $idCandidate = strtoupper($ident);
+            if (MemberModel::chapterFromMemberId($idCandidate) !== null) {
+                $mid = $idCandidate;
                 if (!(new MemberModel())->membershipsFor($mid)) { $row['label'] = 'No member has this Member ID'; $out[] = $row; continue; }
                 $row['kind'] = 'member'; $row['member_id'] = $mid; $row['username'] = $this->verifiedUsernameOf($mid);
             } else {
