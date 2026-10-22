@@ -6,6 +6,7 @@ require_once __DIR__ . '/../../models/MemberAuthModel.php';
 require_once __DIR__ . '/../../models/MemberModel.php';
 require_once __DIR__ . '/../../models/FormModel.php';
 require_once __DIR__ . '/../../models/FeedbackModel.php';
+require_once __DIR__ . '/../../models/ApplicationModel.php';
 require_once __DIR__ . '/../../models/InternetSupportModel.php';
 require_once __DIR__ . '/../../models/ReimbursementSettingsModel.php';
 require_once __DIR__ . '/../../models/ReimbursementModel.php';
@@ -34,7 +35,13 @@ require_once __DIR__ . '/../../includes/cert_rows.php';
  * panel instead. Signed-in members open a feedback form without email verification.
  * Applications the member has saved as a Draft (still to be finished, or sent back) are listed under
  * "Requires your attention", with a button that emails them a fresh resume link. Applications in any
- * other status reach the applicant by email, so they are not repeated here.
+ * other status reach the applicant by email, so they are not repeated there.
+ *
+ * "My applications" lists every application the member has made, in any status: drafts that can be
+ * resumed come first (with the same "Email me the link" button), then the rest, newest first. Each
+ * one links to /track?id=..., which opens the member's own application without retyping the email.
+ * Only the latest few are shown; there is no full-list page yet. A Discarded application is shown as
+ * "Under review", like the public tracking lookup: applicants are never told it was discarded.
  *
  * Profile: the identity card links to /member/profile and shows the Wikimedia username status. When
  * internet support is open, a member without a verified username is also nudged from "Requires your
@@ -50,6 +57,7 @@ MemberSession::requireLogin();
 $member = MemberSession::current();
 
 const DASH_CERT_PREVIEW = 5;   // how many certificates the dashboard shows
+const DASH_APP_PREVIEW  = 8;   // how many applications the dashboard shows
 
 $email        = strtolower((string) ($member['email'] ?? ''));
 $fullName     = trim((string) ($member['full_name'] ?? ''));
@@ -202,6 +210,43 @@ $totalRequests = count($requests);
 $requests = array_slice($requests, 0, 8);
 $needsAction = array_values(array_filter($requests, fn($r) => $r['act']));
 
+// ---- The member's applications (any status): drafts that can be resumed first, then newest first ----
+// Needs ApplicationModel::listForMember(). A draft is "resumable" only when it is in $drafts (its form is
+// still open), so the "Email me the link" button can only ever act on a draft the POST above accepts.
+// Applicants never see "Discarded": it shows as "Under review", like the public tracking lookup.
+
+/** Applicant-facing label, tone and "needs the member" flag for one application. */
+function dash_app_status(string $status, bool $canResume): array
+{
+    switch ($status) {
+        case 'Draft':        return $canResume ? ['Draft', '#b45309', true] : ['Draft closed', '#64748b', false];
+        case 'New':
+        case 'Submitted':    return ['Submitted', '#106b9a', false];
+        case 'Under Review':
+        case 'Discarded':    return ['Under review', '#106b9a', false];
+        case 'Accepted':     return ['Accepted', '#0f766e', false];
+        case 'Rejected':     return ['Not accepted', '#97161b', false];
+        default:             return [$status, '#106b9a', false];
+    }
+}
+
+$applications = [];
+try {
+    $resumable = array_map('intval', array_column($drafts, 'id'));
+    foreach ((new ApplicationModel())->listForMember($email) as $a) {
+        $id = (int) $a['id'];
+        [$label, $tone, $act] = dash_app_status((string) $a['status'], in_array($id, $resumable, true));
+        $title = trim((string) ($a['form_title'] ?? ''));
+        if ($title === '') $title = ucwords(str_replace(['-', '_'], ' ', (string) $a['form_type']));
+        $applications[] = ['id' => $id, 'title' => $title, 'tracking' => (string) $a['tracking_id'],
+            'created' => $a['created_at'], 'label' => $label, 'tone' => $tone, 'act' => $act];
+    }
+} catch (Throwable $e) { error_log('Engage applications lookup failed: ' . $e->getMessage()); }
+// Needs the member first, then newest first.
+usort($applications, fn($a, $b) => [(int) $b['act'], (string) $b['created']] <=> [(int) $a['act'], (string) $a['created']]);
+$totalApplications = count($applications);
+$applications      = array_slice($applications, 0, DASH_APP_PREVIEW);
+
 // ---- The member's conversations with DCW Support (looked up by Member ID from the session) ------
 $tickets = [];
 try { $tickets = (new MemberTicketModel())->listForMember((string) $member['member_id']); } catch (Throwable $e) { /* table not created yet */ }
@@ -351,6 +396,10 @@ cert_rows_css();   // icons, buttons and certificate rows shared with /member/ce
     /* Result of "Email me the link" */
     .d-note { margin: 0 0 20px; }
 
+    /* A form button inside a request/application row (draft: "Email me the link") */
+    .req .side form { margin: 0; }
+    .req .side button.d-btn { font: inherit; font-size: 13.5px; cursor: pointer; }
+
     /* Certificates header: title with the total, and a link to the full list */
     .c-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; }
     .c-head h2 { margin: 0; }
@@ -397,7 +446,8 @@ cert_rows_css();   // icons, buttons and certificate rows shared with /member/ce
 
         <nav class="d-glance" aria-label="Jump to a section">
             <a class="d-chip" style="--tone: var(--leaf-dark);" href="#certificates"><?= cert_icon('award') ?><b><?= (int) $certCount ?></b> certificate<?= $certCount === 1 ? '' : 's' ?></a>
-            <a class="d-chip" style="--tone: var(--primary);" href="#requests"><?= dash_svg($icons, 'doc') ?><b><?= (int) $totalRequests ?></b> request<?= $totalRequests === 1 ? '' : 's' ?></a>
+            <a class="d-chip" style="--tone: var(--primary);" href="#applications"><?= dash_svg($icons, 'doc') ?><b><?= (int) $totalApplications ?></b> application<?= $totalApplications === 1 ? '' : 's' ?></a>
+            <a class="d-chip" style="--tone: var(--primary);" href="#requests"><?= dash_svg($icons, 'card') ?><b><?= (int) $totalRequests ?></b> request<?= $totalRequests === 1 ? '' : 's' ?></a>
             <a class="d-chip" style="--tone: <?= $wmName === '' ? 'var(--muted)' : ($wmOk ? 'var(--leaf-dark)' : '#b45309') ?>;" href="/member/profile#wikimedia"><?= dash_svg($icons, 'user') ?><?php if ($wmName === ''): ?>Add Wikimedia username<?php else: ?><b><?= htmlspecialchars($wmName) ?></b> <?= $wmOk ? 'Verified' : 'Not verified' ?><?php endif; ?></a>
             <a class="d-chip" style="--tone: var(--accent);" href="#conversations"><?= dash_svg($icons, 'chat') ?><b><?= count($tickets) ?></b> conversation<?= count($tickets) === 1 ? '' : 's' ?></a>
         </nav>
@@ -482,6 +532,52 @@ cert_rows_css();   // icons, buttons and certificate rows shared with /member/ce
                 'Encountered an issue on this portal? Notify the technical team.', '/member/report-problem');
             ?>
         </div>
+    </section>
+
+    <!-- My applications: everything the member has applied for. Drafts to finish come first. -->
+    <section class="panel" id="applications">
+        <div class="panel-head">
+            <h2>My applications</h2>
+            <p>Applications you have started or submitted. Finish a draft, or open one to check its status.</p>
+        </div>
+        <?php if (empty($applications)): ?>
+            <div class="d-empty">
+                <strong>No applications yet</strong>
+                <p>Programs you apply to will be listed here, including drafts you have not finished.</p>
+                <a class="d-btn line" href="/">Browse programs</a>
+            </div>
+        <?php else: ?>
+            <div class="reqs">
+                <?php foreach ($applications as $a): ?>
+                    <div class="req<?= $a['act'] ? ' act' : '' ?>" style="--tone: <?= htmlspecialchars($a['tone']) ?>;">
+                        <span class="tick"><svg viewBox="0 0 24 24" aria-hidden="true"><?= $icons['doc'] ?></svg></span>
+                        <div>
+                            <h3><?= htmlspecialchars($a['title']) ?></h3>
+                            <p class="meta">
+                                Application &middot; <?= htmlspecialchars(dash_date($a['created'])) ?>
+                                &middot; <code><?= htmlspecialchars($a['tracking']) ?></code><button type="button" class="copy" data-copy="<?= htmlspecialchars($a['tracking']) ?>">Copy</button>
+                            </p>
+                        </div>
+                        <div class="side">
+                            <span class="pill"><?= htmlspecialchars($a['label']) ?></span>
+                            <?php if ($a['act']): ?>
+                                <form method="POST" action="/member/dashboard">
+                                    <?= CSRF::getInputField() ?>
+                                    <input type="hidden" name="action" value="send_draft_link">
+                                    <input type="hidden" name="application_id" value="<?= (int) $a['id'] ?>">
+                                    <button type="submit" class="d-btn amber">Email me the link</button>
+                                </form>
+                            <?php else: ?>
+                                <a href="/track?id=<?= htmlspecialchars(rawurlencode($a['tracking'])) ?>">View &rarr;</a>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                <?php endforeach; ?>
+            </div>
+            <?php if ($totalApplications > count($applications)): ?>
+                <p class="d-more">Showing the latest <?= count($applications) ?> of <?= $totalApplications ?> applications.</p>
+            <?php endif; ?>
+        <?php endif; ?>
     </section>
 
     <!-- Requests and conversations -->
