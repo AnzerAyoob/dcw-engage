@@ -23,7 +23,8 @@
 // "Forgot your Member ID?": sendMemberIdReminder() emails the ID to the address on file.
 //
 // Join-form verification: sendExistingAccount() carries the one-time verification CODE (OTP),
-// not a link, when the address already belongs to a member joining another chapter.
+// not a link, when the address already belongs to a member joining another chapter. It names the
+// form's event only (CoreMail::eventTitle()), not the full form title.
 //
 // Sign-off examples:
 //   Best regards,                       Best regards,
@@ -378,6 +379,7 @@ class MembershipMailer {
      * 8-character value from EmailVerificationModel::request()) is included, to be typed into the
      * page they have open. There is no link.
      * $expiresAt is the code's expiry as stored (UTC); it is shown to the member in IST.
+     * $formTitle is shown as the event name only (CoreMail::eventTitle()).
      */
     public static function sendExistingAccount($email, array $held, $chapter, $formTitle, $code = null, $expiresAt = null) {
         $base  = CoreMail::appUrl();
@@ -387,6 +389,7 @@ class MembershipMailer {
 
         $name = (string) ($held[0]['full_name'] ?? '');
         if ($name === '') $name = 'there';
+        $formTitle = CoreMail::eventTitle($formTitle);   // event name only, no form-type prefix or edition/date
         $ids  = array_values(array_unique(array_map(fn($r) => (string) $r['member_id'], $held)));
 
         $rowsHtml = $rowsText = '';
