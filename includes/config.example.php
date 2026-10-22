@@ -30,6 +30,7 @@ return [
         'magic_link_expiry_edit'  => '+2 hours',
         'invite_expiry'           => '+7 days',
         'email_verify_expiry'     => '+10 minutes',
+        'field_encryption_key'    => 'replace-with-a-long-random-string',
         'otp_secret'              => 'replace-with-a-long-random-string',
         'feedback_retention_months' => 12
     ]
