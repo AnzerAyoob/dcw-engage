@@ -255,6 +255,7 @@ engage_header([
     'kicker'  => $found ? $found['tracking_id'] : 'Request details',
     'lead'    => 'Status and next steps for your support request.',
     'member'  => $member,
+    'tools'   => engage_member_menu($member, ['current' => '/member/support']),
     'crumbs'  => [['Home', '/'], ['My dashboard', '/member/dashboard'], ['My request']],
 ]);
 ?>

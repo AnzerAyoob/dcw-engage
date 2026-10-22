@@ -308,21 +308,6 @@ $ico = [
     'archive' => '<polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/>',
 ];
 
-// The top-bar buttons, the same as on the workspace dashboard: who is signed in, owner shortcuts, sign out.
-// Sign out is a POST with a CSRF token (logout.php ignores anything else).
-ob_start(); ?>
-<span class="who"><?= $e(Auth::email()) ?></span>
-<?php if (Auth::isOwner()): ?>
-    <a href="/admin/team" class="chip-btn">Team</a>
-    <a href="/admin/audit" class="chip-btn">Audit log</a>
-<?php endif; ?>
-<form method="POST" action="/admin/logout">
-    <?= CSRF::getInputField() ?>
-    <button type="submit" class="chip-btn">Sign out</button>
-</form>
-<?php
-$topTools = ob_get_clean();
-
 engage_header([
     'title'   => 'Finance queue',
     'heading' => 'Finance queue',
@@ -331,7 +316,6 @@ engage_header([
     'slim'    => true,
     'crumbs'  => [],
     'back'    => ['Workspace', '/admin/dashboard'],
-    'tools'   => $topTools,
 ]);
 ?>
 <div class="adm-shell">

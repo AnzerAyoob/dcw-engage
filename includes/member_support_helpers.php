@@ -69,59 +69,40 @@ function ms_styles(): string
 }
 
 // ---------------------------------------------------------------- member page chrome
-/** $links: [[href, label], ...] shown as buttons in the top bar. Opens <main>; ms_foot() closes it. */
+/**
+ * Member support pages (/member/talk and its conversations) use the shared page shell, so they get the
+ * same member menu (avatar + three lines) as the dashboard, the chapter colours and the shared footer.
+ * $links is no longer shown: everything it held (dashboard, new conversation, sign out) is in the menu.
+ * Opens <main>; ms_foot() closes it.
+ */
 function ms_head(string $title, string $h1, string $lead, array $links = [], string $kicker = ''): void
 {
-    ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <?php require __DIR__ . '/favicon.php'; ?>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#0c567a">
-    <meta name="robots" content="noindex, nofollow">
-    <title><?= ms_e($title) ?> - DCW Engage</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="<?= ms_e(engage_asset('/assets/css/engage.css')) ?>">
-    <style>.hero { padding-bottom: 44px; } .wrap.cards-wrap { margin-top: 34px; }</style>
-</head>
-<body>
-    <header class="hero">
-        <div class="topbar">
-            <a class="brand" href="/">
-                <img src="https://dcwwiki.org/dcwwiki/images/5/56/DCW_logo.png" alt="">
-                <span>DCW Engage</span>
-            </a>
-            <div class="tools">
-                <?php foreach ($links as $l): ?>
-                    <a href="<?= ms_e($l[0]) ?>" class="chip-btn"><?= ms_e($l[1]) ?></a>
-                <?php endforeach; ?>
-            </div>
-        </div>
-        <?php if ($kicker !== ''): ?><p class="kicker"><?= ms_e($kicker) ?></p><?php endif; ?>
-        <h1><?= ms_e($h1) ?></h1>
-        <p class="lead"><?= ms_e($lead) ?></p>
-    </header>
+    $member = class_exists('MemberSession') ? MemberSession::current() : null;
+    $path   = (string) parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH);
 
-    <main class="wrap wide cards-wrap">
-        <?= ms_flash_html() ?>
-<?php
+    // Home > My dashboard > Talk to DCW > (this conversation), like the other member pages.
+    $crumbs = [['Home', '/'], ['My dashboard', '/member/dashboard']];
+    if ($path !== '/member/talk') {
+        $crumbs[] = ['Talk to DCW', '/member/talk'];
+    }
+    $crumbs[] = [$h1];
+
+    $o = [
+        'title'   => $title,
+        'heading' => $h1,
+        'lead'    => $lead,
+        'member'  => $member,
+        'tools'   => $member ? engage_member_menu($member, ['current' => '/member/talk']) : null,
+        'crumbs'  => $crumbs,
+        'wide'    => true,
+    ];
+    if ($kicker !== '') $o['kicker'] = $kicker;
+
+    engage_header($o);
+    echo ms_flash_html();
 }
 
 function ms_foot(): void
 {
-    ?>
-    </main>
-
-    <footer>
-        <div class="org">
-            <img src="https://dcwwiki.org/dcwwiki/images/5/56/DCW_logo.png" alt="">
-            <span>Deoband Community Wikimedia</span>
-        </div>
-        <div>&copy; <?= date('Y') ?> · <a href="/">dcwwiki.org</a></div>
-    </footer>
-</body>
-</html>
-<?php
+    engage_footer();
 }

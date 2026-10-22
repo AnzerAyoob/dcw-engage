@@ -35,7 +35,6 @@ engage_header([
     'heading' => 'Audit log',
     'kicker'  => 'Organizer workspace',
     'lead'    => 'A permanent record of who granted or removed access, and when.',
-    'tools'   => '<a class="chip-btn" href="/admin/team">Team</a>',
     'wide'    => true,
     'crumbs'  => [['Workspace', '/admin/dashboard'], ['Team', '/admin/team'], ['Audit log']],
 ]);

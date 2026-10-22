@@ -209,7 +209,7 @@ a:focus-visible, summary:focus-visible, button:focus-visible { outline: 3px soli
 .burger[open] .bars i:nth-child(2) { opacity: 0; }
 .burger[open] .bars i:nth-child(3) { transform: translateY(-6px) rotate(-45deg); }
 .mpop {
-    position: absolute; right: 0; top: calc(100% + 10px); z-index: 40;
+    position: absolute; right: 0; top: calc(100% + 10px); z-index: 40; text-align: left;   /* the hero is centred on some pages */
     width: 270px; max-width: calc(100vw - 36px); padding: 8px;
     max-height: calc(100vh - 110px); overflow-y: auto;      /* a long menu scrolls on short phones */
     background: var(--card); color: var(--ink); border: 1.5px solid var(--border); border-radius: 16px;
@@ -885,8 +885,9 @@ a.help-item:hover { transform: translateY(-2px); box-shadow: 0 4px 0 var(--edge)
 }
 @media (max-width: 640px) {
     .hero, .hero.slim { padding: 28px 18px 96px; }
-    .topbar { justify-content: center; text-align: center; }
-    .topbar .tools { justify-content: center; margin-left: 0; }
+    /* Every page has the same phone top bar: logo on the left, the menu (member, staff or guest) on the right. */
+    .topbar { justify-content: space-between; text-align: left; flex-wrap: nowrap; gap: 8px; }
+    .topbar .tools { justify-content: flex-end; margin-left: auto; flex-wrap: nowrap; }
     /* Home page: keep the bar on one line (logo and name on the left, sign-in or menu on the right) */
     .hero.slim { padding: 16px 18px 88px; }
     .hero.slim .topbar { justify-content: space-between; text-align: left; flex-wrap: nowrap; gap: 8px; margin-bottom: 24px; }
@@ -1169,8 +1170,12 @@ table.ms-table { width: 100%; border-collapse: collapse; min-width: 720px; }
     transition: background .12s;
 }
 .mpop button.out:hover { background: var(--accent-tint); color: var(--accent-dark); }
-@media (max-width: 640px) {
+/* Owners have the most links; below this width the chips would wrap onto a second line, so the
+   hamburger takes over (the same menu members use on every screen size). */
+@media (max-width: 1100px) {
     .tools-wide { display: none; }
     .tools-narrow { display: flex; }
+}
+@media (max-width: 640px) {
     .mpop button.out { padding: 13px 12px; }
 }

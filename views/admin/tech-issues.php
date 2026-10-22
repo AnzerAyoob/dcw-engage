@@ -62,21 +62,6 @@ $issue = $id !== '' ? $model->getByTracking($id) : false;
 $filter = in_array($_GET['show'] ?? '', ['resolved', 'all'], true) ? $_GET['show'] : 'open';
 $rows   = $issue ? [] : $model->listForStaff($filter);
 
-// The top-bar buttons, the same as on the workspace dashboard: who is signed in, owner shortcuts, sign out.
-// Sign out is a POST with a CSRF token (logout.php ignores anything else).
-ob_start(); ?>
-<span class="who"><?= htmlspecialchars((string) Auth::email()) ?></span>
-<?php if (Auth::isOwner()): ?>
-    <a href="/admin/team" class="chip-btn">Team</a>
-    <a href="/admin/audit" class="chip-btn">Audit log</a>
-<?php endif; ?>
-<form method="POST" action="/admin/logout">
-    <?= CSRF::getInputField() ?>
-    <button type="submit" class="chip-btn">Sign out</button>
-</form>
-<?php
-$topTools = ob_get_clean();
-
 engage_header([
     'title'   => 'Reported problems',
     'heading' => 'Reported problems',
@@ -86,7 +71,6 @@ engage_header([
     'crumbs'  => $issue
         ? [['Workspace', '/admin/dashboard'], ['Reported problems', '/admin/tech-issues'], [$issue['tracking_id']]]
         : [['Workspace', '/admin/dashboard'], ['Reported problems']],
-    'tools'   => $topTools,
 ]);
 tech_flash_html();
 ?>

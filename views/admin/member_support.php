@@ -85,21 +85,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     header('Location: ' . $self . '?id=' . $pid); exit;
 }
 
-// The top-bar buttons, the same as on the workspace dashboard: who is signed in, owner shortcuts, sign out.
-// Sign out is a POST with a CSRF token (logout.php ignores anything else).
-ob_start(); ?>
-<span class="who"><?= htmlspecialchars((string) Auth::email()) ?></span>
-<?php if ($isOwner): ?>
-    <a href="/admin/team" class="chip-btn">Team</a>
-    <a href="/admin/audit" class="chip-btn">Audit log</a>
-<?php endif; ?>
-<form method="POST" action="/admin/logout">
-    <?= CSRF::getInputField() ?>
-    <button type="submit" class="chip-btn">Sign out</button>
-</form>
-<?php
-$topTools = ob_get_clean();
-
 $id = isset($_GET['id']) ? (int) $_GET['id'] : 0;
 
 // ---------------------------------------------------------------- one conversation
@@ -124,7 +109,6 @@ if ($id > 0) {
         'slim'    => true,
         'wide'    => true,
         'crumbs'  => [['Workspace', '/admin/dashboard'], [MemberTicketModel::SUPPORT_LABEL, $self], [$ticket['tracking_id']]],
-        'tools'   => $topTools,
     ]);
     echo ms_flash_html();
     ?>
@@ -221,7 +205,6 @@ engage_header([
     'slim'    => true,
     'wide'    => true,
     'crumbs'  => [['Workspace', '/admin/dashboard'], [MemberTicketModel::SUPPORT_LABEL]],
-    'tools'   => $topTools,
 ]);
 echo ms_flash_html();
 ?>
