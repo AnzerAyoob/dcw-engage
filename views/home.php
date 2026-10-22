@@ -228,6 +228,10 @@ if (!empty($reflections)) {
 $duo = $reflectionCard !== '' && !empty($events);
 $beside = !$duo && $reflectionCard !== '' && !empty($programs) && count($programs) <= 2;
 
+// A row with only one or two cards and nothing beside them: the cards share the full width instead of
+// sitting small in the middle of an empty row. A single card becomes one wide horizontal card.
+$fewCardsClass = fn(int $n): string => $n === 1 ? ' grid--fill grid--solo' : ($n === 2 ? ' grid--fill' : '');
+
 // One "Upcoming Events" card, used on its own and beside the reflection card.
 $eventCard = function (array $ev): string {
     $h = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
@@ -355,7 +359,7 @@ $onBand = !$signedInMember;
             <?php if (!$beside): ?>
                 <h2 id="programs" class="<?= $titleClass ?>">Open programs</h2>
             <?php endif; ?>
-            <div class="grid<?= $beside ? ' grid--beside n' . count($programs) : '' ?>">
+            <div class="grid<?= $beside ? ' grid--beside n' . count($programs) : $fewCardsClass(count($programs)) ?>">
                 <?php if ($beside): ?>
                     <?php /* Inside the grid, so it centres over the program cards only, not over the reflection. */ ?>
                     <h2 id="programs" class="<?= $titleClass ?> beside-title">Open programs</h2>
@@ -380,7 +384,7 @@ $onBand = !$signedInMember;
         <?php if (!empty($feedbackCards)): ?>
             <?php $fbTitleClass = 'section-title' . (empty($cards) && empty($programs) && ($reflectionCard === '' || $duo) && $onBand ? ' first' : ''); ?>
             <h2 id="feedback" class="<?= $fbTitleClass ?>">Share your feedback</h2>
-            <div class="grid">
+            <div class="grid<?= $fewCardsClass(count($feedbackCards)) ?>">
                 <?php foreach ($feedbackCards as $p): ?>
                     <a class="prog" href="<?= htmlspecialchars($p['href']) ?>" style="--tone: <?= htmlspecialchars($p['tone']) ?>;">
                         <span class="tick">
