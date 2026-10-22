@@ -7,24 +7,32 @@
  *   /admin/feedback-review?form=ID&id=RID     one response
  *
  * Same layout as Membership review: a sidebar, a search row, a table, and a two-column detail page.
- * Read-only apart from deleting a response (for privacy requests) and closing / reopening the form.
- * "Email respondent" is a plain mailto: link, so organizers write from their own mail client and
- * nothing is recorded here.
+ * Read-only apart from deleting a response (for privacy requests), closing / reopening the form and
+ * emailing the respondent.
+ *
+ * "Email respondent" is sent THROUGH THE SYSTEM (FeedbackMailer::sendReply), never a mailto: link, so the
+ * respondent's address is not copied into the organizer's own mail client. The organizer's sign-in email is
+ * set as Reply-To so the respondent can answer. Each send is written to the app log (who, to which response);
+ * the message text itself is not stored.
  */
 require_once __DIR__ . '/../../includes/init.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/require_role.php';
 require_once __DIR__ . '/../../includes/engage_page.php';
 require_once __DIR__ . '/../../includes/wikitext.php';
+require_once __DIR__ . '/../../includes/app_log.php';
 require_once __DIR__ . '/../../models/FormModel.php';
 require_once __DIR__ . '/../../models/FeedbackModel.php';
 require_once __DIR__ . '/../../includes/mail/CoreMail.php';   // formatExpiryIST(): stored UTC -> IST text
+require_once __DIR__ . '/../../includes/mail/feedback_mailer.php';   // sendReply()
 
 Auth::requireLogin();
 requireRole(['owner', 'organizer']);
 
 const FB_LOAD_MAX = 5000;   // most responses read for one form (search and paging happen in PHP)
 const FB_PER_PAGE = 25;
+const FB_MAIL_SUBJECT_MAX = 150;
+const FB_MAIL_BODY_MAX = 5000;
 
 $formModel = new FormModel();
 $fbModel   = new FeedbackModel();
@@ -105,6 +113,57 @@ if ($form) {
     }
 }
 
+$formTitle = $form ? (string) ($form['schema']['title'] ?? 'Feedback') : 'Feedback';
+
+// ---------------------------------------------------------------------------
+// Email the respondent, through the system. Runs after the response is loaded so the address always comes
+// from the stored response of THIS form, never from the request. The form posts back to the response URL.
+// Problems are shown on the page (the typed text is kept); a send is only reported as done when the mailer
+// says it really went out (it returns false in dev mode and on SMTP failure).
+// ---------------------------------------------------------------------------
+$emailError = '';
+$emailKeep  = ['subject' => '', 'message' => ''];
+if ($form && $resp && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'email') {
+    if (!CSRF::validate($_POST['csrf_token'] ?? '')) die('Invalid CSRF token.');
+
+    $subject = trim((string) preg_replace('/[\x00-\x1F\x7F]+/u', ' ', (string) ($_POST['subject'] ?? '')));
+    $message = trim(str_replace("\r\n", "\n", (string) ($_POST['message'] ?? '')));
+    $emailKeep = ['subject' => $subject, 'message' => $message];
+    $toEmail = (string) ($resp['email'] ?? '');
+
+    if ((int) ($_POST['response_id'] ?? 0) !== (int) $resp['id']) {
+        $emailError = 'That response does not match this page. Please reload it and try again.';
+    } elseif (!empty($resp['scrubbed_at']) || $toEmail === '' || !filter_var($toEmail, FILTER_VALIDATE_EMAIL)) {
+        $emailError = 'This respondent\'s email address is no longer on file, so nothing can be sent.';
+    } elseif ($subject === '' || mb_strlen($subject) > FB_MAIL_SUBJECT_MAX) {
+        $emailError = 'Please enter a subject (maximum ' . FB_MAIL_SUBJECT_MAX . ' characters).';
+    } elseif ($message === '' || mb_strlen($message) > FB_MAIL_BODY_MAX) {
+        $emailError = 'Please write a message (maximum ' . number_format(FB_MAIL_BODY_MAX) . ' characters).';
+    } else {
+        try {
+            $replyTo = strtolower(trim((string) Auth::email()));
+            $sent = FeedbackMailer::sendReply(
+                $toEmail,
+                (string) ($resp['name'] ?? ''),
+                MiniWikiText::stripToPlainText($formTitle),
+                $subject,
+                $message,
+                filter_var($replyTo, FILTER_VALIDATE_EMAIL) ? $replyTo : ''
+            );
+        } catch (Throwable $e) {
+            app_log("Feedback reply failed for response #{$resp['id']}: " . $e->getMessage());
+            $sent = false;
+        }
+
+        if ($sent) {
+            app_log("Feedback reply sent: response #{$resp['id']} (form #{$formId}) by " . currentAdminIdentifier());
+            header('Location: /admin/feedback-review?form=' . $formId . '&id=' . (int) $resp['id'] . '&emailed=1');
+            exit;
+        }
+        $emailError = 'The email could not be sent. Please try again in a moment.';
+    }
+}
+
 /** One answer as a single plain string (checkbox groups are joined). */
 $flat = fn($v): string => trim(is_array($v) ? implode(', ', $v) : (string) $v);
 
@@ -141,7 +200,6 @@ $fbUrl = function (array $over = []) use ($formId, $search): string {
     return '/admin/feedback-review' . ($q ? '?' . http_build_query($q) : '');
 };
 $daysSince = fn($ts) => max(0, (int) floor((time() - (int) strtotime((string) $ts)) / 86400));
-$formTitle = $form ? (string) ($form['schema']['title'] ?? 'Feedback') : 'Feedback';
 
 // ---------------------------------------------------------------------------
 // Page
@@ -240,10 +298,24 @@ $svgStar = '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.
     .side-actions form { margin: 0; }
     .pn { display: flex; justify-content: space-between; gap: 10px; }
     .pn .off { opacity: .45; pointer-events: none; }
+
+    /* Email respondent (sent through the system) */
+    .reply-fold { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+    .reply-fold > summary { cursor: pointer; font-size: 14.5px; font-weight: 800; list-style: none; color: var(--primary-dark); }
+    .reply-fold > summary::-webkit-details-marker { display: none; }
+    .reply-fold > summary::before { content: '\25B8'; margin-right: 8px; color: var(--muted); }
+    .reply-fold[open] > summary::before { content: '\25BE'; }
+    .reply-fold form { margin: 12px 0 0; }
+    .reply-fold .field { margin-bottom: 12px; }
+    .reply-fold input[type=text], .reply-fold textarea { width: 100%; padding: 10px 12px; background: #fff; color: var(--ink); border: 1.5px solid #C5D3DE; border-radius: 10px; font: inherit; font-size: 14px; }
+    .reply-fold input[type=text]:focus, .reply-fold textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 20%, transparent); }
+    .reply-fold .hint { display: block; margin-top: 6px; font-size: 12.5px; color: var(--muted); }
+    .reply-fold .err { margin: 0 0 12px; padding: 10px 12px; background: var(--accent-tint); border: 1.5px solid #f0c2bd; border-radius: 10px; font-size: 13.5px; color: var(--accent-dark); }
 </style>
 
 <?php if (!empty($_GET['deleted'])): ?><div class="alert ok">Response deleted.</div><?php endif; ?>
 <?php if (!empty($_GET['toggled'])): ?><div class="alert ok">Form status updated.</div><?php endif; ?>
+<?php if (!empty($_GET['emailed'])): ?><div class="alert ok">Email sent to the respondent.</div><?php endif; ?>
 
 <div class="adm-shell">
 
@@ -367,7 +439,9 @@ $svgStar = '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.
 <?php else: /* ================= one response ================= */
     $answers  = is_array($resp['answers']) ? $resp['answers'] : [];
     $scrubbed = !empty($resp['scrubbed_at']);
-    $subject  = 'Re: ' . MiniWikiText::stripToPlainText($formTitle);
+    $canEmail = !$scrubbed && !empty($resp['email']) && filter_var((string) $resp['email'], FILTER_VALIDATE_EMAIL);
+    $defaultSubject = 'Re: ' . MiniWikiText::stripToPlainText($formTitle);
+    $myEmail = strtolower(trim((string) Auth::email()));
     $fmt = function ($v) use ($flat, $h): string {
         $t = $flat($v);
         return $t === '' ? '&mdash;' : $h($t);
@@ -412,11 +486,32 @@ $svgStar = '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.
                 <p class="who-name"><?= $h($resp['name']) ?></p>
                 <p class="who-sub"><?= $h($resp['email']) ?></p>
             <?php endif; ?>
+
+            <?php if ($canEmail): ?>
+            <details class="reply-fold" id="reply"<?= $emailError !== '' ? ' open' : '' ?>>
+                <summary>Email respondent</summary>
+                <form method="POST" action="<?= $h($fbUrl(['id' => (int) $resp['id']])) ?>#reply"><?= CSRF::getInputField() ?>
+                    <input type="hidden" name="action" value="email">
+                    <input type="hidden" name="form_id" value="<?= (int) $formId ?>">
+                    <input type="hidden" name="response_id" value="<?= (int) $resp['id'] ?>">
+                    <?php if ($emailError !== ''): ?><div class="err"><?= $h($emailError) ?></div><?php endif; ?>
+                    <div class="field">
+                        <label for="mail-subject">Subject</label>
+                        <input type="text" id="mail-subject" name="subject" maxlength="<?= (int) FB_MAIL_SUBJECT_MAX ?>" required
+                               value="<?= $h($emailKeep['subject'] !== '' ? $emailKeep['subject'] : $defaultSubject) ?>">
+                    </div>
+                    <div class="field">
+                        <label for="mail-message">Message</label>
+                        <textarea id="mail-message" name="message" rows="7" maxlength="<?= (int) FB_MAIL_BODY_MAX ?>" required><?= $h($emailKeep['message']) ?></textarea>
+                        <span class="hint">Sent by DCW Engage, not from your mail app. The email greets them by name.
+                            <?= $myEmail !== '' ? 'Replies go to ' . $h($myEmail) . '.' : '' ?></span>
+                    </div>
+                    <button type="submit" class="btn-ok" style="padding:8px 18px;font-size:13.5px;">Send email</button>
+                </form>
+            </details>
+            <?php endif; ?>
+
             <div class="side-actions">
-                <?php if (!$scrubbed && !empty($resp['email'])): ?>
-                    <a class="btn-ok" style="padding:8px 18px;font-size:13.5px;"
-                       href="<?= $h('mailto:' . $resp['email'] . '?subject=' . rawurlencode($subject)) ?>">Email respondent</a>
-                <?php endif; ?>
                 <form method="POST" onsubmit="return confirm('Delete this response permanently?');"><?= CSRF::getInputField() ?>
                     <input type="hidden" name="action" value="delete">
                     <input type="hidden" name="form_id" value="<?= (int) $formId ?>">
