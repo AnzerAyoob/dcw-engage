@@ -136,6 +136,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $decodedSchema = json_decode($schemaJson, true);
         if (json_last_error() !== JSON_ERROR_NONE || !is_array($decodedSchema)) {
             $error = "Invalid JSON schema format generated.";
+        } elseif (!FormModel::hasUniqueFieldNames($decodedSchema)) {
+            $error = "Every question must have a unique, non-empty field name. Please use distinct question labels and try again.";
         } elseif ($kind === 'feedback' && in_array('file', array_column(FormModel::schemaFields($decodedSchema), 'type'), true)) {
             // Feedback responses are stored without any upload handling, so a file question could never work.
             $error = "Feedback forms cannot include file upload questions.";
@@ -156,6 +158,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 unset($decodedSchema['kind']);
             }
+            // Preserve the legacy flat field list for review pages and filters that still read schema['fields'];
+            // sections remains available for layout and display order.
+            $decodedSchema['fields'] = FormModel::schemaFields($decodedSchema);
             $schemaJson = json_encode($decodedSchema, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
             global $db;
