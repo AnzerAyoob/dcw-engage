@@ -3,6 +3,10 @@
 // Emails for event applications (tracking IDs start "DCW-"): verification code,
 // magic link, confirmation, status updates, "sent back for more information",
 // and the organizer alert.
+//
+// Emails to the applicant name the event only (CoreMail::eventTitle()), e.g. "Train-a-Wikipedian"
+// rather than "Scholarship Application Form: Train-a-Wikipedian, 4th Edition". The organizer
+// alert and the dev logs keep the full form title.
 require_once __DIR__ . '/CoreMail.php';
 
 class ApplicationMail {
@@ -22,7 +26,8 @@ class ApplicationMail {
         $e = fn($s) => CoreMail::e($s);
         $expiresTime = CoreMail::formatExpiryIST($expiresAt);
         $shownCode = substr((string) $code, 0, 4) . '-' . substr((string) $code, 4);
-        // Form titles are organizer-typed; never drop them into HTML raw.
+        // Event name only; form titles are organizer-typed, so never drop them into HTML raw.
+        $formTitle = CoreMail::eventTitle($formTitle);
         $safeTitle = $e($formTitle);
 
         // Greet by name when we have one; fall back to the generic greeting otherwise.
@@ -87,6 +92,8 @@ class ApplicationMail {
     public static function received($email, $applicantName, $trackingId, $formTitle) {
         $e = fn($s) => CoreMail::e($s);
         $applicantName = self::displayName($applicantName);
+        $fullTitle = $formTitle;                         // for the dev log
+        $formTitle = CoreMail::eventTitle($formTitle);   // what the applicant sees
         $inner = "
             <p>Dear <strong>" . $e($applicantName) . "</strong>,</p>
             <p>Thank you for submitting your application for <strong>" . $e($formTitle) . "</strong>. We have successfully received your details.</p>
@@ -99,7 +106,7 @@ class ApplicationMail {
             'to' => $email, 'to_name' => $applicantName,
             'subject' => "Application Received - $formTitle",
             'html' => $inner, 'alt' => $alt,
-            'dev_result' => true, 'dev_log' => "Confirmation email for $email ($trackingId, $formTitle)",
+            'dev_result' => true, 'dev_log' => "Confirmation email for $email ($trackingId, $fullTitle)",
         ]);
     }
 
@@ -112,6 +119,8 @@ class ApplicationMail {
     public static function statusUpdate($email, $applicantName, $status, $trackingId, $formTitle, $note = '') {
         $e = fn($s) => CoreMail::e($s);
         $applicantName = self::displayName($applicantName);
+        $fullTitle = $formTitle;                         // for the dev log
+        $formTitle = CoreMail::eventTitle($formTitle);   // what the applicant sees
         $noteHtml = $note !== ''
             ? "<p><strong>Remarks / Reviewer Notes:</strong><br>" . nl2br($e($note)) . "</p>"
             : '';
@@ -128,7 +137,7 @@ class ApplicationMail {
             'subject' => "Update regarding your $formTitle application - $status",
             'html' => $inner, 'alt' => $alt,
             'dev_result' => true,
-            'dev_log' => "Status update email for $email: $trackingId ($formTitle) is now '$status'" . ($note ? " | note: $note" : ''),
+            'dev_log' => "Status update email for $email: $trackingId ($fullTitle) is now '$status'" . ($note ? " | note: $note" : ''),
         ]);
     }
 
@@ -144,6 +153,8 @@ class ApplicationMail {
     public static function sentBack($email, $applicantName, $trackingId, $formTitle, $message, $token) {
         $e = fn($s) => CoreMail::e($s);
         $applicantName = self::displayName($applicantName);
+        $fullTitle = $formTitle;                         // for the dev log
+        $formTitle = CoreMail::eventTitle($formTitle);   // what the applicant sees
         $appUrl = CoreMail::appUrl() . '/resume/' . $token;
         $url = $e($appUrl);
 
@@ -163,7 +174,7 @@ class ApplicationMail {
             'subject' => "Additional information required for your $formTitle application",
             'html' => $inner, 'alt' => $alt,
             'dev_result' => false,
-            'dev_log' => "Send-back email for $email ($trackingId, $formTitle): $appUrl",
+            'dev_log' => "Send-back email for $email ($trackingId, $fullTitle): $appUrl",
         ]);
     }
 
@@ -171,6 +182,7 @@ class ApplicationMail {
      * Alerts the organizer(s) in charge of a form that a new application
      * arrived. notify_emails may be comma-separated. Returns true when there
      * is nobody to notify.
+     * Keeps the full form title: organizers may run several forms for one event.
      */
     public static function organizerAlert($form, $applicantEmail, $applicantName, $trackingId) {
         $e = fn($s) => CoreMail::e($s);
