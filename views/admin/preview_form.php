@@ -24,7 +24,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !CSRF::validate($_POST['csrf_token'
 
 $schema = json_decode($_POST['schema_json'] ?? '', true);
 
-if (!is_array($schema) || !is_array($schema['sections'] ?? null) && !is_array($schema['fields'] ?? null)) {
+if (!is_array($schema) || (!is_array($schema['sections'] ?? null) && !is_array($schema['fields'] ?? null))) {
     http_response_code(400);
     die('Nothing to preview yet — add at least one question first.');
 }
