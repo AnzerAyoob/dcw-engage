@@ -7,7 +7,8 @@
  *
  * "Discarded" is a staff-only status for spam / junk applications: it is set silently (no email),
  * hides the application from the review queue, and can be undone ("Restore" sets it back to New).
- * Applicants never see it: the public tracking lookup reports a discarded application as "Under Review".
+ * Applicants never see it: the public tracking lookup reports a discarded application as "Under Review",
+ * and the member dashboard does the same (see dash_app_status() in views/member/dashboard.php).
  */
 
 require_once __DIR__ . '/MemberModel.php';
@@ -209,6 +210,29 @@ class ApplicationModel {
             $row['status'] = 'Under Review';
         }
         return $row;
+    }
+
+    /**
+     * Every application submitted with this email, newest first. Powers "My applications" on the
+     * member dashboard (/member/dashboard), which passes the signed-in member's own email, so
+     * nobody sees anyone else's applications.
+     *
+     * The status is returned as stored. This is applicant-facing data, so the caller must map
+     * 'Discarded' to "Under Review" (dash_app_status() does), like getApplicationByTrackingIdAndEmail().
+     * Deliberately does not return form_data: the list needs only the title, type, status and IDs.
+     */
+    public function listForMember($email) {
+        $stmt = $this->db->prepare("
+            SELECT a.id, a.status, a.tracking_id, a.created_at,
+                   f.form_type,
+                   JSON_UNQUOTE(JSON_EXTRACT(f.schema_json, '$.title')) AS form_title
+            FROM applications a
+            JOIN forms f ON a.form_id = f.id
+            WHERE a.email = :email
+            ORDER BY a.created_at DESC
+        ");
+        $stmt->execute(['email' => $email]);
+        return $stmt->fetchAll();
     }
 
     /**
