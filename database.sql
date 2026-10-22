@@ -68,7 +68,8 @@
 --         php bin/create_admin.php admin@example.com
 --
 --   * migrations/ is for UPGRADING an install that was set up before a table
---     existed. Do not run it on a database you just created from this file.
+--     or column existed. Do not run it on a database you just created from
+--     this file.
 --
 -- ============================================================================
 
@@ -206,12 +207,17 @@ CREATE TABLE IF NOT EXISTS `magic_links` (
   CONSTRAINT `magic_links_ibfk_1` FOREIGN KEY (`application_id`) REFERENCES `applications` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Email verification codes (8-character OTP typed into the page the visitor has open).
+-- token_hash holds an HMAC-SHA256 of (form|email|code), 64 hex chars.
+-- attempts counts wrong guesses spent against a code; the cap is enforced in
+-- EmailVerificationModel::consume().
 CREATE TABLE IF NOT EXISTS `email_verifications` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `form_id` int(11) DEFAULT NULL,
   `email` varchar(255) NOT NULL,
   `name` varchar(150) DEFAULT NULL,
   `token_hash` char(64) NOT NULL,
+  `attempts` tinyint(3) UNSIGNED NOT NULL DEFAULT 0,
   `expires_at` datetime NOT NULL,
   `used_at` datetime DEFAULT NULL,
   `invalidated_at` datetime DEFAULT NULL,
