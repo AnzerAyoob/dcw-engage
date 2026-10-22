@@ -1,6 +1,6 @@
 <?php
 // includes/mail/ApplicationMail.php
-// Emails for event applications (tracking IDs start "DCW-"): verify email,
+// Emails for event applications (tracking IDs start "DCW-"): verification code,
 // magic link, confirmation, status updates, "sent back for more information",
 // and the organizer alert.
 require_once __DIR__ . '/CoreMail.php';
@@ -13,13 +13,15 @@ class ApplicationMail {
     }
 
     /**
-     * The "verify your email" link that opens an application form (#67). Callers must not let the result change what the visitor sees.
+     * The verification code that opens an application form (#67). Callers must not let the result change what the visitor sees.
+     * $code is the raw 8-character code from EmailVerificationModel::request(); it is shown as ABCD-EFGH.
      * $name is the applicant's name from the gate form; when empty the greeting falls back to "Applicant".
+     * The subject deliberately does not contain the code.
      */
-    public static function emailVerification($email, $formTitle, $verifyUrl, $expiresAt, $name = '') {
+    public static function emailVerification($email, $formTitle, $code, $expiresAt, $name = '') {
         $e = fn($s) => CoreMail::e($s);
         $expiresTime = CoreMail::formatExpiryIST($expiresAt);
-        $url = $e($verifyUrl);
+        $shownCode = substr((string) $code, 0, 4) . '-' . substr((string) $code, 4);
         // Form titles are organizer-typed; never drop them into HTML raw.
         $safeTitle = $e($formTitle);
 
@@ -30,18 +32,20 @@ class ApplicationMail {
 
         $inner = "
             <p>Dear $greetHtml,</p>
-            <p>Please verify your email address to initiate your application for <strong>$safeTitle</strong>.</p>
-            <div class='btn-wrapper'><a href='$url' class='btn'>Verify Email Address</a></div>
-            <p>If the button above does not work, please copy and paste the following link into your browser:<br><br><a href='$url' style='color: #106b9a; word-break: break-all;'>$url</a></p>
-            <p><strong>Note: This link is valid until $expiresTime</strong> and can only be used once.</p>
-            <p style='margin-bottom:0;'>If you did not initiate this request, please ignore this email. No further action will be taken and no application will be created.</p>";
+            <p>Please use the verification code below to initiate your application for <strong>$safeTitle</strong>. Enter it on the page where you provided your email address.</p>
+            <div style='background:#f1f7fb; border-left:4px solid #106b9a; padding:16px 18px; margin:0 0 20px; text-align:center;'>
+                <span style='font-family:Menlo,Consolas,monospace; font-size:28px; font-weight:bold; letter-spacing:4px; color:#0f172a;'>" . $e($shownCode) . "</span>
+            </div>
+            <p><strong>Note: This code is valid until $expiresTime</strong> and can be used only once. Please do not share it with anyone.</p>
+            <p style='margin-bottom:0;'>If you did not initiate this request, you may safely ignore this email. No further action will be taken and no application will be created.</p>";
 
-        $alt = "Dear $greetName,\n\nPlease verify your email address to initiate your application for $formTitle.\n\nVerify your email here:\n$verifyUrl\n\nNote: This link is valid until $expiresTime and can only be used once.\n\nIf you did not initiate this request, please ignore this email. No further action will be taken.\n\nDeoband Community Wikimedia";
+        $alt = "Dear $greetName,\n\nPlease use the verification code below to initiate your application for $formTitle. Enter it on the page where you provided your email address.\n\nVerification code: $shownCode\n\nNote: This code is valid until $expiresTime and can be used only once. Please do not share it with anyone.\n\nIf you did not initiate this request, you may safely ignore this email. No further action will be taken.\n\nDeoband Community Wikimedia";
 
         $mail = [
-            'to' => $email, 'subject' => 'Verify your email address to begin application',
+            'to' => $email, 'subject' => 'Your verification code - DCW Engage',
             'html' => $inner, 'alt' => $alt,
-            'dev_result' => false, 'dev_log' => "Email verification for $email: $verifyUrl",
+            // Dev mode sends nothing, so the code is written to the dev log only so it can be tested.
+            'dev_result' => false, 'dev_log' => "Email verification code for $email: $shownCode",
         ];
         if ($name !== '') {
             $mail['to_name'] = $name;   // shows the person's name on the To: line
@@ -60,12 +64,12 @@ class ApplicationMail {
 
         $inner = "
             <p>Dear <strong>$name</strong>,</p>
-            <p>Your application draft has been successfully saved. We have generated a secure access link for you to resume and update your application prior to the deadline.</p>
+            <p>Your application draft has been saved successfully. We have generated a secure access link for you to resume and update your application prior to the deadline.</p>
             <div class='btn-wrapper'><a href='$url' class='btn'>Access My Application</a></div>
             <p>If the button above does not work, please copy and paste the following link into your browser:<br><br><a href='$url' style='color: #106b9a; word-break: break-all;'>$url</a></p>
             <p style='margin-bottom:0;'>For security purposes, this link will expire automatically. Kindly do not share this link with anyone.</p>";
 
-        $alt = "Dear $applicantName,\n\nYour application draft has been successfully saved. Please use the link below to resume your application:\n$appUrl\n\nFor security purposes, this link will expire automatically. Kindly do not share this link with anyone.\n\nWarm regards,\nDeoband Community Wikimedia";
+        $alt = "Dear $applicantName,\n\nYour application draft has been saved successfully. Please use the link below to resume your application:\n$appUrl\n\nFor security purposes, this link will expire automatically. Kindly do not share this link with anyone.\n\nWarm regards,\nDeoband Community Wikimedia";
 
         return CoreMail::send([
             'to' => $email, 'to_name' => $applicantName,
@@ -85,11 +89,11 @@ class ApplicationMail {
         $applicantName = self::displayName($applicantName);
         $inner = "
             <p>Dear <strong>" . $e($applicantName) . "</strong>,</p>
-            <p>Thank you for submitting your application for <strong>" . $e($formTitle) . "</strong>. We have successfully received your application details.</p>
+            <p>Thank you for submitting your application for <strong>" . $e($formTitle) . "</strong>. We have successfully received your details.</p>
             <p><strong>Tracking ID:</strong> " . $e($trackingId) . "</p>
             <p style='margin-bottom:0;'>We will notify you via email once a decision has been taken. We appreciate your interest and participation.</p>";
 
-        $alt = "Dear $applicantName,\n\nThank you for submitting your application for $formTitle. We have successfully received your application details.\nTracking ID: $trackingId\n\nWe will notify you via email once a decision has been taken.";
+        $alt = "Dear $applicantName,\n\nThank you for submitting your application for $formTitle. We have successfully received your details.\nTracking ID: $trackingId\n\nWe will notify you via email once a decision has been taken.";
 
         return CoreMail::send([
             'to' => $email, 'to_name' => $applicantName,
@@ -145,18 +149,18 @@ class ApplicationMail {
 
         $inner = "
             <p>Dear <strong>" . $e($applicantName) . "</strong>,</p>
-            <p>The reviewers need some more information for your application for <strong>" . $e($formTitle) . "</strong> (Tracking ID: " . $e($trackingId) . ").</p>
-            <p><strong>What we need:</strong><br>" . nl2br($e($message)) . "</p>
-            <p>Please use the secure link below to update your application and resubmit it.</p>
+            <p>The reviewers require additional information regarding your application for <strong>" . $e($formTitle) . "</strong> (Tracking ID: " . $e($trackingId) . ").</p>
+            <p><strong>Required Information:</strong><br>" . nl2br($e($message)) . "</p>
+            <p>Please use the secure link below to update your application and resubmit it at the earliest.</p>
             <div class='btn-wrapper'><a href='$url' class='btn'>Update My Application</a></div>
             <p>If the button above does not work, please copy and paste the following link into your browser:<br><br><a href='$url' style='color: #106b9a; word-break: break-all;'>$url</a></p>
-            <p style='margin-bottom:0;'>For security purposes, this link will expire automatically. Kindly do not share it with anyone.</p>";
+            <p style='margin-bottom:0;'>For security purposes, this link will expire automatically. Kindly do not share this link with anyone.</p>";
 
-        $alt = "Dear $applicantName,\n\nThe reviewers need some more information for your application for $formTitle (Tracking ID: $trackingId).\n\nWhat we need:\n$message\n\nUpdate and resubmit your application here:\n$appUrl\n\nFor security purposes, this link will expire automatically. Kindly do not share it with anyone.\n\nDeoband Community Wikimedia";
+        $alt = "Dear $applicantName,\n\nThe reviewers require additional information regarding your application for $formTitle (Tracking ID: $trackingId).\n\nRequired Information:\n$message\n\nPlease update and resubmit your application here:\n$appUrl\n\nFor security purposes, this link will expire automatically. Kindly do not share this link with anyone.\n\nDeoband Community Wikimedia";
 
         return CoreMail::send([
             'to' => $email, 'to_name' => $applicantName,
-            'subject' => "More information needed for your $formTitle application",
+            'subject' => "Additional information required for your $formTitle application",
             'html' => $inner, 'alt' => $alt,
             'dev_result' => false,
             'dev_log' => "Send-back email for $email ($trackingId, $formTitle): $appUrl",
