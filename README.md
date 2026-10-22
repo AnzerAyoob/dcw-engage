@@ -47,7 +47,7 @@ This repository contains the backend, organizer workspace, member dashboard, pub
 │   ├── db.php            # PDO database connection (singleton)
 │   ├── config.example.php # Template for local configuration
 │   └── mail/             # Mail composition classes
-├── migrations/           # Database migration scripts
+├── migrations/           # Dated, schema-only upgrade scripts for existing installs
 ├── models/               # Domain models and business logic
 │   ├── MemberModel.php               # Membership and chapter logic
 │   ├── MemberAuthModel.php           # Member login and password management
@@ -62,7 +62,7 @@ This repository contains the backend, organizer workspace, member dashboard, pub
 │   ├── member/           # Member dashboard and forms
 │   └── forms/            # Form rendering engine
 ├── composer.json         # Composer dependencies
-├── database.sql          # Schema and seed data for local setup
+├── database.sql          # Complete schema (no data) for a fresh install
 ├── index.php             # Front-controller entry point
 ├── README.md             # Project overview and setup guide
 ├── SECURITY.md           # Security policy and responsible disclosure guidance
@@ -107,11 +107,22 @@ Important: `includes/config.php` is local-only and should never be committed.
 
 ### 3. Prepare the database
 
-Create a database and import the schema:
+Create an empty database and import the schema. **A fresh install needs only `database.sql`**. It creates every table the app uses, plus a switched-off default settings row for Internet Support and Reimbursements:
 
 ```bash
 mysql -u root -p your_database_name < database.sql
 ```
+
+Do **not** run `migrations/` on a fresh database. Those files are for upgrading an install that was set up before a table existed (each is a dated, schema-only `CREATE TABLE IF NOT EXISTS` file).
+
+#### Optional integrations
+
+Two features read from external sources and are optional. If they are not configured, the related section is simply left out:
+
+- **"My certificates" panel:** copy `includes/certs_db.example.php` to `includes/certs_db.php` and fill in the certificates database credentials.
+- **"What's on" events section:** reads the wiki's public API, so it needs no credentials. Copy `includes/events_db.example.php` to `includes/events_db.php` only if you need to change the API URL or Cargo table name.
+
+Both real files are gitignored; never commit them.
 
 ### 4. Create the first organizer account
 

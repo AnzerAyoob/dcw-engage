@@ -12,6 +12,9 @@ config.php
 # The committed template is includes/certs_db.example.php
 includes/certs_db.php
 
+# Optional events settings (the real file stays local; the committed template is includes/events_db.example.php)
+includes/events_db.php
+
 # Security: Ignore all log files (prevents leaking sensitive errors/PII)
 *.log
 logs/
