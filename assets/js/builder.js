@@ -232,20 +232,19 @@ function createSection(sectionData = {}) {
     const section = document.createElement('section');
     section.className = 'form-section-card';
     section.dataset.sectionId = sectionData.id || ('section_' + sectionCounter);
-    section.style.cssText = 'border:1px solid var(--border); border-radius:14px; padding:20px; margin:22px 0; background:var(--surface, #fff);';
     section.innerHTML = `
-        <div class="row" style="justify-content:space-between; align-items:center;">
-            <strong style="font-size:18px;">Section ${sectionCounter}</strong>
+        <div class="row section-card-header">
+            <strong>Section ${sectionCounter}</strong>
             <button type="button" class="btn-danger remove-section-btn">Remove section</button>
         </div>
-        <label>Section title</label>
-        <input type="text" class="section-title" placeholder="e.g. Personal Details" value="${String(sectionData.title || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}">
-        <label>Section introduction (optional)</label>
-        <textarea class="section-description" rows="2" placeholder="Briefly explain this section to applicants" style="width:100%; padding:12px; border:1.5px solid var(--border); border-radius:10px;">${String(sectionData.description || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</textarea>
+        <label for="section_title_${sectionCounter}">Section title</label>
+        <input type="text" id="section_title_${sectionCounter}" class="section-title" placeholder="e.g. Personal Details" value="${String(sectionData.title || '').replace(/&/g, '&amp;').replace(/\"/g, '&quot;').replace(/</g, '&lt;')}">
+        <label for="section_description_${sectionCounter}">Section introduction (optional)</label>
+        <textarea id="section_description_${sectionCounter}" class="section-description" rows="2" placeholder="Briefly explain this section to applicants">${String(sectionData.description || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</textarea>
         <div class="section-fields"></div>
-        <button type="button" class="btn-outline btn-sm add-section-field" style="margin-top:12px;">+ Add Question to Section</button>
+        <button type="button" class="btn-outline btn-sm add-section-field">+ Add Question to Section</button>
     `;
-    sectionsContainer.appendChild(section);
+    sectionsContainer.appendChild(section);    sectionsContainer.appendChild(section);
     const fieldContainer = section.querySelector('.section-fields');
     if (Array.isArray(sectionData.fields) && sectionData.fields.length) {
         sectionData.fields.forEach(field => createFieldCard(field, fieldContainer));
@@ -261,12 +260,17 @@ sectionsContainer.addEventListener('click', function (e) {
     }
     const remove = e.target.closest('.remove-section-btn');
     if (remove) {
+        const section = remove.closest('.form-section-card');
         const all = sectionsContainer.querySelectorAll('.form-section-card');
         if (all.length <= 1) {
             window.alert('A form must have at least one section.');
             return;
         }
-        remove.closest('.form-section-card').remove();
+        if (section.querySelectorAll('.field-card').length > 0
+            && !window.confirm('This section contains questions. Removing it will permanently remove those questions from this form. Continue?')) {
+            return;
+        }
+        section.remove();
     }
 });
 
