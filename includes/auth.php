@@ -168,6 +168,15 @@ class Auth {
     }
 
     /**
+     * Is this the signed-in staff member's own address? Used so nobody reviews,
+     * approves or pays a request they filed themselves (staff can be members too).
+     */
+    public static function isOwnEmail($email): bool {
+        $mine = strtolower(trim((string) self::email()));
+        return $mine !== '' && $mine === strtolower(trim((string) $email));
+    }
+
+    /**
      * Read the account's roles from admin_user_roles, add the primary role,
      * keep only roles that exist, and remember them for this request and in
      * the session. If admin_user_roles cannot be read (for example the

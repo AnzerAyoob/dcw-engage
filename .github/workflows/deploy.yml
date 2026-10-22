@@ -6,6 +6,12 @@ on:
       - main # This will trigger the deployment every time you merge code into the main branch
   workflow_dispatch: # Allows you to manually trigger the deployment from the GitHub Actions tab
 
+# One deploy at a time: a merge made while another deploy is still uploading
+# waits for it, instead of both uploading to the server at once.
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
 jobs:
   web-deploy:
     name: Deploy
