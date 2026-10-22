@@ -222,11 +222,12 @@ if (!empty($reflections)) {
 
 // With only one or two programs the row has spare room, so the reflection card sits beside them
 // instead of dropping to the next row. With three or more programs it keeps its own full-width row.
-// With upcoming events AND a reflection, the two sit side by side in their own row below the programs
-// (events on the left, reflection on the right), each under its own heading ("Upcoming Events" and
-// "From our community"). In that case the reflection is not repeated inside the programs grid.
-$duo = $reflectionCard !== '' && !empty($events);
-$beside = !$duo && $reflectionCard !== '' && !empty($programs) && count($programs) <= 2;
+// With upcoming events AND a reflection, the reflection gets its own row under the events, with the
+// heading "From our community". The events keep the full width (cards side by side), so a tall events
+// column never leaves an empty area beside a short reflection. In that case the reflection is not
+// repeated inside the programs grid.
+$reflectionRow = $reflectionCard !== '' && !empty($events);
+$beside = !$reflectionRow && $reflectionCard !== '' && !empty($programs) && count($programs) <= 2;
 
 // A row with only one or two cards and nothing beside them: the cards share the full width instead of
 // sitting small in the middle of an empty row. A single card becomes one wide horizontal card.
@@ -374,15 +375,15 @@ $onBand = !$signedInMember;
                         <span class="go"><?= htmlspecialchars($p['cta']) ?> <span aria-hidden="true">→</span></span>
                     </a>
                 <?php endforeach; ?>
-                <?= $duo ? '' : $reflectionCard ?>
+                <?= $reflectionRow ? '' : $reflectionCard ?>
             </div>
-        <?php elseif ($reflectionCard !== '' && !$duo): ?>
+        <?php elseif ($reflectionCard !== '' && !$reflectionRow): ?>
             <div class="grid"><?= $reflectionCard ?></div>
         <?php endif; ?>
 
         <?php /* Feedback forms: their own section, "Give feedback" wording, never under "Open programs". */ ?>
         <?php if (!empty($feedbackCards)): ?>
-            <?php $fbTitleClass = 'section-title' . (empty($cards) && empty($programs) && ($reflectionCard === '' || $duo) && $onBand ? ' first' : ''); ?>
+            <?php $fbTitleClass = 'section-title' . (empty($cards) && empty($programs) && ($reflectionCard === '' || $reflectionRow) && $onBand ? ' first' : ''); ?>
             <h2 id="feedback" class="<?= $fbTitleClass ?>">Share your feedback</h2>
             <div class="grid<?= $fewCardsClass(count($feedbackCards)) ?>">
                 <?php foreach ($feedbackCards as $p): ?>
@@ -401,22 +402,16 @@ $onBand = !$signedInMember;
 
         <?php if (!empty($events)): ?>
             <?php $evTitleClass = 'section-title' . (empty($cards) && empty($programs) && empty($feedbackCards) && $onBand ? ' first' : ''); ?>
-            <?php if ($duo): ?>
-                <?php /* Title, events, title, reflection: each card has its own heading, and on phones it stacks in that order. */ ?>
-                <div class="duo" id="events">
-                    <h2 class="<?= $evTitleClass ?> duo-title t-events">Upcoming Events</h2>
-                    <div class="evt-col">
-                        <?php foreach ($events as $ev) echo $eventCard($ev); ?>
-                    </div>
-                    <h2 class="<?= $evTitleClass ?> duo-title t-refl">From our community</h2>
-                    <?= $reflectionCard ?>
+            <section class="events" id="events" aria-label="Upcoming Events">
+                <h2 class="<?= $evTitleClass ?>">Upcoming Events</h2>
+                <div class="grid<?= count($events) === 1 ? ' one' : '' ?>">
+                    <?php foreach ($events as $ev) echo $eventCard($ev); ?>
                 </div>
-            <?php else: ?>
-                <section class="events" id="events" aria-label="Upcoming Events">
-                    <h2 class="<?= $evTitleClass ?>">Upcoming Events</h2>
-                    <div class="grid">
-                        <?php foreach ($events as $ev) echo $eventCard($ev); ?>
-                    </div>
+            </section>
+            <?php if ($reflectionRow): ?>
+                <section class="community" id="community" aria-label="From our community">
+                    <h2 class="section-title">From our community</h2>
+                    <div class="grid"><?= $reflectionCard ?></div>
                 </section>
             <?php endif; ?>
         <?php endif; ?>
