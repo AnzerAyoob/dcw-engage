@@ -248,6 +248,17 @@ class FormModel {
         ]];
     }
 
+    /** Ensure flattened field names are present and unique across all sections. */
+    public static function hasUniqueFieldNames(array $schema): bool {
+        $seen = [];
+        foreach (self::schemaFields($schema) as $field) {
+            $name = trim((string) ($field['name'] ?? ''));
+            if ($name === '' || isset($seen[$name])) return false;
+            $seen[$name] = true;
+        }
+        return true;
+    }
+
     /** Flatten fields for validation, uploads, exports, and other non-layout operations. */
     public static function schemaFields(array $schema): array {
         $fields = [];
