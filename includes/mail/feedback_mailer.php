@@ -2,6 +2,10 @@
 // includes/mail/feedback_mailer.php
 //
 // Emails for feedback forms. Wording only: sending is CoreMail::send(), like every other subject class.
+//
+// Emails to the respondent name the event only (CoreMail::eventTitle()), e.g. "AI, Composition,
+// Pedagogy, and Wiki Panel" rather than "Community Input: AI, Composition, Pedagogy, and Wiki Panel
+// (January 2027)". The organizer alert and the dev logs keep the full form title.
 
 require_once __DIR__ . '/CoreMail.php';
 
@@ -13,6 +17,8 @@ class FeedbackMailer {
      * The subject deliberately does not contain the code.
      */
     public static function sendVerification($email, $name, $formTitle, $code, $expiresAtText = '') {
+        $fullTitle = $formTitle;                         // for the dev log
+        $formTitle = CoreMail::eventTitle($formTitle);   // what the respondent sees
         $title     = CoreMail::e($formTitle);
         $shownCode = substr((string) $code, 0, 4) . '-' . substr((string) $code, 4);
         $expiry    = $expiresAtText !== '' ? ' This code is valid for a single use and expires on ' . CoreMail::e($expiresAtText) . '.' : ' This code is valid for a single use.';
@@ -40,7 +46,7 @@ class FeedbackMailer {
             'alt'        => $alt,
             'dev_result' => true,
             // Dev mode sends nothing, so the code is written to the dev log only so it can be tested.
-            'dev_log'    => "Feedback verification code to $email ($formTitle): $shownCode",
+            'dev_log'    => "Feedback verification code to $email ($fullTitle): $shownCode",
         ]);
     }
 
@@ -49,6 +55,8 @@ class FeedbackMailer {
      * no link, nothing to click.
      */
     public static function sendReceipt($email, $name, $formTitle) {
+        $fullTitle = $formTitle;                         // for the dev log
+        $formTitle = CoreMail::eventTitle($formTitle);   // what the respondent sees
         $title = CoreMail::e($formTitle);
 
         $html = '<p>' . CoreMail::greeting($name) . '</p>'
@@ -68,7 +76,7 @@ class FeedbackMailer {
             'html'       => $html,
             'alt'        => $alt,
             'dev_result' => true,
-            'dev_log'    => "Feedback receipt to $email ($formTitle)",
+            'dev_log'    => "Feedback receipt to $email ($fullTitle)",
         ]);
     }
 
@@ -79,6 +87,8 @@ class FeedbackMailer {
      * Returns true only when a message really went out (false in dev mode).
      */
     public static function sendReply($email, $name, $formTitle, $subject, $message, $replyTo = '', $replyToName = '') {
+        $fullTitle = $formTitle;                         // for the dev log
+        $formTitle = CoreMail::eventTitle($formTitle);   // what the respondent sees
         $title = CoreMail::e($formTitle);
         $canReply = $replyTo !== '' && filter_var($replyTo, FILTER_VALIDATE_EMAIL);
 
@@ -99,7 +109,7 @@ class FeedbackMailer {
             'html'       => $html,
             'alt'        => $alt,
             'dev_result' => false,   // dev mode sends nothing, so the organizer is told it was not sent
-            'dev_log'    => "Feedback reply to $email ($formTitle)",
+            'dev_log'    => "Feedback reply to $email ($fullTitle)",
         ];
         if ($canReply) {
             $opts['reply_to'] = [$replyTo, (string) $replyToName];
@@ -110,6 +120,7 @@ class FeedbackMailer {
     /**
      * Alert to the form's notify_emails (comma separated). Says that feedback arrived and links to
      * the review page; it does not repeat the feedback or the respondent's details.
+     * Keeps the full form title: organizers may run several forms for one event.
      */
     public static function sendOrganizerAlert($notifyEmails, $formTitle, $formId) {
         $addresses = array_values(array_filter(
