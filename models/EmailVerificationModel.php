@@ -40,6 +40,12 @@ class EmailVerificationModel {
     private const CODE_LENGTH = 8;
     private const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 
+    /** The placeholder shipped in config.example.php; never acceptable as a real secret. */
+    private const PLACEHOLDER_SECRET = 'replace-with-a-long-random-string';
+
+    /** Shortest otp_secret accepted. Generate one with: php -r 'echo bin2hex(random_bytes(32));' */
+    private const MIN_SECRET_LENGTH = 32;
+
     private $db;
     private $expiry;
     private $secret;
@@ -50,9 +56,15 @@ class EmailVerificationModel {
         $config = require __DIR__ . '/../includes/config.php';
         $this->expiry = $config['security']['email_verify_expiry'] ?? self::DEFAULT_EXPIRY;
 
-        $this->secret = $config['security']['otp_secret'] ?? '';
-        if ($this->secret === '') {
-            throw new \RuntimeException("Missing security.otp_secret config value.");
+        // Refuse to run with a missing, placeholder or short key: a forgotten config line
+        // would otherwise quietly give a guessable HMAC key.
+        $this->secret = (string) ($config['security']['otp_secret'] ?? '');
+        if ($this->secret === ''
+            || $this->secret === self::PLACEHOLDER_SECRET
+            || strlen($this->secret) < self::MIN_SECRET_LENGTH) {
+            throw new \RuntimeException(
+                "Set security.otp_secret to a random string of at least " . self::MIN_SECRET_LENGTH . " characters."
+            );
         }
     }
 
@@ -66,12 +78,19 @@ class EmailVerificationModel {
         );
     }
 
+    /**
+     * Random code from ALPHABET. Regenerated until it contains at least one letter and one
+     * digit, so every code looks alphanumeric (about 9% of purely random codes would be
+     * letters only). 
+     */
     private function generateCode(): string {
         $max = strlen(self::ALPHABET) - 1;
-        $code = '';
-        for ($i = 0; $i < self::CODE_LENGTH; $i++) {
-            $code .= self::ALPHABET[random_int(0, $max)];
-        }
+        do {
+            $code = '';
+            for ($i = 0; $i < self::CODE_LENGTH; $i++) {
+                $code .= self::ALPHABET[random_int(0, $max)];
+            }
+        } while (!preg_match('/[2-9]/', $code) || !preg_match('/[A-Z]/', $code));
         return $code;
     }
 
