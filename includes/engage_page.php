@@ -396,6 +396,7 @@ function engage_member_menu(array $member, array $o = []): string {
 
                 <div class="msep"></div>
                 <?= $link('My Dashboard', '/member/dashboard') ?>
+                <?= $link('My Applications', '/member/applications') ?>
                 <?= $link('My Profile', '/member/profile') ?>
                 <?= $link('My Certificates', '/member/certificates') ?>
                 <?= $link('Support', '/member/support') ?>
