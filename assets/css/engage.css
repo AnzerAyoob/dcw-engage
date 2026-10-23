@@ -209,7 +209,7 @@ a:focus-visible, summary:focus-visible, button:focus-visible { outline: 3px soli
 .burger[open] .bars i:nth-child(2) { opacity: 0; }
 .burger[open] .bars i:nth-child(3) { transform: translateY(-6px) rotate(-45deg); }
 .mpop {
-    position: absolute; right: 0; top: calc(100% + 10px); z-index: 40;
+    position: absolute; right: 0; top: calc(100% + 10px); z-index: 40; text-align: left;   /* the hero is centred on some pages */
     width: 270px; max-width: calc(100vw - 36px); padding: 8px;
     max-height: calc(100vh - 110px); overflow-y: auto;      /* a long menu scrolls on short phones */
     background: var(--card); color: var(--ink); border: 1.5px solid var(--border); border-radius: 16px;
@@ -780,18 +780,20 @@ a.help-item:hover { transform: translateY(-2px); box-shadow: 0 4px 0 var(--edge)
    Each event is one green card that links to its wiki page: date chip (day, weekday, month),
    title, short description, and the time in IST. Green matches the leaf in the logo and sits
    between the crimson Membership banner and the white reflection card.
-   Markup: built by $eventCard in views/home.php.
-   - On its own:  section.events > .grid > a.evt
-   - Beside the reflection card:  .duo > h2.t-events + .evt-col > a.evt + h2.t-refl + .reflect
+   Built by $eventCard in views/home.php.
+   Markup: section.events > .grid > a.evt. When there is also a reflection, it follows in its own row:
+   section.community > .grid > .reflect (so a tall events column never leaves an empty area beside it).
    ---------------------------------------------------------------------- */
 .events { width: 100%; margin: 0 auto 12px; }
 
-/* On their own, cards sit centred under the heading; a single event stays card-sized. */
+/* The home page shows up to three events. They share the row (three across on desktop, wrapping on
+   smaller screens) and a row's cards are the same height. A single event stays card-sized and centred. */
 .events .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 360px));
-    justify-content: center; gap: 16px;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+    gap: 16px;
 }
+.events .grid.one { grid-template-columns: minmax(0, 400px); justify-content: center; }
 
 .evt {
     position: relative; overflow: hidden; display: flex; flex-direction: column; gap: 14px; min-width: 0;
@@ -829,22 +831,6 @@ a.help-item:hover { transform: translateY(-2px); box-shadow: 0 4px 0 var(--edge)
 }
 .evt-range { font-size: 13px; font-weight: 600; color: rgba(255,255,255,.88); }
 
-/* Events and the reflection card side by side (home page, when both exist).
-   Each column has its own heading in row 1, left-aligned over its card; the cards sit in row 2.
-   - The reflection card keeps its own height (align-self: start), so a tall events column never
-     stretches it into an empty box. Its height stays steady while it rotates: every reflection sits in
-     the same grid cell (.rq-stage), so the card is as tall as the longest one.
-   - The events column fills the row, and its cards grow to share any spare height (one event beside a
-     taller reflection lines up with it), but never shrink below their content, so nothing is clipped. */
-.duo { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); gap: 0 20px; align-items: stretch; padding-bottom: 12px; }
-.duo .duo-title { grid-row: 1; margin: 30px 0 14px; text-align: left; }
-.duo .duo-title.first { margin-top: 0; }
-.duo .t-events { grid-column: 1; }
-.duo .t-refl   { grid-column: 2; }
-.duo .evt-col { grid-column: 1; grid-row: 2; display: flex; flex-direction: column; gap: 16px; }
-.duo .evt-col .evt { flex: 1 0 auto; }
-.duo .reflect { grid-column: 2; grid-row: 2; align-self: start; width: auto; max-width: none; flex: none; margin: 0; }
-
 /* One or two cards with nothing beside them (views/home.php adds these classes): the cards share the
    full width instead of sitting small in the middle of an empty row. A single card is laid out like the
    Membership banner: icon on the left, text in the middle, call to action on the right. */
@@ -868,9 +854,6 @@ a.help-item:hover { transform: translateY(-2px); box-shadow: 0 4px 0 var(--edge)
     .grid--beside.n2 .reflect { grid-column: 1 / -1; grid-row: auto; }
 }
 @media (max-width: 800px) {
-    .duo { grid-template-columns: 1fr; }
-    .duo .duo-title, .duo .evt-col, .duo .reflect { grid-column: 1; grid-row: auto; }
-    .duo .evt-col .evt { flex: none; }
     .grid--beside.n1, .grid--beside.n2 { grid-template-columns: 1fr; }
     .grid--beside.n1 .beside-title, .grid--beside.n2 .beside-title,
     .grid--beside.n2 .reflect { grid-column: auto; }
@@ -885,8 +868,9 @@ a.help-item:hover { transform: translateY(-2px); box-shadow: 0 4px 0 var(--edge)
 }
 @media (max-width: 640px) {
     .hero, .hero.slim { padding: 28px 18px 96px; }
-    .topbar { justify-content: center; text-align: center; }
-    .topbar .tools { justify-content: center; margin-left: 0; }
+    /* Every page has the same phone top bar: logo on the left, the menu (member, staff or guest) on the right. */
+    .topbar { justify-content: space-between; text-align: left; flex-wrap: nowrap; gap: 8px; }
+    .topbar .tools { justify-content: flex-end; margin-left: auto; flex-wrap: nowrap; }
     /* Home page: keep the bar on one line (logo and name on the left, sign-in or menu on the right) */
     .hero.slim { padding: 16px 18px 88px; }
     .hero.slim .topbar { justify-content: space-between; text-align: left; flex-wrap: nowrap; gap: 8px; margin-bottom: 24px; }
@@ -1169,8 +1153,12 @@ table.ms-table { width: 100%; border-collapse: collapse; min-width: 720px; }
     transition: background .12s;
 }
 .mpop button.out:hover { background: var(--accent-tint); color: var(--accent-dark); }
-@media (max-width: 640px) {
+/* Owners have the most links; below this width the chips would wrap onto a second line, so the
+   hamburger takes over (the same menu members use on every screen size). */
+@media (max-width: 1100px) {
     .tools-wide { display: none; }
     .tools-narrow { display: flex; }
+}
+@media (max-width: 640px) {
     .mpop button.out { padding: 13px 12px; }
 }

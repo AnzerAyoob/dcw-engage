@@ -226,21 +226,6 @@ function reimbursement_card(array $req, bool $failed, callable $h, InternalNoteM
     <?php
 }
 
-// The top-bar buttons, the same as on the workspace dashboard: who is signed in, owner shortcuts, sign out.
-// Sign out is a POST with a CSRF token (logout.php ignores anything else).
-ob_start(); ?>
-<span class="who"><?= $h(Auth::email()) ?></span>
-<?php if (Auth::isOwner()): ?>
-    <a href="/admin/team" class="chip-btn">Team</a>
-    <a href="/admin/audit" class="chip-btn">Audit log</a>
-<?php endif; ?>
-<form method="POST" action="/admin/logout">
-    <?= CSRF::getInputField() ?>
-    <button type="submit" class="chip-btn">Sign out</button>
-</form>
-<?php
-$topTools = ob_get_clean();
-
 engage_header([
     'title'   => 'Reimbursement review',
     'heading' => 'Reimbursement review',
@@ -248,7 +233,6 @@ engage_header([
     'slim'    => true,
     'wide'    => true,
     'crumbs'  => [['Workspace', '/admin/dashboard'], ['Reimbursement review']],
-    'tools'   => $topTools,
 ]);
 ?>
 

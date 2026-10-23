@@ -60,7 +60,7 @@ engage_header([
     'kicker'  => 'Member ID ' . $member['member_id'],
     'lead'    => 'Every certificate issued to ' . $email . '.',
     'member'  => $member,
-    'tools'   => '<a class="chip-btn" href="/member/dashboard">Back to dashboard</a>',
+    'tools'   => engage_member_menu($member, ['current' => '/member/certificates']),
     'wide'    => true,
     'crumbs'  => [['Home', '/'], ['My dashboard', '/member/dashboard'], ['My certificates']],
 ]);

@@ -18,21 +18,6 @@ $id    = trim((string) ($_GET['id'] ?? ''));
 $issue = $id !== '' ? $model->getOwned($id, 'team', $email) : false;
 $list  = $issue ? [] : $model->listFor('team', $email);
 
-// The top-bar buttons, the same as on the workspace dashboard: who is signed in, owner shortcuts, sign out.
-// Sign out is a POST with a CSRF token (logout.php ignores anything else).
-ob_start(); ?>
-<span class="who"><?= htmlspecialchars($email) ?></span>
-<?php if (Auth::isOwner()): ?>
-    <a href="/admin/team" class="chip-btn">Team</a>
-    <a href="/admin/audit" class="chip-btn">Audit log</a>
-<?php endif; ?>
-<form method="POST" action="/admin/logout">
-    <?= CSRF::getInputField() ?>
-    <button type="submit" class="chip-btn">Sign out</button>
-</form>
-<?php
-$topTools = ob_get_clean();
-
 engage_header([
     'title'   => 'Report a problem',
     'heading' => 'Report a problem',
@@ -42,7 +27,6 @@ engage_header([
     'crumbs'  => $issue
         ? [['Workspace', '/admin/dashboard'], ['Report a problem', REPORT_BASE], [$issue['tracking_id']]]
         : [['Workspace', '/admin/dashboard'], ['Report a problem']],
-    'tools'   => $topTools,
 ]);
 tech_flash_html();
 ?>
