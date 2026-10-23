@@ -8,7 +8,7 @@
  * "Discarded" is a staff-only status for spam / junk applications: it is set silently (no email),
  * hides the application from the review queue, and can be undone ("Restore" sets it back to New).
  * Applicants never see it: the public tracking lookup reports a discarded application as "Under Review",
- * and the member dashboard does the same (see dash_app_status() in views/member/dashboard.php).
+ * and the member dashboard does the same (see dash_app_status() in includes/member_requests.php).
  */
 
 require_once __DIR__ . '/MemberModel.php';
@@ -17,6 +17,19 @@ require_once __DIR__ . '/FormModel.php';   // FormModel::isOpen(): the one open/
 class ApplicationModel {
     /** Every status the applications.status column accepts. Keep in sync with the ENUM. */
     private const VALID_STATUSES = ['Draft', 'New', 'Submitted', 'Under Review', 'Accepted', 'Rejected', 'Discarded'];
+
+    /**
+     * Applicant-facing status groups for the "My applications" filter (/member/applications).
+     * Keys are what the page puts in ?status=; values are [label, stored statuses].
+     * 'Discarded' sits under "Under review" on purpose: applicants are never told it was discarded.
+     */
+    public const STATUS_GROUPS = [
+        'draft'     => ['Draft',        ['Draft']],
+        'submitted' => ['Submitted',    ['New', 'Submitted']],
+        'review'    => ['Under review', ['Under Review', 'Discarded']],
+        'accepted'  => ['Accepted',     ['Accepted']],
+        'rejected'  => ['Not accepted', ['Rejected']],
+    ];
 
     private $db;
 
@@ -233,6 +246,68 @@ class ApplicationModel {
         ");
         $stmt->execute(['email' => $email]);
         return $stmt->fetchAll();
+    }
+
+    /**
+     * Years (newest first) in which this email has applied. Fills the "Year" filter
+     * on /member/applications.
+     */
+    public function yearsForMember($email) {
+        $stmt = $this->db->prepare("SELECT DISTINCT YEAR(created_at) FROM applications WHERE email = :email ORDER BY 1 DESC");
+        $stmt->execute(['email' => $email]);
+        return array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+    }
+
+    /**
+     * One page of this member's applications, filtered in the database (/member/applications).
+     * $q matches the form title, form type or tracking ID. $group is a key of STATUS_GROUPS ('' = all).
+     * Drafts come first, then newest first. Returns ['total' => int, 'rows' => array].
+     * Like listForMember(), the status is returned as stored: the caller maps it with dash_app_status().
+     * form_data is deliberately not returned.
+     */
+    public function searchForMember($email, $q = '', $group = '', $year = 0, $limit = 20, $offset = 0) {
+        $where = ['a.email = :email'];
+        $args  = ['email' => $email];
+
+        if ($q !== '') {
+            // Separate placeholders: PDO does not allow reusing one named placeholder when emulation is off.
+            $where[] = "(JSON_UNQUOTE(JSON_EXTRACT(f.schema_json, '$.title')) LIKE :q1 OR a.tracking_id LIKE :q2 OR f.form_type LIKE :q3)";
+            $like = '%' . addcslashes($q, '\\%_') . '%';
+            $args['q1'] = $args['q2'] = $args['q3'] = $like;
+        }
+        if ($group !== '' && isset(self::STATUS_GROUPS[$group])) {
+            $marks = [];
+            foreach (self::STATUS_GROUPS[$group][1] as $i => $st) {
+                $marks[] = ':st' . $i;
+                $args['st' . $i] = $st;
+            }
+            $where[] = 'a.status IN (' . implode(',', $marks) . ')';
+        }
+        if ($year > 0) {
+            $where[] = 'YEAR(a.created_at) = :year';
+            $args['year'] = (int) $year;
+        }
+        $whereSql = implode(' AND ', $where);
+
+        $stmt = $this->db->prepare("SELECT COUNT(*) FROM applications a JOIN forms f ON a.form_id = f.id WHERE $whereSql");
+        $stmt->execute($args);
+        $total = (int) $stmt->fetchColumn();
+
+        $limit  = max(1, (int) $limit);
+        $offset = max(0, (int) $offset);
+        $stmt = $this->db->prepare("
+            SELECT a.id, a.status, a.tracking_id, a.created_at,
+                   f.form_type,
+                   JSON_UNQUOTE(JSON_EXTRACT(f.schema_json, '$.title')) AS form_title
+            FROM applications a
+            JOIN forms f ON a.form_id = f.id
+            WHERE $whereSql
+            ORDER BY (a.status = 'Draft') DESC, a.created_at DESC, a.id DESC
+            LIMIT $limit OFFSET $offset
+        ");
+        $stmt->execute($args);
+
+        return ['total' => $total, 'rows' => $stmt->fetchAll()];
     }
 
     /**
