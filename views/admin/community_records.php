@@ -142,7 +142,9 @@ engage_header([
         <?php if ($preview === null): ?>
             <form method="POST"><?= CSRF::getInputField() ?>
                 <input type="hidden" name="session_id" value="<?= (int) $session['id'] ?>">
-                <textarea name="list" rows="8" required placeholder="Member IDs or Wikimedia usernames, one per line or separated by commas"><?= $h($previewText) ?></textarea>
+                <textarea name="list" rows="8" required placeholder="Member IDs, member names or Wikimedia usernames, one per line or separated by commas"><?= $h($previewText) ?></textarea>
+                <p class="hint">A member can be entered by Member ID, full name or verified Wikimedia username. Names must match exactly (capitals and extra spaces do not matter).
+                    If two members share a name the line is skipped and shows both IDs, so paste the Member ID instead. A name that contains a comma cannot be used.</p>
                 <p class="hint">To mark someone excused, put them on their own line: <code>Name | excused | reason</code>. A reason is required. You see a preview before anything is saved.</p>
                 <div class="idform"><button name="action" value="attendance_preview" class="btn-solid">Preview</button></div>
             </form>
@@ -152,13 +154,13 @@ engage_header([
             <p><strong>Preview for &ldquo;<?= $h($session['title']) ?>&rdquo; (<?= $h($fmt($session['held_on'])) ?>).</strong>
                 <?= $cMember ?> matched, <?= $cUser ?> username only, <?= $cBad ?> unreadable<?= $previewDupes ? ", $previewDupes duplicate" . ($previewDupes === 1 ? '' : 's') . ' merged' : '' ?>.
                 Unreadable lines are skipped.</p>
-            <div class="tbl-wrap"><table class="tbl"><thead><tr><th>You pasted</th><th>Result</th><th>Member ID</th><th>Status</th></tr></thead><tbody>
+            <div class="tbl-wrap"><table class="tbl"><thead><tr><th>You pasted</th><th>Result</th><th>Member</th><th>Status</th></tr></thead><tbody>
             <?php foreach ($preview as $p): ?>
                 <tr>
                     <td><?= $h($p['raw']) ?></td>
                     <td><span class="tag <?= $p['kind'] === 'member' ? 'ok' : ($p['kind'] === 'username' ? 'warn' : 'bad') ?>"><?= $h($p['kind'] === 'bad' ? 'Skipped' : ($p['kind'] === 'member' ? 'Matched' : 'Username only')) ?></span>
                         <span class="sub"><?= $h($p['label']) ?></span></td>
-                    <td><?= $p['member_id'] ? '<code>' . $h($p['member_id']) . '</code>' : '&mdash;' ?><?= $p['kind'] !== 'bad' && $p['username'] !== '' ? '<span class="sub">' . $h($p['username']) . '</span>' : '' ?></td>
+                    <td><?= $p['member_id'] ? '<code>' . $h($p['member_id']) . '</code>' : '&mdash;' ?><?= $p['kind'] !== 'bad' && $p['name'] !== '' ? '<span class="sub">' . $h($p['name']) . '</span>' : '' ?><?= $p['kind'] !== 'bad' && $p['username'] !== '' ? '<span class="sub">' . $h($p['username']) . '</span>' : '' ?></td>
                     <td><?= $p['kind'] === 'bad' ? '&mdash;' : $h(ucfirst($p['status'])) . ($p['note'] !== '' ? '<span class="sub">' . $h($p['note']) . '</span>' : '') ?></td>
                 </tr>
             <?php endforeach; ?>
@@ -182,6 +184,7 @@ engage_header([
             <tr>
                 <td><?php if ($a['member_id']): ?><code><?= $h($a['member_id']) ?></code><?php elseif ($a['pm']): ?><code><?= $h($a['pm']) ?></code><?php endif; ?>
                     <?= $h($a['wikimedia_username']) ?>
+                    <?php if ($a['full_name'] !== ''): ?><span class="sub"><?= $h($a['full_name']) ?></span><?php endif; ?>
                     <?php if (!$a['member_id'] && !$a['pm']): ?><span class="sub">No member yet</span><?php endif; ?></td>
                 <td><span class="tag <?= $a['status'] === 'excused' ? 'warn' : 'ok' ?>"><?= $h(ucfirst($a['status'])) ?></span><?= $a['note'] !== '' ? '<span class="sub">' . $h($a['note']) . '</span>' : '' ?></td>
                 <td><?= $h($a['logged_by']) ?><span class="sub"><?= $h($fmt($a['logged_at'])) ?></span></td>
