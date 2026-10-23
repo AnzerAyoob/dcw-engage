@@ -40,6 +40,9 @@ class MemberModel {
     /** Number of random digits after the letter, e.g. A48213977 (9 characters in total). */
     const MEMBER_ID_DIGITS = 8;
 
+    /** Most rows a list call returns. */
+    const LIST_LIMIT = 500;
+
     /**
      * Key of the Member ID answer in a renewal form's form_data. The form builder makes a key
      * from the question's label, so rewording the question changes it: re-check after any edit.
@@ -256,41 +259,94 @@ class MemberModel {
         return $this->db->query("SELECT form_type FROM forms WHERE form_type LIKE 'membership-%' ORDER BY form_type")
             ->fetchAll(PDO::FETCH_COLUMN);
     }
-    
-public function listApplications(string $slug, string $status, ?array $scope, string $q = ''): array {
-    $sql = "SELECT a.id, a.applicant_name, a.email, a.status, a.tracking_id, a.created_at, a.form_data, f.form_type,
-            (SELECT d.decided_at FROM membership_decisions d
-              WHERE d.application_id = a.id AND d.decision = 'approved' ORDER BY d.id DESC LIMIT 1) AS approved_at,
-            (SELECT d.decided_by FROM membership_decisions d
-              WHERE d.application_id = a.id AND d.decision = 'approved' ORDER BY d.id DESC LIMIT 1) AS approved_by
-            FROM applications a JOIN forms f ON a.form_id = f.id
-            WHERE f.form_type LIKE 'membership-%'
-            AND (a.status <> 'Draft' OR EXISTS (SELECT 1 FROM membership_decisions d
-                 WHERE d.application_id = a.id AND d.decision = 'info_requested'))";
-    $p = [];
-    if ($slug !== '') { $sql .= ' AND f.form_type = :slug'; $p['slug'] = $slug; }
-    if ($status === 'todo') {
-        $sql .= " AND a.status IN ('New','Submitted')";
-    } elseif ($status !== '') {
-        $sql .= ' AND a.status = :st'; $p['st'] = $status;
+
+    /**
+     * Applications for the review queue and the members list.
+     *
+     * The SQL only does the simple, safe filtering (form, status). Chapter scope and the search
+     * are done in PHP afterwards: chapter comes from the slug or from a renewal answer, and the
+     * search spans several tables, so keeping it out of SQL means a collation or column problem
+     * in another table can never break this page.
+     */
+    public function listApplications(string $slug, string $status, ?array $scope, string $q = ''): array {
+        $sql = "SELECT a.id, a.applicant_name, a.email, a.status, a.tracking_id, a.created_at, a.form_data, f.form_type,
+                (SELECT d.decided_at FROM membership_decisions d
+                  WHERE d.application_id = a.id AND d.decision = 'approved' ORDER BY d.id DESC LIMIT 1) AS approved_at,
+                (SELECT d.decided_by FROM membership_decisions d
+                  WHERE d.application_id = a.id AND d.decision = 'approved' ORDER BY d.id DESC LIMIT 1) AS approved_by
+                FROM applications a JOIN forms f ON a.form_id = f.id
+                WHERE f.form_type LIKE 'membership-%'
+                AND (a.status <> 'Draft' OR EXISTS (SELECT 1 FROM membership_decisions d
+                     WHERE d.application_id = a.id AND d.decision = 'info_requested'))";
+        $p = [];
+        if ($slug !== '') { $sql .= ' AND f.form_type = :slug'; $p['slug'] = $slug; }
+        if ($status === 'todo') {
+            $sql .= " AND a.status IN ('New','Submitted')";
+        } elseif ($status !== '') {
+            $sql .= ' AND a.status = :st'; $p['st'] = $status;
+        }
+
+        $st = $this->db->prepare($sql . ' ORDER BY a.created_at DESC');
+        $st->execute($p);
+        $rows = array_values(array_filter($st->fetchAll(), fn($r) => self::inScope($r, $scope)));
+
+        $q = trim($q);
+        if ($q !== '') $rows = $this->filterBySearch($rows, $q);
+
+        return array_slice($rows, 0, self::LIST_LIMIT);
     }
 
-    $q = trim($q);
-    if ($q !== '') {
-        $like = '%' . addcslashes($q, '%_\\') . '%';
-        $sql .= " AND (a.applicant_name LIKE :q1 OR a.email LIKE :q2 OR a.tracking_id LIKE :q3
-                  OR EXISTS (SELECT 1 FROM members m WHERE LOWER(m.email) = LOWER(a.email) AND m.member_id LIKE :q4)
-                  OR EXISTS (SELECT 1 FROM members m2 JOIN member_profile pr ON pr.member_id = m2.member_id
-                              WHERE LOWER(m2.email) = LOWER(a.email) AND pr.username_key LIKE :q5))";
-        $p['q1'] = $p['q2'] = $p['q3'] = $p['q4'] = $like;
-        $p['q5'] = '%' . addcslashes(strtolower(str_replace(' ', '_', $q)), '%_\\') . '%';
-    }
+    /**
+     * Keep the rows that match a search. A row matches when the text is found (ignoring case, and
+     * treating "_" and " " as the same, as Wikimedia does) in:
+     *   - the applicant's name, email or tracking ID
+     *   - any answer on the application (including the Wikimedia username they gave)
+     *   - the Member ID on the application, or any Member ID held under that email
+     *   - the Wikimedia username on the profile of any ID held under that email
+     */
+    private function filterBySearch(array $rows, string $q): array {
+        $norm = fn($s) => str_replace('_', ' ', mb_strtolower(trim((string) $s)));
+        $needle = $norm($q);
+        if ($needle === '') return $rows;
 
-    $st = $this->db->prepare($sql . ' ORDER BY a.created_at DESC LIMIT 500');
-    $st->execute($p);
-    // Chapter comes from the slug, or from the answer on renewals, so filter in PHP.
-    return array_values(array_filter($st->fetchAll(), fn($r) => self::inScope($r, $scope)));
-}
+        $byEmail = $this->membershipsByEmail();
+
+        // Wikimedia usernames from the profiles, by Member ID. Optional: if this lookup fails,
+        // everything else still searches.
+        $names = [];
+        try {
+            foreach ($this->db->query('SELECT member_id, wikimedia_username FROM member_profile') as $r) {
+                $names[(string) $r['member_id']] = (string) $r['wikimedia_username'];
+            }
+        } catch (Throwable $e) {
+            if (function_exists('app_log')) app_log('Search: profile usernames not searched: ' . $e->getMessage());
+        }
+
+        return array_values(array_filter($rows, function (array $r) use ($needle, $norm, $byEmail, $names): bool {
+            $hay = [$r['applicant_name'] ?? '', $r['email'] ?? '', $r['tracking_id'] ?? ''];
+
+            $answers = json_decode((string) ($r['form_data'] ?? ''), true);
+            if (is_array($answers)) {
+                foreach ($answers as $v) {   // values only, so field names never match
+                    if (is_array($v)) $v = implode(' ', array_filter($v, 'is_scalar'));
+                    if (is_scalar($v)) $hay[] = (string) $v;
+                }
+            }
+
+            $stated = self::statedMemberId($r);
+            if ($stated !== null) $hay[] = $stated;
+
+            foreach ($byEmail[strtolower((string) ($r['email'] ?? ''))] ?? [] as $m) {
+                $hay[] = $m['member_id'];
+                $hay[] = $names[$m['member_id']] ?? '';
+            }
+
+            foreach ($hay as $s) {
+                if ($s !== '' && mb_strpos($norm($s), $needle) !== false) return true;
+            }
+            return false;
+        }));
+    }
 
     public function getApplication(int $id, ?array $scope) {
         $st = $this->db->prepare("SELECT a.*, f.form_type, f.schema_json
