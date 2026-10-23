@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../../includes/init.php';
 require_once __DIR__ . '/../../includes/member_session.php';
 require_once __DIR__ . '/../../includes/tech_issue_ui.php';
+require_once __DIR__ . '/../../includes/engage_page.php';
 
 // Route: /member/report-problem  (any signed-in member, including expired ones)
 MemberSession::requireLogin();
@@ -19,40 +20,21 @@ tech_handle_reporter_post($model, 'member', $memberId, 'Member', REPORT_BASE);
 $id    = trim((string) ($_GET['id'] ?? ''));
 $issue = $id !== '' ? $model->getOwned($id, 'member', $memberId) : false;
 $list  = $issue ? [] : $model->listFor('member', $memberId);
-?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <?php require __DIR__ . '/../../includes/favicon.php'; ?>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#0c567a">
-    <meta name="robots" content="noindex, nofollow">
-    <title>Report a problem - DCW Engage</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/assets/css/engage.css?v=2">
-    <style>.hero { padding-bottom: 44px; } .wrap.cards-wrap { margin-top: 34px; }</style>
-    <?php tech_styles(); ?>
-</head>
-<body>
-    <header class="hero">
-        <div class="topbar">
-            <a class="brand" href="/">
-                <img src="https://dcwwiki.org/dcwwiki/images/5/56/DCW_logo.png" alt="">
-                <span>DCW Engage</span>
-            </a>
-            <div class="tools">
-                <span class="who"><?= htmlspecialchars($fullName !== '' ? $fullName : $memberId) ?></span>
-                <a href="/member/dashboard" class="chip-btn">Dashboard</a>
-                <a href="/member/logout" class="chip-btn">Sign out</a>
-            </div>
-        </div>
-        <p class="kicker">Technical</p>
-        <h1>Report a problem</h1>
-        <p class="lead">Something not working on this site? Tell the technical team. They see your report as coming from "Member", not your name or ID.</p>
-    </header>
 
-    <main class="wrap wide cards-wrap">
+engage_header([
+    'title'   => 'Report a problem',
+    'heading' => 'Report a problem',
+    'kicker'  => 'Technical',
+    'lead'    => 'Something not working on this site? Tell the technical team. They see your report as coming from "Member", not your name or ID.',
+    'member'  => $member,
+    'tools'   => engage_member_menu($member, ['current' => '/member/report-problem']),
+    'crumbs'  => $issue
+        ? [['Home', '/'], ['My dashboard', '/member/dashboard'], ['Report a problem', REPORT_BASE], [$issue['tracking_id']]]
+        : [['Home', '/'], ['My dashboard', '/member/dashboard'], ['Report a problem']],
+    'wide'    => true,
+]);
+tech_styles();
+?>
         <?php tech_flash_html(); ?>
 
         <?php if ($issue): ?>
@@ -93,14 +75,4 @@ $list  = $issue ? [] : $model->listFor('member', $memberId);
                 <?php tech_report_form(); ?>
             </section>
         <?php endif; ?>
-    </main>
-
-    <footer>
-        <div class="org">
-            <img src="https://dcwwiki.org/dcwwiki/images/5/56/DCW_logo.png" alt="">
-            <span>Deoband Community Wikimedia</span>
-        </div>
-        <div>&copy; <?= date('Y') ?> · <a href="/">dcwwiki.org</a></div>
-    </footer>
-</body>
-</html>
+<?php engage_footer(); ?>

@@ -357,6 +357,7 @@ engage_header([
     'kicker'  => 'Member support',
     'lead'    => $type ? $typeMeta[$type]['blurb'] : 'Select the type of support you require.',
     'member'  => $member,
+    'tools'   => engage_member_menu($member, ['current' => '/member/support']),
     'crumbs'  => $type
         ? [['Home', '/'], ['My dashboard', '/member/dashboard'], ['Support', '/member/support'], [$typeMeta[$type]['title']]]
         : [['Home', '/'], ['My dashboard', '/member/dashboard'], ['Support']],
