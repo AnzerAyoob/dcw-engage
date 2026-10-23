@@ -22,6 +22,7 @@ class CoreMail {
      *   "Name, 20"   "Name (20)"   "Name (20 years)"   "Name [20 yrs old]"   "Name - 20"
      *   "Name 20"    "Name 20 years"   "Name, age 20"   "Name aged 20"   "20, Name"
      *   "Name, 20, Male"  (everything from the age onwards is dropped)
+     * A field label typed before the name is removed too: "Name: Aafi Khan, Age: 21" -> "Aafi Khan".
      * Names that legitimately contain a comma ("Khan, Mohammad") or other text are left alone.
      * Returns '' when nothing usable is left (callers then use their own fallback greeting).
      * Use this only for what goes into an email; never to change what is stored.
@@ -31,6 +32,8 @@ class CoreMail {
         if ($n === '') {
             return '';
         }
+        // "Name: XYZ ABC", "Full name - XYZ ABC": a field label typed in front of the name.
+        $n = preg_replace('/^\s*(?:(?:full|first|your|applicant(?:\'s)?)\s+)?name\s*[:\-–—]\s*/iu', '', $n);
         // "(20)", "[20 yrs]", "(age: 20)": any bracketed group that contains a digit.
         $n = preg_replace('/\s*[\(\[][^\)\]]*\d[^\)\]]*[\)\]]/u', '', $n);
         // "Name, 20", "Name - 20", "Name, age 20, Male": a separator followed by the age, to the end.
@@ -129,6 +132,10 @@ class CoreMail {
      *   reply_to    array         optional. [address, name] for a Reply-To header.
      *   header_sub  string        optional. Small line under the title in the header
      *                             (e.g. a club name). Plain text; escaped here.
+     *   footer_note string        optional. Leave it out for the default footer line
+     *                             "This is an automated message; please do not reply."
+     *                             Pass '' to drop that line (emails people can reply to), or
+     *                             any plain text to show that instead. Escaped here.
      *   dev_result  bool          what to return when nothing is really sent
      *                             (PHPMailer missing, or the placeholder host
      *                             smtp.example.com). Senders whose callers show
@@ -180,7 +187,7 @@ class CoreMail {
 
             $mail->isHTML(true);
             $mail->Subject = $o['subject'];   // plain text: never HTML-escape a subject line
-            $mail->Body    = self::template($o['html'], $o['header_sub'] ?? null);
+            $mail->Body    = self::template($o['html'], $o['header_sub'] ?? null, $o['footer_note'] ?? null);
             $mail->AltBody = $o['alt'];
 
             $mail->send();
@@ -199,11 +206,19 @@ class CoreMail {
     /**
      * The look shared by every DCW Engage email. $innerHtml must already be escaped by the caller.
      * $headerSub (plain text, optional) is shown under the title, e.g. a club name.
+     * $footerNote (plain text, optional) controls the last footer line:
+     *   null = the default "automated message; please do not reply" line (ordinary system emails);
+     *   ''   = no extra line at all (emails people can reply to, e.g. scholarship decision letters);
+     *   text = that text instead.
      */
-    public static function template($innerHtml, $headerSub = null) {
+    public static function template($innerHtml, $headerSub = null, $footerNote = null) {
         $subLine = ($headerSub !== null && $headerSub !== '')
             ? "<div style='margin-top:6px; font-size:15px; opacity:0.9;'>" . self::e($headerSub) . "</div>"
             : '';
+
+        $footerLine = $footerNote === null
+            ? '<br>This is an automated message; please do not reply.'
+            : (trim((string) $footerNote) !== '' ? '<br>' . self::e(trim((string) $footerNote)) : '');
 
         return "
         <!DOCTYPE html>
@@ -226,8 +241,7 @@ class CoreMail {
                 <div class='header'><h1>DCW Engage</h1>$subLine</div>
                 <div class='body-content'>$innerHtml</div>
                 <div class='footer'>
-                    &copy; " . date('Y') . " Deoband Community Wikimedia. All rights reserved.<br>
-                    This is an automated message; please do not reply.
+                    &copy; " . date('Y') . " Deoband Community Wikimedia. All rights reserved.$footerLine
                 </div>
             </div>
         </body>
