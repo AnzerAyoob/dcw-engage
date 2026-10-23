@@ -18,7 +18,8 @@
 --   2. Forms and applications                   forms, applications,
 --                                               application_notes, magic_links,
 --                                               email_verifications,
---                                               feedback_responses
+--                                               feedback_responses,
+--                                               scholarship_letters
 --   3. Membership                               members, member_password_tokens,
 --                                               member_profile, member_strikes,
 --                                               membership_scopes,
@@ -165,6 +166,10 @@ CREATE TABLE IF NOT EXISTS `forms` (
   UNIQUE KEY `form_type` (`form_type`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- letter_sent_at: when the scholarship award / decline letter went out.
+-- letter_failed:  1 only when a decision was saved but its letter could not be sent
+--                 (drives the "Resend letter" button). Applications decided before
+--                 letters were switched on stay 0, so they never show a resend button.
 CREATE TABLE IF NOT EXISTS `applications` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `tracking_id` varchar(12) DEFAULT NULL,
@@ -173,6 +178,8 @@ CREATE TABLE IF NOT EXISTS `applications` (
   `applicant_name` varchar(255) DEFAULT NULL,
   `status` enum('Draft','New','Under Review','Accepted','Rejected','Discarded') DEFAULT 'New',
   `form_data` JSON DEFAULT NULL,
+  `letter_sent_at` datetime DEFAULT NULL,
+  `letter_failed` tinyint(1) NOT NULL DEFAULT 0,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
@@ -241,6 +248,26 @@ CREATE TABLE IF NOT EXISTS `feedback_responses` (
   KEY `idx_form_email_created` (`form_id`,`email`,`created_at`),
   KEY `idx_scrub` (`scrubbed_at`,`created_at`),
   CONSTRAINT `fk_feedback_form` FOREIGN KEY (`form_id`) REFERENCES `forms` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Scholarship letters: committee-written award / decline emails that replace the
+-- standard status email when a scholarship application is Accepted / Rejected.
+-- One row per form. No foreign key on purpose: keeps this independent of the
+-- exact type of forms.id.
+--   enabled: 1 = Accept / Reject send these letters instead of the status email
+--   *_body:  wikitext subset, rendered by MiniWikiText
+--   version: +1 on every save; written to the app log with each send
+CREATE TABLE IF NOT EXISTS `scholarship_letters` (
+  `form_id` int(11) NOT NULL,
+  `enabled` tinyint(1) NOT NULL DEFAULT 0,
+  `award_subject` varchar(190) NOT NULL DEFAULT '',
+  `award_body` text NOT NULL,
+  `decline_subject` varchar(190) NOT NULL DEFAULT '',
+  `decline_body` text NOT NULL,
+  `version` int(11) NOT NULL DEFAULT 1,
+  `saved_by` varchar(190) NOT NULL DEFAULT '',
+  `saved_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`form_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================

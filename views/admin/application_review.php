@@ -7,7 +7,9 @@ require_once __DIR__ . '/../../includes/engage_page.php';
 require_once __DIR__ . '/../../models/FormModel.php';
 require_once __DIR__ . '/../../models/FeedbackModel.php';
 require_once __DIR__ . '/../../models/ApplicationModel.php';
+require_once __DIR__ . '/../../models/ScholarshipLetterModel.php';
 require_once __DIR__ . '/../../includes/mailer.php';   // Mailer::sendStatusUpdate() and Mailer::sendSentBack()
+require_once __DIR__ . '/../../includes/mail/ApplicationMail.php';   // ApplicationMail::decisionLetter()
 
 /**
  * /admin/application-review: one queue for the responses to every ordinary form.
@@ -22,6 +24,15 @@ require_once __DIR__ . '/../../includes/mailer.php';   // Mailer::sendStatusUpda
  *   discarded  Discarded                      -> spam, hidden from the queue; can be restored
  * Accept / Reject / Under Review email the applicant exactly as the form manager does (Mailer::sendStatusUpdate),
  * with the optional note added to that email.
+ *
+ * SCHOLARSHIP LETTERS. A program can have committee-written letters switched on (see ScholarshipLetterModel;
+ * the letters are written in the "Scholarship letters" box under the program, stored in the database).
+ * On such a program Accept emails the award letter and Reject emails the decline letter INSTEAD of the standard
+ * status email: exactly one email per decision, never the "status updated to Accepted" one. The letter is the
+ * committee's text between the automatic greeting and signature, and is sent with the committee Reply-To
+ * (config mail.src_reply_to). Mark under review still sends the standard status email.
+ * If a letter cannot be sent the decision stays saved, the application is flagged, and "Resend letter" appears.
+ *
  * "Needs information" sets the application back to Draft, makes a one-time link (/resume/<token>) and EMAILS
  * the applicant your message plus that link (Mailer::sendSentBack). If the email cannot be sent, the link and
  * message are shown on screen instead so you can pass them on yourself. The status change is kept either way.
@@ -39,6 +50,9 @@ const BULK_MAX = 100;
 
 $model = new ApplicationModel();
 $formModel = new FormModel();
+$letterModel = new ScholarshipLetterModel();
+$letters = $letterModel->allByForm();   // form id => letters row; [] until the migration has been run
+$letterOn = fn($formId) => ScholarshipLetterModel::isActive($letters[(int) $formId] ?? null);
 
 // Forms this person may review: ordinary forms only (no membership, no feedback), and only ones FormModel
 // says they can open. getAllForms() returns schema_json, which FeedbackModel::isFeedbackRow() reads.
@@ -66,6 +80,7 @@ if (!function_exists('review_hidden_form')) {
 }
 
 $notice = ''; $error = '';
+$keepLetters = null;   // posted letter text, kept in the editor when a save is refused
 $id = (int) ($_GET['id'] ?? $_POST['id'] ?? 0);
 $app = false;
 if ($id) {
@@ -81,6 +96,11 @@ if ($id) {
 $config = require __DIR__ . '/../../includes/config.php';
 $resumeUrl = fn($token) => rtrim($config['app']['url'], '/') . '/resume/' . $token;
 
+// The committee address scholarship letters are sent from / replied to (config.php: mail.src_reply_to).
+$srcReplyTo = trim((string) ($config['mail']['src_reply_to'] ?? ''));
+$srcName    = trim((string) ($config['mail']['src_name'] ?? '')) ?: 'DCW Scholarship Review Committee';
+$srcReady   = $srcReplyTo !== '' && filter_var($srcReplyTo, FILTER_VALIDATE_EMAIL) !== false;
+
 // Same outcome email the form manager sends. A mail failure never undoes a decision that is already saved.
 // Only Under Review / Accepted / Rejected are emailed, so Discard and Restore are always silent.
 $notifyApplicant = function (array $row, string $status, string $note) {
@@ -91,6 +111,29 @@ $notifyApplicant = function (array $row, string $status, string $note) {
     } catch (Throwable $e) {
         app_log("Status email failed for application #{$row['id']}: " . $e->getMessage());
     }
+};
+
+// Scholarship letter for a decision: Accepted -> award letter, Rejected -> decline letter.
+// Returns true only when the email really went out, and records that on the application either way
+// (sent -> letter_sent_at, failed -> letter_failed so "Resend letter" appears).
+// A failure never undoes the decision that is already saved.
+$sendLetter = function (array $row, string $status) use ($letters, $letterModel, $srcReplyTo, $srcName): bool {
+    $l = $letters[(int) $row['form_id']] ?? null;
+    $kind = $status === 'Accepted' ? 'award' : 'decline';
+    $ok = false;
+    try {
+        $ok = $l && (bool) ApplicationMail::decisionLetter(
+            $row['email'], $row['applicant_name'], $row['form_title'] ?: $row['form_type'],
+            (string) $l[$kind . '_subject'], (string) $l[$kind . '_body'], $srcReplyTo, $srcName
+        );
+        if ($ok) $letterModel->markSent((int) $row['id']); else $letterModel->markFailed((int) $row['id']);
+    } catch (Throwable $e) {
+        app_log("Scholarship $kind letter failed for application #{$row['id']}: " . $e->getMessage());
+        try { $letterModel->markFailed((int) $row['id']); } catch (Throwable $e2) {}
+        $ok = false;
+    }
+    if ($ok) app_log("Scholarship $kind letter sent: #{$row['id']} (letters v" . (int) ($l['version'] ?? 0) . ')');
+    return $ok;
 };
 
 // "Needs information": emails the applicant what is needed plus their one-time link.
@@ -107,6 +150,44 @@ $emailSentBack = function (array $row, string $message, string $token): bool {
 };
 
 // ---------------------------------------------------------------------------
+// Scholarship letters: save, or preview (nothing is sent by a preview).
+// The program must be one this person may review, so editing the request cannot reach any other form.
+// ---------------------------------------------------------------------------
+if (!$id && $_SERVER['REQUEST_METHOD'] === 'POST'
+    && in_array($_POST['action'] ?? '', ['save_letters', 'preview_award', 'preview_decline'], true)) {
+    if (!CSRF::validate($_POST['csrf_token'] ?? '')) die('Invalid CSRF token.');
+    $lf = (int) ($_POST['form_id'] ?? 0);
+    if (!isset($allowed[$lf])) { http_response_code(404); die('Program not found.'); }
+
+    if ($_POST['action'] === 'save_letters') {
+        try {
+            if (!empty($_POST['enabled']) && !$srcReady) {
+                throw new Exception('Add mail.src_reply_to (the committee email address) to config.php before turning scholarship letters on.');
+            }
+            $letterModel->save($lf, !empty($_POST['enabled']),
+                (string) ($_POST['award_subject'] ?? ''), (string) ($_POST['award_body'] ?? ''),
+                (string) ($_POST['decline_subject'] ?? ''), (string) ($_POST['decline_body'] ?? ''),
+                currentAdminIdentifier());
+            app_log("Scholarship letters saved: form #$lf by " . currentAdminIdentifier());
+            $keep = array_filter(['form' => $_GET['form'] ?? '', 'status' => $_GET['status'] ?? ''], 'strlen');
+            header('Location: /admin/application-review?' . http_build_query($keep + ['letters' => 'saved']));
+            exit;
+        } catch (Throwable $e) {
+            $error = $e->getMessage();
+            $keepLetters = $_POST;
+        }
+    } else {
+        $kind = $_POST['action'] === 'preview_award' ? 'award' : 'decline';
+        $pf = $formModel->getFormById($lf);
+        $title = (string) ($pf['schema']['title'] ?? $pf['form_type'] ?? '');
+        header('Content-Type: text/html; charset=utf-8');
+        echo ApplicationMail::decisionLetterPreview('Sample Applicant', $title,
+            (string) ($_POST[$kind . '_subject'] ?? ''), (string) ($_POST[$kind . '_body'] ?? ''), $srcReplyTo, $srcName);
+        exit;
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Bulk action from the queue. Every application is re-loaded and re-checked,
 // so editing the request can never reach a form outside the allowed list, and
 // anything not in the right state is skipped instead of failing the whole batch.
@@ -115,10 +196,11 @@ if (!$id && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') ==
     if (!CSRF::validate($_POST['csrf_token'] ?? '')) die('Invalid CSRF token.');
 
     $bulkAct = (string) ($_POST['bulk_action'] ?? '');
+    $isResend = $bulkAct === 'resend_letter';
     $ids = array_values(array_unique(array_filter(array_map('intval', (array) ($_POST['ids'] ?? [])))));
     $note = trim((string) ($_POST['note'] ?? ''));
 
-    if (!isset(APP_ACTIONS[$bulkAct])) {
+    if (!isset(APP_ACTIONS[$bulkAct]) && !$isResend) {
         $error = 'Choose an action to apply.';
     } elseif (!$ids) {
         $error = 'Tick at least one application first.';
@@ -129,7 +211,12 @@ if (!$id && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') ==
     } else {
         $by = currentAdminIdentifier();
         // 'links' now holds only the applicants whose send-back email could NOT be sent.
-        $result = ['act' => $bulkAct, 'done' => 0, 'skipped' => [], 'links' => [], 'message' => $bulkAct === 'info' ? $note : ''];
+        // 'letters' counts scholarship letters emailed; 'letter_failed' lists the ones that could not be sent.
+        $result = ['act' => $bulkAct, 'done' => 0, 'skipped' => [], 'links' => [], 'letters' => 0, 'letter_failed' => [],
+                   'message' => $bulkAct === 'info' ? $note : ''];
+
+        // Enough time for a few dozen emails (each one opens its own SMTP connection).
+        if (function_exists('set_time_limit')) @set_time_limit(180);
 
         foreach ($ids as $appId) {
             $row = $model->getApplicationById($appId);
@@ -138,6 +225,30 @@ if (!$id && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') ==
                 continue;
             }
             $who = $row['applicant_name'] ?: $row['email'];
+
+            // Send an unsent scholarship letter again (decision already saved, letter failed earlier).
+            if ($isResend) {
+                if (!$letterOn($row['form_id']) || !in_array($row['status'], ['Accepted', 'Rejected'], true) || empty($row['letter_failed'])) {
+                    $result['skipped'][] = "$who: has no unsent letter";
+                    continue;
+                }
+                if (!$srcReady) {
+                    $result['skipped'][] = "$who: the committee address (mail.src_reply_to) is not set in config.php";
+                    continue;
+                }
+                if (!$letterModel->claimResend((int) $row['id'])) {
+                    $result['skipped'][] = "$who: letter is already being sent";
+                    continue;
+                }
+                if ($sendLetter($row, $row['status'])) {
+                    $result['letters']++;
+                } else {
+                    $result['letter_failed'][] = ['who' => $who, 'email' => $row['email']];
+                }
+                app_log("Application bulk resend_letter: #{$row['id']} ({$row['tracking_id']}, {$row['form_type']}) by $by");
+                $result['done']++;
+                continue;
+            }
 
             // Restore only works on discarded applications; everything else only on open ones.
             $need = $bulkAct === 'restore' ? ['Discarded'] : APP_OPEN;
@@ -151,6 +262,12 @@ if (!$id && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') ==
                 $result['skipped'][] = "$who: already under review";
                 continue;
             }
+            // Accept / Reject on a scholarship program send the committee letter instead of the status email.
+            $letterKind = in_array(APP_ACTIONS[$bulkAct], ['Accepted', 'Rejected'], true) && $letterOn($row['form_id']);
+            if ($letterKind && !$srcReady) {
+                $result['skipped'][] = "$who: the committee address (mail.src_reply_to) is not set in config.php, nothing was changed";
+                continue;
+            }
             try {
                 if ($bulkAct === 'info') {
                     $token = $model->generateMagicLink((int) $row['id'], true);
@@ -161,7 +278,15 @@ if (!$id && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') ==
                     }
                 } else {
                     $model->updateStatus((int) $row['id'], APP_ACTIONS[$bulkAct]);
-                    $notifyApplicant($row, APP_ACTIONS[$bulkAct], $note);
+                    if ($letterKind) {
+                        if ($sendLetter($row, APP_ACTIONS[$bulkAct])) {
+                            $result['letters']++;
+                        } else {
+                            $result['letter_failed'][] = ['who' => $who, 'email' => $row['email']];
+                        }
+                    } else {
+                        $notifyApplicant($row, APP_ACTIONS[$bulkAct], $note);
+                    }
                 }
                 app_log("Application bulk $bulkAct: #{$row['id']} ({$row['tracking_id']}, {$row['form_type']}) by $by");
                 $result['done']++;
@@ -192,6 +317,13 @@ if ($app && $_SERVER['REQUEST_METHOD'] === 'POST') {
             // Not emailed: the organizer passes this link on by hand.
             $_SESSION['application_link'] = ['who' => $app['applicant_name'] ?: $app['email'], 'email' => $app['email'],
                                              'message' => '', 'url' => $resumeUrl($token), 'emailFailed' => false];
+        } elseif ($act === 'resend_letter') {
+            if (!$letterOn($app['form_id']) || !in_array($app['status'], ['Accepted', 'Rejected'], true) || empty($app['letter_failed'])) {
+                throw new Exception('There is no unsent letter for this application.');
+            }
+            if (!$srcReady) throw new Exception('The committee address (mail.src_reply_to) is not set in config.php, so the letter cannot be sent.');
+            if (!$letterModel->claimResend((int) $app['id'])) throw new Exception('This letter is already being sent.');
+            if (!$sendLetter($app, $app['status'])) throw new Exception('The letter could not be sent. Please try again in a moment.');
         } elseif (isset(APP_ACTIONS[$act])) {
             // Restore only works on discarded applications; everything else only on open ones.
             $need = $act === 'restore' ? ['Discarded'] : APP_OPEN;
@@ -212,8 +344,18 @@ if ($app && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     $doneKey = 'info_manual';
                 }
             } else {
-                $model->updateStatus((int) $app['id'], APP_ACTIONS[$act]);
-                $notifyApplicant($app, APP_ACTIONS[$act], trim((string) ($_POST['note'] ?? '')));
+                $newStatus = APP_ACTIONS[$act];
+                // Accept / Reject on a scholarship program send the committee letter instead of the status email.
+                $letterKind = in_array($newStatus, ['Accepted', 'Rejected'], true) && $letterOn($app['form_id']);
+                if ($letterKind && !$srcReady) {
+                    throw new Exception('The committee address (mail.src_reply_to) is not set in config.php, so the letter cannot be sent. Nothing was changed.');
+                }
+                $model->updateStatus((int) $app['id'], $newStatus);
+                if ($letterKind) {
+                    $doneKey = $sendLetter($app, $newStatus) ? $act . '_letter' : $act . '_unsent';
+                } else {
+                    $notifyApplicant($app, $newStatus, trim((string) ($_POST['note'] ?? '')));
+                }
             }
         } else {
             throw new Exception('Unknown action.');
@@ -226,11 +368,17 @@ if ($app && $_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $doneText = ['approve' => 'Accepted.', 'reject' => 'Rejected.', 'review' => 'Marked under review.',
+             'approve_letter' => 'Accepted. The award letter was emailed to the applicant.',
+             'reject_letter' => 'Rejected. The decline letter was emailed to the applicant.',
+             'approve_unsent' => 'Accepted, but the award letter could not be sent. Use "Send letter again" below.',
+             'reject_unsent' => 'Rejected, but the decline letter could not be sent. Use "Send letter again" below.',
+             'resend_letter' => 'Letter sent.',
              'info' => 'Sent back to the applicant. They were emailed your message and a link to update their application.',
              'info_manual' => 'Sent back to the applicant, but the email could not be sent. See below.',
              'resend' => 'New link created.',
              'discard' => 'Discarded. The applicant was not notified.', 'restore' => 'Restored to the queue.'];
 if (!empty($_GET['done'])) $notice = $doneText[$_GET['done']] ?? 'Saved.';
+if (($_GET['letters'] ?? '') === 'saved') $notice = 'Scholarship letters saved.';
 
 // One-time link(s) to hand to the applicant: a new link from "Create a new link" (never emailed),
 // or the link from a send-back whose email could not be sent.
@@ -240,7 +388,7 @@ $bulk = $_SESSION['application_bulk'] ?? null;
 unset($_SESSION['application_bulk']);
 $bulkVerb = ['approve' => 'accepted', 'reject' => 'rejected', 'review' => 'marked under review',
              'info' => 'sent back for more information', 'discard' => 'discarded (no one was notified)',
-             'restore' => 'restored to the queue'];
+             'restore' => 'restored to the queue', 'resend_letter' => 'had their letter sent again'];
 
 $fForm = (string) ($_GET['form'] ?? ''); $fStatus = (string) ($_GET['status'] ?? '');
 $h = fn($v) => htmlspecialchars((string) $v);
@@ -297,6 +445,7 @@ engage_header([
     .tbl td.pick input, .tbl th.pick input { width: 16px; height: 16px; cursor: pointer; accent-color: var(--primary); }
     .tbl td.pick input:disabled { cursor: not-allowed; }
     .dash { color: var(--muted); }
+    .unsent { font-size: 12.5px; font-weight: 700; color: var(--accent); }
 
     /* One collapsible block per program */
     details.prog-group { padding: 0; overflow: hidden; border-left: 6px solid var(--primary); }
@@ -315,6 +464,21 @@ engage_header([
     details.prog-group .tbl-wrap { margin-top: 14px; }
     .toolbar-right { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
     .toolbar-right .total { font-size: 13.5px; font-weight: 600; color: var(--muted); }
+
+    /* Scholarship letters editor (inside each program) */
+    details.letters { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); }
+    details.letters > summary { cursor: pointer; font-size: 14.5px; font-weight: 800; color: var(--primary-dark); list-style: none; }
+    details.letters > summary::-webkit-details-marker { display: none; }
+    details.letters > summary::before { content: '\25B8'; margin-right: 8px; color: var(--muted); }
+    details.letters[open] > summary::before { content: '\25BE'; }
+    .letterform { margin: 14px 0 0; }
+    .letterform .field { margin-bottom: 14px; }
+    .letterform label { display: block; margin-bottom: 5px; font-size: 13.5px; font-weight: 700; }
+    .letterform input[type=text], .letterform textarea { width: 100%; padding: 10px 12px; border: 1.5px solid #BFD3D1; border-radius: 10px; font: inherit; font-size: 14px; }
+    .letterform input[type=text]:focus, .letterform textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 20%, transparent); }
+    .letterform .chk { display: flex; gap: 8px; align-items: flex-start; margin: 0 0 16px; font-weight: 600; }
+    .letterform .chk input { margin-top: 4px; }
+    .letterform .hint { margin: 0 0 14px; font-size: 12.5px; color: var(--muted); }
 </style>
 
 <?php if ($notice): ?><div class="alert ok"><?= $h($notice) ?></div><?php endif; ?>
@@ -336,9 +500,17 @@ engage_header([
         <?php if ($bulk['act'] === 'info' && $bulk['done'] > count($bulk['links'])): ?>
             <?= (int) ($bulk['done'] - count($bulk['links'])) ?> emailed.
         <?php endif; ?>
+        <?php if (!empty($bulk['letters'])): ?>
+            <?= (int) $bulk['letters'] ?> letter<?= $bulk['letters'] === 1 ? '' : 's' ?> emailed.
+        <?php endif; ?>
     </div>
     <?php if ($bulk['skipped']): ?>
         <div class="action-banner"><strong>Skipped</strong><ul><?php foreach ($bulk['skipped'] as $s): ?><li><?= $h($s) ?></li><?php endforeach; ?></ul></div>
+    <?php endif; ?>
+    <?php if (!empty($bulk['letter_failed'])): ?>
+        <div class="action-banner"><strong>These letters could not be sent.</strong> The decisions are saved. Tick them and choose &ldquo;Resend unsent letter&rdquo; to try again, or write to them yourself:
+            <ul><?php foreach ($bulk['letter_failed'] as $l): ?><li><?= $h($l['who']) ?> (<?= $h($l['email']) ?>)</li><?php endforeach; ?></ul>
+        </div>
     <?php endif; ?>
     <?php if ($bulk['links']): ?>
         <div class="action-banner"><strong>These emails could not be sent.</strong> Send each of these applicants your message and their one-time link:
@@ -353,7 +525,8 @@ engage_header([
     $form = $formModel->getFormById((int) $app['form_id']);
     $schema = $form['schema'] ?? [];
     $data = json_decode($app['form_data'] ?? '', true) ?: [];
-    $open = in_array($app['status'], APP_OPEN, true); ?>
+    $open = in_array($app['status'], APP_OPEN, true);
+    $lettersOn = $letterOn($app['form_id']); ?>
     <section class="sect">
         <div class="qhead">
             <h3><?= $h($app['applicant_name'] ?: $app['email']) ?></h3>
@@ -364,6 +537,7 @@ engage_header([
             <?= $h($app['form_title'] ?: $app['form_type']) ?> &middot;
             <?= $h($app['tracking_id']) ?> &middot;
             Submitted <?= $h($app['created_at']) ?>
+            <?php if (!empty($app['letter_sent_at'])): ?> &middot; Letter emailed <?= $h($app['letter_sent_at']) ?><?php endif; ?>
         </p>
         <dl class="answers">
         <?php foreach ($schema['fields'] ?? [] as $f):
@@ -381,18 +555,22 @@ engage_header([
     <section class="sect">
         <form method="POST"><?= CSRF::getInputField() ?>
             <input type="hidden" name="id" value="<?= (int) $app['id'] ?>">
+            <?php if ($lettersOn): ?>
+                <p class="qmeta" style="margin:0 0 14px;">Scholarship letters are on for this program. <strong>Accept</strong> emails the committee&rsquo;s award letter and <strong>Reject</strong> emails its decline letter, instead of the standard status email.</p>
+            <?php else: ?>
             <div class="field">
                 <label>Note to include in the email to the applicant (optional)</label>
                 <input type="text" name="note" style="width:100%">
             </div>
+            <?php endif; ?>
             <div class="actrow">
             <button name="action" value="approve" class="btn-ok"
-                    onclick="return confirm('Accept this application? It will be locked.');">Accept</button>
+                    onclick="return confirm('Accept this application? <?= $lettersOn ? 'The award letter is emailed right now. ' : '' ?>It will be locked.');">Accept</button>
             <?php if ($app['status'] !== 'Under Review'): ?>
                 <button name="action" value="review" class="btn-ghost">Mark under review</button>
             <?php endif; ?>
             <button name="action" value="reject" class="btn-bad"
-                    onclick="return confirm('Reject this application? It will be locked.');">Reject</button>
+                    onclick="return confirm('Reject this application? <?= $lettersOn ? 'The decline letter is emailed right now. ' : '' ?>It will be locked.');">Reject</button>
             <button name="action" value="discard" class="btn-ghost"
                     onclick="return confirm('Discard this application? The applicant will NOT be notified. You can restore it later.');">Discard</button>
             </div>
@@ -424,6 +602,15 @@ engage_header([
     </section>
     <?php else: ?>
         <div class="empty-note">This application has been decided and is locked.</div>
+        <?php if ($lettersOn && !empty($app['letter_failed']) && in_array($app['status'], ['Accepted', 'Rejected'], true)): ?>
+        <section class="sect">
+            <p style="margin:0 0 12px;"><strong>The <?= $app['status'] === 'Accepted' ? 'award' : 'decline' ?> letter has not been sent.</strong> The decision is saved.</p>
+            <form method="POST"><?= CSRF::getInputField() ?>
+                <input type="hidden" name="id" value="<?= (int) $app['id'] ?>">
+                <button name="action" value="resend_letter" class="btn-ghost">Send letter again</button>
+            </form>
+        </section>
+        <?php endif; ?>
     <?php endif; ?>
 
 <?php else:
@@ -491,6 +678,7 @@ engage_header([
                 <option value="reject">Rejected</option>
                 <option value="discard">Discard (no email)</option>
                 <option value="restore">Restore discarded</option>
+                <option value="resend_letter">Resend unsent letter</option>
             </select>
             <input type="text" name="note" id="bulkNote"
                 placeholder="Note emailed with the decision (optional) / what you need (required for Needs information)">
@@ -504,12 +692,23 @@ engage_header([
 
     <?php foreach ($groups as $g):
         $f = $g['form']; $c = $g['counts']; $n = count($g['rows']);
-        $isOpen = $filtering || $g['waiting'] > 0; ?>
+        $isOpen = $filtering || $g['waiting'] > 0 || $keepLetters !== null;
+        $L = $letters[(int) $f['id']] ?? null;
+        $keepL = ($keepLetters !== null && (int) ($keepLetters['form_id'] ?? 0) === (int) $f['id']) ? $keepLetters : null;
+        // Value for a letter field: what was just posted (if a save was refused), else what is stored, else a default.
+        $lv = function (string $key, string $default = '') use ($keepL, $L): string {
+            if ($keepL !== null) return (string) ($keepL[$key] ?? '');
+            $v = (string) ($L[$key] ?? '');
+            return $v !== '' ? $v : $default;
+        };
+        $lChecked = $keepL !== null ? !empty($keepL['enabled']) : !empty($L['enabled']);
+        $lActive = ScholarshipLetterModel::isActive($L); ?>
     <details class="sect prog-group"<?= $isOpen ? ' open' : '' ?>>
         <summary>
             <span class="pg-title"><?= $h($f['title'] ?: $f['form_type']) ?></span>
             <span class="pg-slug">/<?= $h($f['form_type']) ?></span>
             <span class="pg-stats">
+                <?php if ($lActive): ?><span class="pill st-ok">letters on</span><?php endif; ?>
                 <?php if ($g['waiting']): ?><span class="pill badge-attn"><?= (int) $g['waiting'] ?> waiting</span><?php endif; ?>
                 <?php if (!empty($c['Under Review'])): ?><span class="pill st-review"><?= (int) $c['Under Review'] ?> under review</span><?php endif; ?>
                 <?php if (!empty($c['Draft'])): ?><span class="pill st-wait"><?= (int) $c['Draft'] ?> awaiting applicant</span><?php endif; ?>
@@ -525,9 +724,11 @@ engage_header([
         <?php foreach ($g['rows'] as $r):
             $rowOpen = in_array($r['status'], APP_OPEN, true);
             $rowDiscarded = $r['status'] === 'Discarded';
-            $rowPick = $rowOpen || $rowDiscarded; ?>
+            $rowLetter = $letterOn($r['form_id']);   // Accept / Reject send the committee letter on this program
+            $rowResend = $rowLetter && !empty($r['letter_failed']) && in_array($r['status'], ['Accepted', 'Rejected'], true);
+            $rowPick = $rowOpen || $rowDiscarded || $rowResend; ?>
             <tr>
-                <td class="pick"><input type="checkbox" class="pick-row" value="<?= (int) $r['id'] ?>"
+                <td class="pick"><input type="checkbox" class="pick-row" value="<?= (int) $r['id'] ?>" data-letters="<?= $rowLetter ? '1' : '0' ?>"
                     <?= $rowPick ? '' : 'disabled title="Already decided or waiting on the applicant"' ?>></td>
                 <td><a class="dl" href="?id=<?= (int) $r['id'] ?>"><?= $h($r['applicant_name'] ?: $r['email']) ?></a>
                     <span class="sub"><?= $h($r['email']) ?></span></td>
@@ -536,7 +737,7 @@ engage_header([
                 <td><?= $h($r['created_at']) ?></td>
                 <td>
                 <?php if ($rowOpen): ?>
-                    <form method="POST" class="rowform"><?= CSRF::getInputField() ?>
+                    <form method="POST" class="rowform" data-letters="<?= $rowLetter ? '1' : '0' ?>"><?= CSRF::getInputField() ?>
                         <input type="hidden" name="action" value="bulk">
                         <input type="hidden" name="ids[]" value="<?= (int) $r['id'] ?>">
                         <select name="bulk_action" aria-label="Set status">
@@ -546,7 +747,7 @@ engage_header([
                             <option value="reject">Rejected</option>
                             <option value="discard">Discard (no email)</option>
                         </select>
-                        <input type="text" name="note" placeholder="Note (optional)">
+                        <input type="text" name="note" placeholder="<?= $rowLetter ? 'Only for Needs information' : 'Note (optional)' ?>">
                         <button type="submit" class="btn-ghost sm">Apply</button>
                     </form>
                 <?php elseif ($rowDiscarded): ?>
@@ -556,11 +757,59 @@ engage_header([
                         <input type="hidden" name="ids[]" value="<?= (int) $r['id'] ?>">
                         <button type="submit" class="btn-ghost sm">Restore</button>
                     </form>
+                <?php elseif ($rowResend): ?>
+                    <form method="POST" class="rowform"><?= CSRF::getInputField() ?>
+                        <input type="hidden" name="action" value="bulk">
+                        <input type="hidden" name="bulk_action" value="resend_letter">
+                        <input type="hidden" name="ids[]" value="<?= (int) $r['id'] ?>">
+                        <span class="unsent">Letter not sent</span>
+                        <button type="submit" class="btn-ghost sm">Resend letter</button>
+                    </form>
                 <?php else: ?><span class="dash">&mdash;</span><?php endif; ?>
                 </td></tr>
         <?php endforeach; ?>
         </tbody></table>
         </div>
+
+        <details class="letters"<?= $keepL !== null ? ' open' : '' ?>>
+            <summary>Scholarship letters <?= $lActive ? '<span class="pill st-ok">on</span>' : '<span class="pill st-off">off</span>' ?></summary>
+            <form method="POST" class="letterform"><?= CSRF::getInputField() ?>
+                <input type="hidden" name="form_id" value="<?= (int) $f['id'] ?>">
+                <label class="chk"><input type="checkbox" name="enabled" value="1" <?= $lChecked ? 'checked' : '' ?>>
+                    <span>Turn on for this program: Accept emails the award letter and Reject emails the decline letter, instead of the standard status email. One email per decision.</span></label>
+
+                <div class="field">
+                    <label for="as-<?= (int) $f['id'] ?>">Award letter: subject</label>
+                    <input type="text" id="as-<?= (int) $f['id'] ?>" name="award_subject" maxlength="<?= (int) ScholarshipLetterModel::SUBJECT_MAX ?>"
+                           value="<?= $h($lv('award_subject', 'Scholarship award: {event}')) ?>">
+                </div>
+                <div class="field">
+                    <label for="ab-<?= (int) $f['id'] ?>">Award letter: message (what the scholarship covers, next steps)</label>
+                    <textarea id="ab-<?= (int) $f['id'] ?>" name="award_body" rows="10" maxlength="<?= (int) ScholarshipLetterModel::BODY_MAX ?>"><?= $h($lv('award_body')) ?></textarea>
+                </div>
+                <div class="field">
+                    <label for="ds-<?= (int) $f['id'] ?>">Decline letter: subject</label>
+                    <input type="text" id="ds-<?= (int) $f['id'] ?>" name="decline_subject" maxlength="<?= (int) ScholarshipLetterModel::SUBJECT_MAX ?>"
+                           value="<?= $h($lv('decline_subject', 'Your application for {event}')) ?>">
+                </div>
+                <div class="field">
+                    <label for="db-<?= (int) $f['id'] ?>">Decline letter: message (say what happens next, and whether they may apply again)</label>
+                    <textarea id="db-<?= (int) $f['id'] ?>" name="decline_body" rows="8" maxlength="<?= (int) ScholarshipLetterModel::BODY_MAX ?>"><?= $h($lv('decline_body')) ?></textarea>
+                </div>
+
+                <p class="hint">Each email starts with &ldquo;Dear &lt;applicant name&gt;,&rdquo; and ends with &ldquo;Scholarship Review Committee, Deoband Community Wikimedia&rdquo;; write only what goes between.
+                    Replies go to the committee address. Use <code>{event}</code> for the event name.
+                    Formatting: <code>'''bold'''</code> <code>''italic''</code> <code>[https://example.org link text]</code> <code>* bullet</code> <code># numbered</code> <code>== heading ==</code>.
+                    <?php if (!empty($L['saved_at'])): ?>Last saved <?= $h($L['saved_at']) ?> by <?= $h($L['saved_by']) ?> (version <?= (int) $L['version'] ?>).<?php endif; ?></p>
+                <?php if (!$srcReady): ?><p class="hint" style="color:var(--accent);">Add <code>mail.src_reply_to</code> to config.php before turning letters on.</p><?php endif; ?>
+
+                <div class="actrow">
+                    <button type="submit" name="action" value="save_letters" class="btn-solid sm">Save letters</button>
+                    <button type="submit" name="action" value="preview_award" formtarget="_blank" class="btn-ghost sm">Preview award letter</button>
+                    <button type="submit" name="action" value="preview_decline" formtarget="_blank" class="btn-ghost sm">Preview decline letter</button>
+                </div>
+            </form>
+        </details>
         </div>
     </details>
     <?php endforeach; ?>
@@ -618,13 +867,19 @@ engage_header([
             return true;
         }
 
-        function confirmText(act, n) {
+        // n = how many applications, nl = how many of them are on a program with scholarship letters
+        // (those get the committee letter right now instead of the standard status email).
+        function confirmText(act, n, nl) {
             var plural = n + ' application' + (n === 1 ? '' : 's');
+            var mail = nl === 0 ? 'Each applicant is emailed'
+                : (nl === n ? 'Each applicant is emailed the committee letter right now (not the status email)'
+                            : nl + ' of them are emailed the committee letter right now (the rest get the status email)');
             return {
-                approve: 'Accept ' + plural + '? Each applicant is emailed, they are locked and this cannot be undone.',
-                reject: 'Reject ' + plural + '? Each applicant is emailed, they are locked and this cannot be undone.',
+                approve: 'Accept ' + plural + '? ' + mail + ', they are locked and this cannot be undone.',
+                reject: 'Reject ' + plural + '? ' + mail + ', they are locked and this cannot be undone.',
                 info: 'Send ' + plural + ' back for more information? Each applicant is emailed your message and a link to update their application.',
-                discard: 'Discard ' + plural + '? The applicants are NOT notified. You can restore them later from the Discarded status filter.'
+                discard: 'Discard ' + plural + '? The applicants are NOT notified. You can restore them later from the Discarded status filter.',
+                resend_letter: 'Send the committee letter again to ' + plural + '?'
             }[act];
         }
 
@@ -633,7 +888,8 @@ engage_header([
             if (chosen.length === 0) { e.preventDefault(); return; }
             if (!action.value) { e.preventDefault(); alert('Choose a status first.'); return; }
             if (!ok(action.value, note.value)) { e.preventDefault(); return; }
-            var warn = confirmText(action.value, chosen.length);
+            var nl = chosen.filter(function (c) { return c.getAttribute('data-letters') === '1'; }).length;
+            var warn = confirmText(action.value, chosen.length, nl);
             if (warn && !confirm(warn)) { e.preventDefault(); return; }
 
             ids.innerHTML = '';
@@ -646,15 +902,15 @@ engage_header([
             apply.disabled = true; apply.textContent = 'Working…';
         });
 
-        // Per-row Apply uses the same checks. (Restore rows have no dropdown, so they submit straight away.)
+        // Per-row Apply uses the same checks. (Restore and Resend rows have no dropdown, so they submit straight away.)
         document.querySelectorAll('.rowform').forEach(function (f) {
             f.addEventListener('submit', function (e) {
                 var sel = f.querySelector('select');
                 if (!sel) return;
                 var act = sel.value;
-                var text = f.querySelector('input[type=text]').value;
-                if (!ok(act, text)) { e.preventDefault(); return; }
-                var warn = confirmText(act, 1);
+                var t = f.querySelector('input[type=text]');
+                if (!ok(act, t ? t.value : '')) { e.preventDefault(); return; }
+                var warn = confirmText(act, 1, f.getAttribute('data-letters') === '1' ? 1 : 0);
                 if (warn && !confirm(warn)) { e.preventDefault(); }
             });
         });
