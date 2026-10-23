@@ -22,6 +22,7 @@ class CoreMail {
      *   "Name, 20"   "Name (20)"   "Name (20 years)"   "Name [20 yrs old]"   "Name - 20"
      *   "Name 20"    "Name 20 years"   "Name, age 20"   "Name aged 20"   "20, Name"
      *   "Name, 20, Male"  (everything from the age onwards is dropped)
+     * A field label typed before the name is removed too: "Name: Aafi Khan, Age: 21" -> "Aafi Khan".
      * Names that legitimately contain a comma ("Khan, Mohammad") or other text are left alone.
      * Returns '' when nothing usable is left (callers then use their own fallback greeting).
      * Use this only for what goes into an email; never to change what is stored.
@@ -31,6 +32,8 @@ class CoreMail {
         if ($n === '') {
             return '';
         }
+        // "Name: XYZ ABC", "Full name - XYZ ABC": a field label typed in front of the name.
+        $n = preg_replace('/^\s*(?:(?:full|first|your|applicant(?:\'s)?)\s+)?name\s*[:\-–—]\s*/iu', '', $n);
         // "(20)", "[20 yrs]", "(age: 20)": any bracketed group that contains a digit.
         $n = preg_replace('/\s*[\(\[][^\)\]]*\d[^\)\]]*[\)\]]/u', '', $n);
         // "Name, 20", "Name - 20", "Name, age 20, Male": a separator followed by the age, to the end.
