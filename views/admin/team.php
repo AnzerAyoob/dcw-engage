@@ -245,7 +245,6 @@ engage_header([
     'heading' => 'Team',
     'kicker'  => 'Organizer workspace',
     'lead'    => 'Organizers, finance and support staff can read applications. Membership roles only see membership applications. Invite carefully.',
-    'tools'   => '<a class="chip-btn" href="/admin/audit">Audit log</a>',
     'wide'    => true,
     'crumbs'  => [['Workspace', '/admin/dashboard'], ['Team']],
 ]);

@@ -22,21 +22,6 @@ AuditLog::record('tech_diagnostics.run', Auth::id(), Auth::email(), null,
 $tone  = ['ok' => 'var(--leaf-dark)', 'warn' => 'var(--amber, #b45309)', 'fail' => 'var(--accent)'];
 $words = ['ok' => 'Pass', 'warn' => 'Warning', 'fail' => 'Fail'];
 
-// The top-bar buttons, the same as on the workspace dashboard: who is signed in, owner shortcuts, sign out.
-// Sign out is a POST with a CSRF token (logout.php ignores anything else).
-ob_start(); ?>
-<span class="who"><?= htmlspecialchars((string) Auth::email()) ?></span>
-<?php if (Auth::isOwner()): ?>
-    <a href="/admin/team" class="chip-btn">Team</a>
-    <a href="/admin/audit" class="chip-btn">Audit log</a>
-<?php endif; ?>
-<form method="POST" action="/admin/logout">
-    <?= CSRF::getInputField() ?>
-    <button type="submit" class="chip-btn">Sign out</button>
-</form>
-<?php
-$topTools = ob_get_clean();
-
 engage_header([
     'title'   => 'Portal diagnostics',
     'heading' => 'Portal diagnostics',
@@ -44,7 +29,6 @@ engage_header([
     'slim'    => true,
     'wide'    => true,
     'crumbs'  => [['Workspace', '/admin/dashboard'], ['Reported problems', '/admin/tech-issues'], ['Diagnostics']],
-    'tools'   => $topTools,
 ]);
 ?>
 <section class="fcard wide">

@@ -5,6 +5,11 @@
  * Requires BOTH the tracking ID and the email it was submitted with: an email is often
  * not a secret, so the pair keeps one leaked value from being enough. Status only.
  *
+ * Signed-in members: a link like /track?id=DCW-XXXXXXXX (used by "My applications" on the member
+ * dashboard) is looked up with the member's own session email, so they do not retype it. The email
+ * still has to match the application, so a member can only ever open their own applications this way.
+ * For anyone else the link just pre-fills the tracking ID.
+ *
  * Internet support (IS-) and reimbursement (RB-) are member-only. Those IDs are sent to
  * /member/request, which asks for sign-in and checks ownership against the session.
  *
@@ -40,10 +45,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && trackIsMemberRequest($_GET['id'] ?? 
     exit;
 }
 
+// Tracking is public; a signed-in member just gets their name in the top bar
+// (and can open their own applications from the dashboard without retyping the email).
+$member = null;
+try {
+    require_once __DIR__ . '/../includes/member_session.php';
+    $member = MemberSession::current();
+} catch (Throwable $ex) {
+    $member = null;
+}
+$memberEmail = $member ? strtolower(trim((string) ($member['email'] ?? ''))) : '';
+
 $application = null;
 $error = '';
-$trackingId = trim($_POST['tracking_id'] ?? '');
+$trackingId = trim($_POST['tracking_id'] ?? ($_GET['id'] ?? ''));
 $email = trim($_POST['email'] ?? '');
+
+// Link from the member dashboard: /track?id=DCW-XXXXXXXX. Looked up with the session email, so only
+// the member's own application can match. No match (or not signed in): the form below is simply
+// pre-filled, with no error and no failed attempt counted.
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && $trackingId !== '' && $memberEmail !== '') {
+    try {
+        $application = (new ApplicationModel())->getApplicationByTrackingIdAndEmail(strtoupper($trackingId), $memberEmail);
+    } catch (Throwable $ex) {
+        $application = null;
+    }
+    if (!$application) {
+        $email = $memberEmail;   // pre-fill, so they can still press "Check status"
+    }
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!CSRF::validate($_POST['csrf_token'] ?? '')) {
@@ -76,15 +106,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     }
-}
-
-// Tracking is public; a signed-in member just gets their name in the top bar.
-$member = null;
-try {
-    require_once __DIR__ . '/../includes/member_session.php';
-    $member = MemberSession::current();
-} catch (Throwable $ex) {
-    $member = null;
 }
 
 engage_header([

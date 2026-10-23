@@ -396,6 +396,7 @@ function engage_member_menu(array $member, array $o = []): string {
 
                 <div class="msep"></div>
                 <?= $link('My Dashboard', '/member/dashboard') ?>
+                <?= $link('My Applications', '/member/applications') ?>
                 <?= $link('My Profile', '/member/profile') ?>
                 <?= $link('My Certificates', '/member/certificates') ?>
                 <?= $link('Support', '/member/support') ?>
@@ -430,8 +431,7 @@ function engage_member_menu(array $member, array $o = []): string {
 function engage_staff_menu(): string {
     if (!class_exists('Auth')) return '';
     try {
-        $email   = trim((string) Auth::email());
-        $isOwner = (bool) Auth::isOwner();
+        $email = trim((string) Auth::email());
     } catch (Throwable $ex) {
         return '';
     }
@@ -442,15 +442,19 @@ function engage_staff_menu(): string {
     $initial = mb_strtoupper(mb_substr($email, 0, 1)) ?: 'A';
     $csrf    = class_exists('CSRF') ? CSRF::getInputField() : '';
 
-    // [label, href, owner only]
+    // [label, href, roles that see it (null = everyone signed in)]. Each mirrors the gate on the page it opens.
     $links = [
-        ['Workspace',        '/admin/dashboard',      false],
-        ['Team',             '/admin/team',           true],
-        ['Audit log',        '/admin/audit',          true],
-        ['Chapter themes',   '/admin/chapter-themes', true],
-        ['Report a problem', '/admin/report-problem', false],
+        ['Workspace',        '/admin/dashboard',      null],
+        ['Finance',          '/finance',              ['finance', 'owner']],
+        ['Team',             '/admin/team',           ['owner']],
+        ['Audit log',        '/admin/audit',          ['owner']],
+        ['Chapter themes',   '/admin/chapter-themes', ['owner']],
+        ['Report a problem', '/admin/report-problem', null],
     ];
-    $links = array_values(array_filter($links, fn($l) => !$l[2] || $isOwner));
+    $links = array_values(array_filter($links, function ($l) {
+        if ($l[2] === null) return true;
+        try { return Auth::hasAnyRole($l[2]); } catch (Throwable $ex) { return false; }
+    }));
 
     ob_start(); ?>
     <div class="tools-wide">
