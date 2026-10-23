@@ -40,8 +40,10 @@ require_once __DIR__ . '/../../includes/cert_rows.php';
  * "My applications" lists every application the member has made, in any status: drafts that can be
  * resumed come first (with the same "Email me the link" button), then the rest, newest first. Each
  * one links to /track?id=..., which opens the member's own application without retyping the email.
- * Only the latest few are shown; there is no full-list page yet. A Discarded application is shown as
- * "Under review", like the public tracking lookup: applicants are never told it was discarded.
+ * Only the latest few are shown here; the full list, with search, status and year filters and paging,
+ * is /member/applications. A Discarded application is shown as "Under review", like the public
+ * tracking lookup: applicants are never told it was discarded (see dash_app_status() in
+ * includes/member_requests.php).
  *
  * Profile: the identity card links to /member/profile and shows the Wikimedia username status. When
  * internet support is open, a member without a verified username is also nudged from "Requires your
@@ -65,7 +67,7 @@ $firstName    = $fullName !== '' ? explode(' ', $fullName)[0] : (string) $member
 
 // ---- Draft applications waiting for the member -------------------------------------------------
 // Drafts on forms that are still open. Read first so the "send resume link" POST below can only
-// ever act on one of the member's own drafts.
+// ever act on one of the member's own drafts. (/member/applications posts here too.)
 $drafts = [];
 try { $drafts = (new FormModel())->draftsForEmail($email); } catch (Throwable $e) { /* leave the list empty */ }
 
@@ -214,22 +216,7 @@ $needsAction = array_values(array_filter($requests, fn($r) => $r['act']));
 // Needs ApplicationModel::listForMember(). A draft is "resumable" only when it is in $drafts (its form is
 // still open), so the "Email me the link" button can only ever act on a draft the POST above accepts.
 // Applicants never see "Discarded": it shows as "Under review", like the public tracking lookup.
-
-/** Applicant-facing label, tone and "needs the member" flag for one application. */
-function dash_app_status(string $status, bool $canResume): array
-{
-    switch ($status) {
-        case 'Draft':        return $canResume ? ['Draft', '#b45309', true] : ['Draft closed', '#64748b', false];
-        case 'New':
-        case 'Submitted':    return ['Submitted', '#106b9a', false];
-        case 'Under Review':
-        case 'Discarded':    return ['Under review', '#106b9a', false];
-        case 'Accepted':     return ['Accepted', '#0f766e', false];
-        case 'Rejected':     return ['Not accepted', '#97161b', false];
-        default:             return [$status, '#106b9a', false];
-    }
-}
-
+// dash_app_status() lives in includes/member_requests.php (shared with /member/applications).
 $applications = [];
 try {
     $resumable = array_map('intval', array_column($drafts, 'id'));
@@ -400,12 +387,14 @@ cert_rows_css();   // icons, buttons and certificate rows shared with /member/ce
     .req .side form { margin: 0; }
     .req .side button.d-btn { font: inherit; font-size: 13.5px; cursor: pointer; }
 
-    /* Certificates header: title with the total, and a link to the full list */
+    /* Certificates and applications header: title with the total, and a link to the full list */
     .c-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; }
     .c-head h2 { margin: 0; }
     .c-head .c-count { margin-left: 8px; padding: 1px 10px; border-radius: 999px; font-size: 13px; font-weight: 700; color: var(--leaf-dark); background: var(--leaf-tint); vertical-align: 2px; }
     .c-head .c-all { font-size: 14px; font-weight: 600; color: var(--primary); text-decoration: none; }
     .c-head .c-all:hover { text-decoration: underline; }
+    .d-more a { color: var(--primary); font-weight: 600; text-decoration: none; }
+    .d-more a:hover { text-decoration: underline; }
 
     /* Requests and conversations side by side on wide screens */
     .d-two { display: grid; gap: 0 30px; }
@@ -446,7 +435,7 @@ cert_rows_css();   // icons, buttons and certificate rows shared with /member/ce
 
         <nav class="d-glance" aria-label="Jump to a section">
             <a class="d-chip" style="--tone: var(--leaf-dark);" href="#certificates"><?= cert_icon('award') ?><b><?= (int) $certCount ?></b> certificate<?= $certCount === 1 ? '' : 's' ?></a>
-            <a class="d-chip" style="--tone: var(--primary);" href="#applications"><?= dash_svg($icons, 'doc') ?><b><?= (int) $totalApplications ?></b> application<?= $totalApplications === 1 ? '' : 's' ?></a>
+            <a class="d-chip" style="--tone: var(--primary);" href="/member/applications"><?= dash_svg($icons, 'doc') ?><b><?= (int) $totalApplications ?></b> application<?= $totalApplications === 1 ? '' : 's' ?></a>
             <a class="d-chip" style="--tone: var(--primary);" href="#requests"><?= dash_svg($icons, 'card') ?><b><?= (int) $totalRequests ?></b> request<?= $totalRequests === 1 ? '' : 's' ?></a>
             <a class="d-chip" style="--tone: <?= $wmName === '' ? 'var(--muted)' : ($wmOk ? 'var(--leaf-dark)' : '#b45309') ?>;" href="/member/profile#wikimedia"><?= dash_svg($icons, 'user') ?><?php if ($wmName === ''): ?>Add Wikimedia username<?php else: ?><b><?= htmlspecialchars($wmName) ?></b> <?= $wmOk ? 'Verified' : 'Not verified' ?><?php endif; ?></a>
             <a class="d-chip" style="--tone: var(--accent);" href="#conversations"><?= dash_svg($icons, 'chat') ?><b><?= count($tickets) ?></b> conversation<?= count($tickets) === 1 ? '' : 's' ?></a>
@@ -534,10 +523,15 @@ cert_rows_css();   // icons, buttons and certificate rows shared with /member/ce
         </div>
     </section>
 
-    <!-- My applications: everything the member has applied for. Drafts to finish come first. -->
+    <!-- My applications: the latest few. Drafts to finish come first. Everything else is on /member/applications -->
     <section class="panel" id="applications">
         <div class="panel-head">
-            <h2>My applications</h2>
+            <div class="c-head">
+                <h2>My applications<?php if ($totalApplications > 0): ?><span class="c-count"><?= (int) $totalApplications ?></span><?php endif; ?></h2>
+                <?php if ($totalApplications > count($applications)): ?>
+                    <a class="c-all" href="/member/applications">View all <?= (int) $totalApplications ?> &rarr;</a>
+                <?php endif; ?>
+            </div>
             <p>Applications you have started or submitted. Finish a draft, or open one to check its status.</p>
         </div>
         <?php if (empty($applications)): ?>
@@ -575,7 +569,7 @@ cert_rows_css();   // icons, buttons and certificate rows shared with /member/ce
                 <?php endforeach; ?>
             </div>
             <?php if ($totalApplications > count($applications)): ?>
-                <p class="d-more">Showing the latest <?= count($applications) ?> of <?= $totalApplications ?> applications.</p>
+                <p class="d-more">Showing the latest <?= count($applications) ?> of <?= $totalApplications ?> applications. <a href="/member/applications">View all</a></p>
             <?php endif; ?>
         <?php endif; ?>
     </section>
