@@ -71,6 +71,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $notes     = trim($_POST['notes'] ?? '');
     $result    = $_POST['result'] ?? '';
 
+    // Nobody pays, recharges or sends back their own request; another finance member has to.
+    if ($result !== 'internal_note' && in_array($queueName, FINANCE_TABS, true)) {
+        $owner = $queueName === 'reimbursement'
+            ? $reimbursementModel->getForNotification($requestId)
+            : $internetModel->getForNotification($requestId);
+        if ($owner && Auth::isOwnEmail($owner['email'])) {
+            $requestedTab = $queueName;
+            $error = "This is your own request, so another finance member needs to handle it.";
+            $queueName = '';
+        }
+    }
+
     // ==================================================================
     // Internal notes (staff only; never shown to the applicant)
     // ==================================================================

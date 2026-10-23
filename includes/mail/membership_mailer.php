@@ -22,6 +22,10 @@
 //
 // "Forgot your Member ID?": sendMemberIdReminder() emails the ID to the address on file.
 //
+// Join-form verification: sendExistingAccount() carries the one-time verification CODE (OTP),
+// not a link, when the address already belongs to a member joining another chapter. It names the
+// form's event only (CoreMail::eventTitle()), not the full form title.
+//
 // Sign-off examples:
 //   Best regards,                       Best regards,
 //   Core Organising Team                Membership Coordinators
@@ -197,8 +201,8 @@ class MembershipMailer {
                 ? "Update regarding your $org membership renewal"
                 : "Update regarding your $org membership application";
             $sorry = $renewal
-                ? "and for taking out the time to submit your renewal. After careful review, we regret to inform you that we are unable to approve your renewal at this juncture."
-                : "and for taking out the time to submit your application. After careful review, we regret to inform you that we are unable to approve your membership at this juncture.";
+                ? "and for taking the time to submit your renewal. After careful review, we regret to inform you that we are unable to approve your renewal at this juncture."
+                : "and for taking the time to submit your application. After careful review, we regret to inform you that we are unable to approve your membership at this juncture.";
             $close = $renewal
                 ? "We sincerely appreciate your ongoing support and look forward to your continued participation in future community initiatives."
                 : "We sincerely appreciate your interest in our initiatives and hope our paths cross again in future open knowledge endeavours.";
@@ -282,10 +286,10 @@ class MembershipMailer {
             <div class='btn-wrapper'><a href='$safeUrl' class='btn'>Update my application</a></div>
             <p>If the button does not work, copy and paste this link into your browser:<br><br>
                <a href='$safeUrl' style='color: #106b9a; word-break: break-all;'>$safeUrl</a></p>
-            <p>This private link will expire shortly, so please update your details at the earliest and do not share this link.</p>
+            <p>This private link will expire shortly, so please update your details promptly and do not share this link.</p>
             " . self::signHtml($chapter);
 
-        $alt = "Hello $name,\n\n" . sprintf($thanks, $org) . ". $looked\n\n$message\n\nPlease update your application here:\n$url\n\nThis private link will expire shortly, so please update your details at the earliest and do not share this link.\n\n" . self::signText($chapter);
+        $alt = "Hello $name,\n\n" . sprintf($thanks, $org) . ". $looked\n\n$message\n\nPlease update your application here:\n$url\n\nThis private link will expire shortly, so please update your details promptly and do not share this link.\n\n" . self::signText($chapter);
 
         return self::send($email, $name, $subject, $inner, $alt, $chapter);
     }
@@ -370,11 +374,14 @@ class MembershipMailer {
     /**
      * Sent from the join-form verification step when the address already belongs to a member.
      * $held = MemberModel::membershipsForEmail($email) (must include full_name).
-     * $verifyUrl is null when they already hold THIS chapter (no application is needed), and set
-     * when they are joining another chapter (the normal verification link is included).
-     * $expiresAt is the link's expiry as stored (UTC); it is shown to the member in IST.
+     * $code is null when they already hold THIS chapter (no application is needed), and set
+     * when they are joining another chapter: then the one-time verification code (OTP, the raw
+     * 8-character value from EmailVerificationModel::request()) is included, to be typed into the
+     * page they have open. There is no link.
+     * $expiresAt is the code's expiry as stored (UTC); it is shown to the member in IST.
+     * $formTitle is shown as the event name only (CoreMail::eventTitle()).
      */
-    public static function sendExistingAccount($email, array $held, $chapter, $formTitle, $verifyUrl = null, $expiresAt = null) {
+    public static function sendExistingAccount($email, array $held, $chapter, $formTitle, $code = null, $expiresAt = null) {
         $base  = CoreMail::appUrl();
         $login = $base . '/member/login';
         $renew = $base . '/membership?type=renewal';
@@ -382,6 +389,7 @@ class MembershipMailer {
 
         $name = (string) ($held[0]['full_name'] ?? '');
         if ($name === '') $name = 'there';
+        $formTitle = CoreMail::eventTitle($formTitle);   // event name only, no form-type prefix or edition/date
         $ids  = array_values(array_unique(array_map(fn($r) => (string) $r['member_id'], $held)));
 
         $rowsHtml = $rowsText = '';
@@ -394,17 +402,18 @@ class MembershipMailer {
             $rowsText .= "- $club: $note\n";
         }
 
-        $holdsThis = $verifyUrl === null;
+        $holdsThis = $code === null;
         $thisName  = self::org($chapter);
         $subject   = $holdsThis
             ? 'DCW Engage account details'
-            : 'DCW Engage: continue your application';
+            : 'DCW Engage: your verification code';
 
         $idHtml = implode(', ', array_map($e, $ids));
         $idText = implode(', ', $ids);
-        // The link's expiry is stored in UTC. formatExpiryIST() converts it and already adds
+        // The code's expiry is stored in UTC. formatExpiryIST() converts it and already adds
         // the " IST" label, so do not append "IST" again where this is printed.
         $expiryText = $expiresAt ? CoreMail::formatExpiryIST((string) $expiresAt) : '';
+        $shownCode  = $code !== null ? substr((string) $code, 0, 4) . '-' . substr((string) $code, 4) : '';
 
         $intro = $holdsThis
             ? "An application for <strong>" . $e($thisName) . "</strong> was initiated using this email address. Since you are already an active member, there is no requirement to submit another application."
@@ -424,10 +433,10 @@ class MembershipMailer {
             <div class='btn-wrapper'><a href='" . $e($login) . "' class='btn'>Go to sign in</a></div>"
             . ($holdsThis
                 ? "<p>If your membership has expired, you can <a href='" . $e($renew) . "' style='color:#106b9a;'>renew it here</a>.</p>"
-                : "<p>To proceed with your application, please open the link below in your browser. This single-use link will expire on " . $e($expiryText) . ".</p>
-                   <div class='btn-wrapper'><a href='" . $e($verifyUrl) . "' class='btn'>Continue my application</a></div>
-                   <p style='font-size:14px;'>If the button does not work, copy and paste this link into your browser:<br>
-                   <a href='" . $e($verifyUrl) . "' style='color:#106b9a; word-break:break-all;'>" . $e($verifyUrl) . "</a></p>")
+                : "<p>To proceed with your application, enter the verification code below on the page where you provided your email address. This single-use code will expire on " . $e($expiryText) . ". Please do not share it with anyone.</p>
+                   <div style='background:#f1f7fb; border-left:4px solid #106b9a; padding:16px 18px; margin:0 0 20px; text-align:center;'>
+                       <span style='font-family:Menlo,Consolas,monospace; font-size:28px; font-weight:bold; letter-spacing:4px; color:#0f172a;'>" . $e($shownCode) . "</span>
+                   </div>")
             . "<p style='font-size:14px; color:#64748b;'>If you did not initiate this request, you may safely ignore this email. Your account remains secure and unchanged.</p>"
             . self::signHtml(null);
 
@@ -435,7 +444,7 @@ class MembershipMailer {
              . "To sign in, enter your Member ID and password. If you haven't set a password yet or need to reset it, click on \"Forgot password\" on the sign-in page:\n$login\n\n"
              . ($holdsThis
                 ? "If your membership has expired, you can renew it here:\n$renew\n\n"
-                : "To proceed with your application, please open this link (single-use, expires $expiryText):\n$verifyUrl\n\n")
+                : "To proceed with your application, enter this verification code on the page where you provided your email address (single-use, expires $expiryText). Please do not share it with anyone.\n\nVerification code: $shownCode\n\n")
              . "If you did not initiate this request, you may safely ignore this email. Your account remains secure and unchanged.\n\n" . self::signText(null);
 
         return self::send($email, $name, $subject, $inner, $alt, null);
@@ -446,6 +455,9 @@ class MembershipMailer {
      * display name ("Wiki Club AMU via DCW Engage"; DCW itself is plain "DCW Engage"), the club
      * line in the header, and the optional per-chapter Reply-To. Returns true only when a
      * message really went out (dev mode returns false, so callers show the manual link).
+     *
+     * Note: dev_log writes the whole plain-text body, so in dev mode a verification code from
+     * sendExistingAccount() appears there. That is the only place it is logged.
      */
     private static function send($email, $name, $subject, $innerHtml, $altBody, $chapter = null) {
         $club = self::club($chapter);

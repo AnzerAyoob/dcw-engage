@@ -42,6 +42,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $notes = trim($_POST['notes'] ?? '');
     $decision = $_POST['decision'] ?? '';
 
+    // Nobody decides on their own request; another reviewer has to.
+    $owner = $model->getForNotification($requestId);
+    if ($owner && Auth::isOwnEmail($owner['email']) && $decision !== 'internal_note') {
+        $error = "This is your own request, so another reviewer needs to decide on it.";
+        $decision = '';
+    }
+
     if ($decision === 'internal_note') {
         // Staff-only; never shown to the applicant.
         try {

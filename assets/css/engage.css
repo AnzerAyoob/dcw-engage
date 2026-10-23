@@ -780,18 +780,20 @@ a.help-item:hover { transform: translateY(-2px); box-shadow: 0 4px 0 var(--edge)
    Each event is one green card that links to its wiki page: date chip (day, weekday, month),
    title, short description, and the time in IST. Green matches the leaf in the logo and sits
    between the crimson Membership banner and the white reflection card.
-   Markup: built by $eventCard in views/home.php.
-   - On its own:  section.events > .grid > a.evt
-   - Beside the reflection card:  .duo > h2.t-events + .evt-col > a.evt + h2.t-refl + .reflect
+   Built by $eventCard in views/home.php.
+   Markup: section.events > .grid > a.evt. When there is also a reflection, it follows in its own row:
+   section.community > .grid > .reflect (so a tall events column never leaves an empty area beside it).
    ---------------------------------------------------------------------- */
 .events { width: 100%; margin: 0 auto 12px; }
 
-/* On their own, cards sit centred under the heading; a single event stays card-sized. */
+/* The home page shows up to three events. They share the row (three across on desktop, wrapping on
+   smaller screens) and a row's cards are the same height. A single event stays card-sized and centred. */
 .events .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 360px));
-    justify-content: center; gap: 16px;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+    gap: 16px;
 }
+.events .grid.one { grid-template-columns: minmax(0, 400px); justify-content: center; }
 
 .evt {
     position: relative; overflow: hidden; display: flex; flex-direction: column; gap: 14px; min-width: 0;
@@ -816,14 +818,10 @@ a.help-item:hover { transform: translateY(-2px); box-shadow: 0 4px 0 var(--edge)
 .evt-date .m { opacity: .85; }
 
 .evt-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
-.evt-body h3 {
-    margin: 0; font-size: 21px; font-weight: 800; line-height: 1.25; letter-spacing: -.01em; overflow-wrap: anywhere;
-    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
-}
-.evt-body p {
-    margin: 0; font-size: 14.5px; line-height: 1.55; color: rgba(255,255,255,.9); overflow-wrap: anywhere;
-    display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
-}
+/* Title and description are shown in full: the card grows with them (the description is already
+   shortened to about 150 characters by includes/dcw_events.php). */
+.evt-body h3 { margin: 0; font-size: 21px; font-weight: 800; line-height: 1.25; letter-spacing: -.01em; overflow-wrap: anywhere; }
+.evt-body p  { margin: 0; font-size: 14.5px; line-height: 1.55; color: rgba(255,255,255,.9); overflow-wrap: anywhere; }
 
 /* Time sits at the bottom of the card as a white pill */
 .evt-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: auto; }
@@ -833,18 +831,20 @@ a.help-item:hover { transform: translateY(-2px); box-shadow: 0 4px 0 var(--edge)
 }
 .evt-range { font-size: 13px; font-weight: 600; color: rgba(255,255,255,.88); }
 
-/* Events and the reflection card side by side (home page, when both exist).
-   Each column has its own heading in row 1, left-aligned over its card; both cards sit in row 2 and are
-   the same height (the event column stretches, and a single event card grows to fill it, with its time
-   pill at the bottom). */
-.duo { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); gap: 0 20px; align-items: stretch; padding-bottom: 12px; }
-.duo .duo-title { grid-row: 1; margin: 30px 0 14px; text-align: left; }
-.duo .duo-title.first { margin-top: 0; }
-.duo .t-events { grid-column: 1; }
-.duo .t-refl   { grid-column: 2; }
-.duo .evt-col { grid-column: 1; grid-row: 2; display: flex; flex-direction: column; gap: 16px; }
-.duo .evt-col .evt { flex: 1; }
-.duo .reflect { grid-column: 2; grid-row: 2; width: auto; max-width: none; flex: none; margin: 0; }
+/* One or two cards with nothing beside them (views/home.php adds these classes): the cards share the
+   full width instead of sitting small in the middle of an empty row. A single card is laid out like the
+   Membership banner: icon on the left, text in the middle, call to action on the right. */
+.grid--fill { justify-content: stretch; }
+.grid--fill .prog { flex: 1 1 280px; max-width: none; }   /* two share a row; on a phone each takes the full width */
+.grid--solo .prog {
+    display: grid; grid-template-columns: auto 1fr auto; column-gap: 20px; align-items: center;
+    grid-template-areas: "tick title go" "tick desc go";
+    padding: 24px 28px;
+}
+.grid--solo .prog .tick { grid-area: tick; margin: 0; width: 52px; height: 52px; }
+.grid--solo .prog h3    { grid-area: title; margin: 0 0 4px; }
+.grid--solo .prog p     { grid-area: desc; margin: 0; }
+.grid--solo .prog .go   { grid-area: go; white-space: nowrap; }
 
 /* ---------- Responsive ---------- */
 /* Programs + reflection on one row: step down as the screen narrows. */
@@ -854,13 +854,17 @@ a.help-item:hover { transform: translateY(-2px); box-shadow: 0 4px 0 var(--edge)
     .grid--beside.n2 .reflect { grid-column: 1 / -1; grid-row: auto; }
 }
 @media (max-width: 800px) {
-    .duo { grid-template-columns: 1fr; }
-    .duo .duo-title, .duo .evt-col, .duo .reflect { grid-column: 1; grid-row: auto; }
-    .duo .evt-col .evt { flex: none; }
     .grid--beside.n1, .grid--beside.n2 { grid-template-columns: 1fr; }
     .grid--beside.n1 .beside-title, .grid--beside.n2 .beside-title,
     .grid--beside.n2 .reflect { grid-column: auto; }
     .grid--beside .beside-title, .grid--beside .prog, .grid--beside .reflect { grid-row: auto; }
+}
+@media (max-width: 640px) {
+    /* A single wide card goes back to the normal stacked card on phones. */
+    .grid--solo .prog { display: flex; padding: 28px 26px 24px; }
+    .grid--solo .prog .tick { margin-bottom: 14px; width: 44px; height: 44px; }
+    .grid--solo .prog h3 { margin: 0 0 8px; }
+    .grid--solo .prog p  { margin: 0 0 18px; }
 }
 @media (max-width: 640px) {
     .hero, .hero.slim { padding: 28px 18px 96px; }

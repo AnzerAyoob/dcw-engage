@@ -28,12 +28,10 @@ return [
     'security' => [
         'magic_link_expiry_draft' => '+7 days',
         'magic_link_expiry_edit'  => '+2 hours',
-        // How long an emailed organizer invitation stays usable.
         'invite_expiry'           => '+7 days',
-        // How long the emailed "verify your email" link for a form stays usable.
-        'email_verify_expiry'     => '+1 hour',
-        // How many months feedback responses are kept before cron/scrub_feedback.php blanks the name and
-        // email on them (the written answers are kept). Left out, it defaults to 12.
+        'email_verify_expiry'     => '+10 minutes',
+        'field_encryption_key'    => 'replace-with-a-long-random-string',
+        'otp_secret'              => 'replace-with-a-long-random-string',
         'feedback_retention_months' => 12
     ]
 ];
