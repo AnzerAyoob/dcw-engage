@@ -169,9 +169,10 @@ if ($route === '/' || $route === '/index.php') {
 } elseif ($route === '/admin/community-records') {
     require __DIR__ . '/views/admin/community_records.php';
 
-// Owner-only: which chapters each membership coordinator may see.
+// Old address: coordinators' chapters are now managed on the Team page (the separate view was removed).
 } elseif ($route === '/admin/membership-access') {
-    require __DIR__ . '/views/admin/membership_access.php';
+    header('Location: /admin/team', true, 302);
+    exit;
 
 // Admin view for membership card management.
 } elseif ($route === '/admin/membership-card') {
