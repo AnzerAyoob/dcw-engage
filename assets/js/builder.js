@@ -3,11 +3,23 @@ const addFieldBtn = document.getElementById('add_field_btn');
 const builderForm = document.getElementById('builderForm');
 let fieldCounter = 0;
 
+// Every field key that was ever loaded from a saved schema in this session.
+// Never shrinks, so a trashed question's key can't be handed to a new question
+// (which would silently attach the old question's answers to it).
+const savedFieldNames = new Set();
+
 function createFieldCard(fieldData = null) {
     fieldCounter++;
     const card = document.createElement('div');
     card.className = 'field-card';
     card.id = `field_${fieldCounter}`;
+
+    // The saved key is fixed for the life of the field; the label is display-only.
+    // Editing the label must never change the key answers are stored under.
+    if (fieldData && fieldData.name) {
+        card.dataset.fieldName = fieldData.name;
+        savedFieldNames.add(fieldData.name);
+    }
 
     const label = fieldData ? fieldData.label : '';
     const type = fieldData ? fieldData.type : 'text';
@@ -288,17 +300,44 @@ function buildSchemaFromForm() {
         fields: []
     };
 
-    const cards = document.querySelectorAll('.field-card');
+    const cards = Array.from(document.querySelectorAll('.field-card'));
+
+    // Keys that are off limits for a brand-new field: every key loaded from the
+    // saved schema (even if its question was trashed since) plus every key
+    // currently on a card. Keeps new keys unique and never reuses a saved one.
+    const used = new Set(savedFieldNames);
+    cards.forEach(c => { if (c.dataset.fieldName) used.add(c.dataset.fieldName); });
+
+    // Only used for a field that has never been saved. Built from the label once,
+    // then pinned to the card so later label edits (and preview-then-save) can't change it.
+    const makeName = function (label) {
+        const base = label.toLowerCase()
+            .replace(/[^a-z0-9]/g, '_')
+            .replace(/_+/g, '_')
+            .replace(/^_|_$/g, '') || 'field';
+        let candidate = base;
+        let n = 2;
+        while (used.has(candidate)) {
+            candidate = base + '_' + n++;
+        }
+        used.add(candidate);
+        return candidate;
+    };
+
     cards.forEach(card => {
         const label = card.querySelector('.field-label').value;
         const type = card.querySelector('.field-type').value;
         const isRequired = card.querySelector('.field-required').checked;
 
-        // Auto generate an internal database name from the label
-        const name = label.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
+        // Existing fields keep their saved key no matter how the label changes.
+        let name = card.dataset.fieldName;
+        if (!name) {
+            name = makeName(label);
+            card.dataset.fieldName = name;
+        }
 
         const fieldData = {
-            name: name || 'field_' + Math.floor(Math.random() * 1000),
+            name: name,
             label: label,
             type: type,
             required: isRequired
