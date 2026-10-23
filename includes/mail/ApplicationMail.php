@@ -198,7 +198,7 @@ class ApplicationMail {
             'to' => $email, 'to_name' => $name,
             'from_name' => $replyToName !== '' ? $replyToName : 'DCW Scholarship Review Committee',
             'reply_to' => [$replyTo, (string) $replyToName],
-            'footer_note' => 'You can reply directly to this email.',
+            'footer_note' => '',   // people can reply (Reply-To is set), so no "automated message" line
             'subject' => $subj,
             'html' => $inner, 'alt' => $alt,
             'dev_result' => false,
@@ -213,7 +213,7 @@ class ApplicationMail {
         $banner = "<p style='font-size:13px; color:#64748b; border-bottom:1px solid #e2e8f0; padding-bottom:12px;'>"
                 . "Preview only. Nothing was sent.<br><strong>Subject:</strong> " . $e($subj)
                 . "<br><strong>Reply-To:</strong> " . $e($replyTo !== '' ? $replyTo : 'not set (add mail.src_reply_to to config.php)') . "</p>";
-        return CoreMail::template($banner . $inner, null, 'You can reply directly to this email.');
+        return CoreMail::template($banner . $inner, null, '');
     }
 
     /** Subject, inner HTML and plain text of a decision letter. */
@@ -225,11 +225,17 @@ class ApplicationMail {
         $subject = trim((string) preg_replace('/[\x00-\x1F\x7F]+/u', ' ', str_replace('{event}', $event, (string) $subject)));
         $body = trim(str_replace(["\r\n", "\r"], "\n", str_replace('{event}', $event, (string) $body)));
 
+        // Signature: a short brand-colour rule, then the committee in bold and the organisation
+        // in brand-colour small caps, so it reads as a sign-off and not as more body text.
+        $signature = "<div style='width:48px; height:3px; background:#106b9a; margin:32px 0 14px; line-height:3px; font-size:0;'>&nbsp;</div>"
+                   . "<p style='margin:0; font-size:17px; line-height:1.3; font-weight:bold; color:#0f172a;'>Scholarship Review Committee</p>"
+                   . "<p style='margin:3px 0 0; font-size:13px; line-height:1.3; font-weight:bold; letter-spacing:1px; text-transform:uppercase; color:#106b9a;'>Deoband Community Wikimedia</p>";
+
         $inner = "<p>Dear <strong>" . $e($name) . "</strong>,</p>"
                . "<div style='font-size:16px; line-height:1.6;'>" . MiniWikiText::render($body) . "</div>"
-               . "<p style='margin:28px 0 0;'>Scholarship Review Committee<br>Deoband Community Wikimedia</p>";
+               . $signature;
 
-        $alt = "Dear $name,\n\n" . self::wikiToPlain($body) . "\n\nScholarship Review Committee\nDeoband Community Wikimedia\n";
+        $alt = "Dear $name,\n\n" . self::wikiToPlain($body) . "\n\n--\nScholarship Review Committee\nDeoband Community Wikimedia\n";
 
         return [$subject, $inner, $alt];
     }
