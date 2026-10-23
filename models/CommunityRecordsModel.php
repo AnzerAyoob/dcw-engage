@@ -9,12 +9,19 @@ require_once __DIR__ . '/MemberModel.php';
  * Attendance rows are matched to a member at CHECK time: by Member ID, or by the member's
  * VERIFIED Wikimedia username. Unverified usernames never match, so nobody can claim
  * someone else's attendance by typing their username into a profile.
+ *
+ * When STAFF log attendance they may also type a member's full name. The name is only used to
+ * find the Member ID at that moment; the row is saved under the Member ID, so a name typed in
+ * a profile or form can never claim anyone's attendance.
  */
 class CommunityRecordsModel
 {
     const WINDOW = 3;   // how many recent sessions must be attended
 
     private PDO $db;
+
+    /** Lazily built lookup of member names: ['byName' => [normalised name => [member_id => full name]], 'byId' => [member_id => full name]]. */
+    private ?array $nameIndex = null;
 
     public function __construct(?PDO $pdo = null)
     {
@@ -101,6 +108,10 @@ class CommunityRecordsModel
     // Attendance
     // ------------------------------------------------------------------
 
+    /**
+     * Everyone logged for a session. Each row also carries 'full_name' ('' if unknown): the name of
+     * the member it is saved under, or of the member whose verified username matches ('pm').
+     */
     public function attendees(int $sessionId): array
     {
         $st = $this->db->prepare(
@@ -111,7 +122,15 @@ class CommunityRecordsModel
               WHERE a.session_id = ? ORDER BY a.logged_at DESC, a.id DESC'
         );
         $st->execute([$sessionId]);
-        return $st->fetchAll(PDO::FETCH_ASSOC);
+        $rows = $st->fetchAll(PDO::FETCH_ASSOC);
+
+        $byId = $this->nameIndex()['byId'];
+        foreach ($rows as &$r) {
+            $mid = (string) ($r['member_id'] ?: ($r['pm'] ?? ''));
+            $r['full_name'] = $mid !== '' ? ($byId[$mid] ?? '') : '';
+        }
+        unset($r);
+        return $rows;
     }
 
     public function removeAttendance(int $rowId): void
@@ -125,15 +144,22 @@ class CommunityRecordsModel
      *     D48213977
      *     A48213977
      *     SomeUser
+     *     Asha Verma
      *     SomeUser, OtherUser, J48213977
      *     SomeUser | excused | exam that day
      * A Member ID is one letter (D, A, J or P: see MemberModel::ID_PREFIX) followed by digits;
      * the format is checked by MemberModel::chapterFromMemberId(), so it is defined in one place.
      * A line containing "|" is kept whole, because the reason after "excused" can contain commas.
-     * Each result: kind (member | username | bad), member_id, username, status, note, label, key.
+     *
+     * Each entry is tried in this order: Member ID, verified Wikimedia username, and (when
+     * $byName is true) a member's full name. A name must match exactly one Member ID; if two
+     * different members share it, the line is skipped so staff can paste the Member ID instead.
+     * A name containing a comma cannot be used, because commas separate people.
+     *
+     * Each result: kind (member | username | bad), member_id, username, name, status, note, label, key.
      * Duplicates inside the paste are merged and counted in $dupes.
      */
-    public function previewLines(string $text, ?int &$dupes = 0): array
+    public function previewLines(string $text, ?int &$dupes = 0, bool $byName = true): array
     {
         $dupes = 0;
         $out = [];
@@ -153,7 +179,7 @@ class CommunityRecordsModel
         foreach ($entries as $raw) {
             $raw = trim($raw);
             if ($raw === '') continue;
-            $row = ['raw' => $raw, 'kind' => 'bad', 'member_id' => null, 'username' => '', 'status' => 'present', 'note' => '', 'label' => '', 'key' => ''];
+            $row = ['raw' => $raw, 'kind' => 'bad', 'member_id' => null, 'username' => '', 'name' => '', 'status' => 'present', 'note' => '', 'label' => '', 'key' => ''];
 
             $parts = array_map('trim', explode('|', $raw, 3));
             $ident = $parts[0];
@@ -165,6 +191,8 @@ class CommunityRecordsModel
             if ($row['status'] === 'excused' && $row['note'] === '') { $row['label'] = 'Excused needs a note (use: name | excused | reason)'; $out[] = $row; continue; }
             if (mb_strlen($row['note']) > 500) { $row['label'] = 'Note is too long'; $out[] = $row; continue; }
 
+            $matchLabel = 'Matched to a member';
+
             // chapterFromMemberId() is case-sensitive, so upper-case first (IDs are typed in any case).
             $idCandidate = strtoupper($ident);
             if (MemberModel::chapterFromMemberId($idCandidate) !== null) {
@@ -173,19 +201,35 @@ class CommunityRecordsModel
                 $row['kind'] = 'member'; $row['member_id'] = $mid; $row['username'] = $this->verifiedUsernameOf($mid);
             } else {
                 $u = WikiUsername::normalize(preg_replace('/^User:/i', '', $ident));
-                if ($u === '' || mb_strlen($u) > 255 || preg_match('/[#<>\[\]|{}]/u', $u)) { $row['label'] = 'Not a readable username or Member ID'; $out[] = $row; continue; }
-                $mid = $this->memberByVerifiedUsername($u);
+                $readable = !($u === '' || mb_strlen($u) > 255 || preg_match('/[#<>\[\]|{}]/u', $u));
+
+                $mid = $readable ? $this->memberByVerifiedUsername($u) : null;
                 if ($mid !== null) {
                     $row['kind'] = 'member'; $row['member_id'] = $mid; $row['username'] = $this->verifiedUsernameOf($mid) ?: $u;
                 } else {
-                    $row['kind'] = 'username'; $row['username'] = $u;
+                    $hits = $byName ? $this->membersByName($ident) : [];
+                    if (count($hits) === 1) {
+                        $mid = (string) array_key_first($hits);
+                        $row['kind'] = 'member'; $row['member_id'] = $mid; $row['username'] = $this->verifiedUsernameOf($mid);
+                        $matchLabel = 'Matched by name';
+                    } elseif (count($hits) > 1) {
+                        $row['label'] = 'More than one member has this name (' . implode(', ', array_keys($hits)) . '). Use the Member ID instead.';
+                        $out[] = $row; continue;
+                    } elseif (!$readable) {
+                        $row['label'] = $byName ? 'Not a Member ID, username or member name' : 'Not a readable username or Member ID';
+                        $out[] = $row; continue;
+                    } else {
+                        $row['kind'] = 'username'; $row['username'] = $u;
+                    }
                 }
             }
+
+            if ($row['member_id'] !== null) $row['name'] = $this->nameIndex()['byId'][$row['member_id']] ?? '';
 
             $row['key'] = $row['member_id'] ?? 'u:' . mb_strtolower($row['username']);
             if (isset($seen[$row['key']])) { $dupes++; continue; }
             $seen[$row['key']] = true;
-            $row['label'] = $row['kind'] === 'member' ? 'Matched to a member' : 'No member with this verified username yet';
+            $row['label'] = $row['kind'] === 'member' ? $matchLabel : 'No member with this verified username yet';
             $out[] = $row;
         }
         return $out;
@@ -225,6 +269,42 @@ class CommunityRecordsModel
         $st->execute([$u]);
         $v = $st->fetchColumn();
         return $v ? (string) $v : null;
+    }
+
+    // ------------------------------------------------------------------
+    // Member names (staff lookup only)
+    // ------------------------------------------------------------------
+
+    private static function normName(string $s): string
+    {
+        return mb_strtolower(trim((string) preg_replace('/\s+/u', ' ', $s)));
+    }
+
+    /**
+     * Name lookups, built once per request from the members table. Matching is done in PHP on
+     * purpose (see eligibilityFor): comparing strings across tables in SQL can trip
+     * "Illegal mix of collations". One person with several chapter rows counts once.
+     */
+    private function nameIndex(): array
+    {
+        if ($this->nameIndex !== null) return $this->nameIndex;
+        $idx = ['byName' => [], 'byId' => []];
+        foreach ($this->db->query('SELECT member_id, full_name FROM members') as $r) {
+            $name = trim((string) $r['full_name']);
+            $mid = (string) $r['member_id'];
+            if ($name === '' || $mid === '') continue;
+            if (!isset($idx['byId'][$mid])) $idx['byId'][$mid] = $name;
+            $idx['byName'][self::normName($name)][$mid] = $name;
+        }
+        return $this->nameIndex = $idx;
+    }
+
+    /** member_id => full name for every distinct Member ID whose name matches exactly (ignoring case and extra spaces). */
+    private function membersByName(string $name): array
+    {
+        $key = self::normName($name);
+        if ($key === '') return [];
+        return $this->nameIndex()['byName'][$key] ?? [];
     }
 
     // ------------------------------------------------------------------
@@ -270,7 +350,9 @@ class CommunityRecordsModel
         $until = trim($until);
         if ($until !== '') $until = $this->futureDate($until);
 
-        $p = $this->previewLines($identifier);
+        // Member ID or verified username only: names are for logging attendance, not for this list.
+        $dupes = 0;
+        $p = $this->previewLines($identifier, $dupes, false);
         if (count($p) !== 1 || $p[0]['kind'] !== 'member') {
             throw new InvalidArgumentException('Enter one Member ID, or the verified Wikimedia username of an existing member.');
         }
