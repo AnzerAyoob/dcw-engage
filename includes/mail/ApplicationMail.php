@@ -2,12 +2,13 @@
 // includes/mail/ApplicationMail.php
 // Emails for event applications (tracking IDs start "DCW-"): verification code,
 // magic link, confirmation, status updates, "sent back for more information",
-// and the organizer alert.
+// committee-written decision letters, and the organizer alert.
 //
 // Emails to the applicant name the event only (CoreMail::eventTitle()), e.g. "Train-a-Wikipedian"
 // rather than "Scholarship Application Form: Train-a-Wikipedian, 4th Edition". The organizer
 // alert and the dev logs keep the full form title.
 require_once __DIR__ . '/CoreMail.php';
+require_once __DIR__ . '/../wikitext.php';
 
 class ApplicationMail {
     /** Name as it should appear in a greeting: age removed, "Applicant" when nothing usable is left. */
@@ -176,6 +177,87 @@ class ApplicationMail {
             'dev_result' => false,
             'dev_log' => "Send-back email for $email ($trackingId, $fullTitle): $appUrl",
         ]);
+    }
+
+    /**
+     * Committee-written decision letter (scholarship award or decline). Replaces the standard status
+     * email on programs that have scholarship letters switched on.
+     *
+     * Only the body is the committee's: the greeting ("Dear <name>,") and the signature are added here.
+     * The system never writes an outcome word, so the email says only what the committee wrote.
+     * "{event}" in the subject or body is replaced by the short event name (CoreMail::eventTitle()).
+     * $body is the wikitext subset rendered by MiniWikiText.
+     *
+     * dev_result is false on purpose: the caller treats false as "not sent" and shows a resend button.
+     */
+    public static function decisionLetter($email, $applicantName, $formTitle, $subject, $body, $replyTo, $replyToName = '') {
+        [$subj, $inner, $alt] = self::letterParts($applicantName, $formTitle, $subject, $body);
+        $name = self::displayName($applicantName);
+
+        return CoreMail::send([
+            'to' => $email, 'to_name' => $name,
+            'from_name' => $replyToName !== '' ? $replyToName : 'DCW Scholarship Review Committee',
+            'reply_to' => [$replyTo, (string) $replyToName],
+            'footer_note' => 'You can reply directly to this email.',
+            'subject' => $subj,
+            'html' => $inner, 'alt' => $alt,
+            'dev_result' => false,
+            'dev_log' => "Decision letter for $email ($formTitle): $subj",
+        ]);
+    }
+
+    /** The same email as a full HTML page, for the "Preview" buttons. Sends nothing. */
+    public static function decisionLetterPreview($applicantName, $formTitle, $subject, $body, $replyTo, $replyToName = '') {
+        [$subj, $inner] = self::letterParts($applicantName, $formTitle, $subject, $body);
+        $e = fn($s) => CoreMail::e($s);
+        $banner = "<p style='font-size:13px; color:#64748b; border-bottom:1px solid #e2e8f0; padding-bottom:12px;'>"
+                . "Preview only. Nothing was sent.<br><strong>Subject:</strong> " . $e($subj)
+                . "<br><strong>Reply-To:</strong> " . $e($replyTo !== '' ? $replyTo : 'not set (add mail.src_reply_to to config.php)') . "</p>";
+        return CoreMail::template($banner . $inner, null, 'You can reply directly to this email.');
+    }
+
+    /** Subject, inner HTML and plain text of a decision letter. */
+    private static function letterParts($applicantName, $formTitle, $subject, $body) {
+        $e = fn($s) => CoreMail::e($s);
+        $name = self::displayName($applicantName);
+        $event = CoreMail::eventTitle($formTitle);
+
+        $subject = trim((string) preg_replace('/[\x00-\x1F\x7F]+/u', ' ', str_replace('{event}', $event, (string) $subject)));
+        $body = trim(str_replace(["\r\n", "\r"], "\n", str_replace('{event}', $event, (string) $body)));
+
+        $inner = "<p>Dear <strong>" . $e($name) . "</strong>,</p>"
+               . "<div style='font-size:16px; line-height:1.6;'>" . MiniWikiText::render($body) . "</div>"
+               . "<p style='margin:28px 0 0;'>Scholarship Review Committee<br>Deoband Community Wikimedia</p>";
+
+        $alt = "Dear $name,\n\n" . self::wikiToPlain($body) . "\n\nScholarship Review Committee\nDeoband Community Wikimedia\n";
+
+        return [$subject, $inner, $alt];
+    }
+
+    /** Wikitext subset -> readable plain text: lists keep their markers, links show their address. */
+    private static function wikiToPlain($text) {
+        $out = [];
+        $n = 0;
+        foreach (preg_split('/\n/', (string) $text) as $line) {
+            if (preg_match('/^#\s*(.*)$/', $line, $m)) {
+                $n++;
+                $line = $n . '. ' . $m[1];
+            } else {
+                $n = 0;
+                if (preg_match('/^\*\s*(.*)$/', $line, $m)) {
+                    $line = '- ' . $m[1];
+                } else {
+                    $line = preg_replace(['/^={2,3}\s+(.*?)\s+={2,3}$/', '/^:+\s*/'], ['$1', ''], $line);
+                }
+            }
+            $out[] = $line;
+        }
+        $t = implode("\n", $out);
+        $t = preg_replace('/\[(https?:\/\/[^\s\]]+)\s+([^\]]+)\]/', '$2 ($1)', $t);
+        $t = preg_replace("/'{5}(.+?)'{5}/", '$1', $t);
+        $t = preg_replace("/'{3}(.+?)'{3}/", '$1', $t);
+        $t = preg_replace("/'{2}(.+?)'{2}/", '$1', $t);
+        return trim($t);
     }
 
     /**
