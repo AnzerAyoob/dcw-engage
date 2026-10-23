@@ -448,7 +448,6 @@ function engage_staff_menu(): string {
         ['Team',             '/admin/team',           ['owner']],
         ['Audit log',        '/admin/audit',          ['owner']],
         ['Chapter themes',   '/admin/chapter-themes', ['owner']],
-        ['Membership access', '/admin/membership-access', ['owner']],
         ['Report a problem', '/admin/report-problem', null],
     ];
     $links = array_values(array_filter($links, function ($l) {
