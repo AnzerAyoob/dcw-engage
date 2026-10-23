@@ -23,7 +23,15 @@ return [
         'host' => 'smtp.example.com',
         'user' => 'no-reply@dcwwiki.org',
         'pass' => 'your_password',
-        'port' => 587
+        'port' => 587,
+
+        // Scholarship letters (award / decline emails written by the committee).
+        // REQUIRED to switch letters on: replies to these emails go to the committee,
+        // since the sending address (above) is a no-reply mailbox.
+        'src_reply_to' => 'scholarships@dcwwiki.org', // committee address
+        // OPTIONAL: display name shown to recipients and used on the Reply-To header.
+        // If omitted or empty, the address alone is used.
+        'src_name'     => 'DCW Scholarship Review Committee',
     ],
     'security' => [
         'magic_link_expiry_draft' => '+7 days',
