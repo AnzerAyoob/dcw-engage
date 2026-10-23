@@ -116,6 +116,12 @@ if ($route === '/' || $route === '/index.php') {
 } elseif ($route === '/member/certificates') {
     require __DIR__ . '/views/member/certificates.php';
 
+// Full list of the member's applications, with search, status and year filters and paging. The dashboard
+// shows only the latest few and links here. Signed-in members only: the view calls
+// MemberSession::requireLogin() itself.
+} elseif ($route === '/member/applications') {
+    require __DIR__ . '/views/member/applications.php';
+
 // --- Member support requests (signed-in members only) -------------------
 // Internet support and reimbursement are members-only. The member signs in,
 // starts a request at /member/support?type=internet|reimbursement, and then
